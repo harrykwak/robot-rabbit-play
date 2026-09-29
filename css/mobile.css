@@ -1,0 +1,753 @@
+/* =========================================================
+   mobile.css — 스마트폰 레이아웃 v1 (style/extra/combat.css 뒤에 로드)
+   - 메뉴: 320~430 세로 가로넘침 없음, 낮은 가로 화면 스크롤, safe-area/dvh
+   - 터치: (pointer: coarse) 또는 html.touch-mode 에서 HUD 재배치
+   - 터치 컨트롤 DOM 계약: #touch-controls.touch-controls
+     .touch-stick > .touch-knob / .touch-actions > .touch-btn[data-touch-action]
+     (.touch-label .touch-sub) / .touch-menu / .touch-status / .is-down
+     root.left-handed / root --touch-scale (0.85~1.15)
+   ========================================================= */
+
+/* ---------------- 공통 변수 ---------------- */
+html, body { touch-action: manipulation; }
+#performance-hud { position: fixed; z-index: 180; top: max(2px, env(safe-area-inset-top)); left: max(4px, env(safe-area-inset-left)); max-width: calc(100% - 70px); padding: 4px 7px; background: #081125e8; color: #a9f3de; font: 10px/1.4 monospace; pointer-events: none; }
+#thermal-note { position: fixed; z-index: 181; top: 30px; left: 50%; transform: translateX(-50%); background: #38240fe8; color: #ffe0a3; font: 12px/1.4 sans-serif; border-radius: 8px; pointer-events: none; }
+#thermal-note:not(:empty) { padding: 6px 12px; }
+.campaign-panel { width: min(1040px, 100%); max-height: calc(100dvh - 30px); overflow-y: auto; }
+.campaign-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.campaign-eyebrow { font: 800 11px/1.4 var(--font); letter-spacing: .16em; color: var(--carrot-2); margin-bottom: 8px; }
+#campaign-progress { color: var(--yellow); font-weight: 800; white-space: nowrap; margin-bottom: 12px; }
+.campaign-intro, .save-note { color: #c0cde3; font-size: 13px; line-height: 1.6; }
+.campaign-loadout { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 16px 0; padding: 10px 14px; border: 1px solid #647496; border-radius: 10px; background: #172547; }
+.campaign-loadout .btn { min-height: 44px; font-size: 13px; }
+#mission-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.mission-card { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 2px solid var(--carrot); border-radius: 14px; background: linear-gradient(150deg, #324878, #172440); }
+.mission-card.locked { border-color: #536685; background: #192640; }
+.mission-card.cleared { border-color: #67e8d0; }
+.mission-number { font: 900 24px/1 var(--font); color: var(--carrot-2); }
+.mission-card.locked .mission-number { color: #8191ac; }
+.mission-card h3 { font-size: 17px; line-height: 1.35; }
+.mission-goal { font-size: 14px; color: #fff2ce; line-height: 1.5; }
+.mission-meta, .mission-medals { font-size: 12px; color: #b9cbe2; line-height: 1.5; }
+.mission-medals { min-height: 36px; }
+.mission-card .btn { margin-top: auto; min-height: 44px; padding: 10px; font-size: 14px; }
+.mission-card .btn:disabled { cursor: default; opacity: .6; }
+#result-message { margin: 8px 0 18px; color: #ffe8b7; line-height: 1.6; }
+#mission-hud { position: fixed; z-index: 4; top: 65px; left: 50%; transform: translateX(-50%); max-width: 55%; padding: 5px 10px; border-radius: 7px; background: #101a3adb; font-size: 12px; text-align: center; pointer-events: none; }
+#finish-spectating { position: fixed; z-index: 12; left: 50%; top: 40%; transform: translate(-50%, -50%); }
+@media (max-width: 700px) { #mission-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } .campaign-heading { display: block; } }
+@media (max-width: 420px) { #mission-list { grid-template-columns: 1fr; } .campaign-loadout { flex-wrap: wrap; } }
+@media (max-height: 480px) {
+  .campaign-panel { padding: 14px; }
+  .campaign-heading h2 { font-size: 21px; margin-bottom: 4px; }
+  .campaign-intro { display: none; }
+  .campaign-eyebrow { font-size: 10px; margin-bottom: 3px; }
+  .campaign-loadout { padding: 3px 10px; margin: 8px 0; }
+  #mission-list { margin: 8px 0; }
+  .mission-card { padding: 12px; gap: 4px; }
+  .mission-number { font-size: 18px; }
+  .mission-card h3 { font-size: 14px; }
+  .mission-goal { font-size: 12px; }
+  .mission-meta, .mission-medals { font-size: 10px; }
+  .mission-medals { min-height: 30px; }
+  #mission-hud { top: 55px; font-size: 11px; }
+}
+/* A scrollable menu must not inherit a touch-action:none ancestor. */
+.screen { -webkit-user-select: text; user-select: text; }
+#gl, #overlay { touch-action: none; }
+.keyboard-settings { margin-bottom: 14px; }
+.keyboard-settings summary { min-height: 48px; padding: 12px 0; cursor: pointer; }
+.keyboard-settings summary:focus-visible { outline: 3px solid var(--cyan); }
+.opts-grid select {
+  min-width: 0; max-width: 100%; min-height: 44px; padding: 6px 8px;
+  font: 700 14px/1.4 var(--font); color: var(--white); background: #1d2c54;
+  border: 2px solid #647496; border-radius: 8px;
+}
+.opts-grid input, .opts-grid select { touch-action: manipulation; }
+.mobile-guide { width: min(560px, 100%); max-height: var(--m-screen-h); overflow-y: auto; }
+.mobile-guide p, .mobile-guide li { font-size: 15px; line-height: 1.65; }
+.mobile-guide ol { padding-left: 24px; }
+.mobile-guide li + li { margin-top: 8px; }
+.mobile-guide .panel-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#game-menu-btn {
+  position: absolute; right: max(14px, env(safe-area-inset-right)); top: max(12px, env(safe-area-inset-top));
+  pointer-events: auto; min-width: 56px; min-height: 48px; padding: 8px 12px;
+  background: #101a3a; color: #fff; border: 2px solid #fff; border-radius: 10px;
+  font: 800 14px var(--font); cursor: pointer;
+}
+html.touch-mode #game-menu-btn { display: none; }
+#runtime-notice {
+  position: fixed; inset: 0; z-index: 100; padding: 28px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  background: rgba(8, 14, 31, .97); color: #fff; text-align: center;
+  font: 700 18px/1.6 var(--font); pointer-events: auto;
+}
+#runtime-message { max-width: 480px; }
+#loading.load-failed {
+  inset: 0; width: auto; transform: none; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px; padding: 24px; text-align: center;
+  color: #fff; letter-spacing: 0; text-shadow: none; animation: none; border: 0; border-radius: 0;
+}
+#loading.load-failed p { max-width: 480px; font-size: 16px; line-height: 1.6; }
+noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #101a3a; color: #fff; }
+:root {
+  --m-sat: env(safe-area-inset-top, 0px);
+  --m-sar: env(safe-area-inset-right, 0px);
+  --m-sab: env(safe-area-inset-bottom, 0px);
+  --m-sal: env(safe-area-inset-left, 0px);
+  --m-vh: 100vh;
+  --m-screen-h: calc(var(--m-vh) - max(10px, var(--m-sat)) - max(10px, var(--m-sab)));
+  --m-edge: 12px;
+  --m-side: 60px;      /* 가로 HUD 좌우 예약(메뉴 버튼 자리) */
+  --m-timer-w: 84px;
+  --m-cards-h: 58px;   /* compact 카드 최대 높이(로봇·상태 줄 포함) */
+  --tg: 8px;
+  /* HUD 예약은 최대 배율 기준. html에도 --touch-scale을 주면 정확히 맞춘다 */
+  --m-k: clamp(.85, var(--touch-scale, 1.15), 1.15);
+}
+@supports (height: 100dvh) {
+  :root { --m-vh: 100dvh; }
+}
+
+/* 버튼·스틱 치수: :root(HUD 예약)와 컨트롤 root(실제 크기)에서 각각 계산 */
+:root,
+.touch-controls {
+  --tb: max(48px, calc(var(--tb0) * var(--m-k)));
+  --ta: max(60px, calc(var(--ta0) * var(--m-k)));
+  --stick: max(104px, calc(var(--stick0) * var(--m-k)));
+  --m-zone: calc(var(--m-sab) + var(--m-edge) + var(--m-cluster-h));
+}
+.touch-controls { --m-k: clamp(.85, var(--touch-scale, 1), 1.15); }
+
+@media (orientation: portrait) {
+  :root { --tb0: min(56px, 15.5vw); --ta0: min(76px, 21vw); --stick0: min(128px, 35vw); }
+  :root,
+  .touch-controls {
+    --m-cluster-w: calc(var(--tb) + var(--tg) + var(--ta));
+    --m-cluster-h: calc(var(--tb) * 2 + var(--ta) + var(--tg) * 2);
+  }
+}
+@media (orientation: landscape) {
+  :root { --tb0: min(56px, 14vh); --ta0: min(78px, 20vh); --stick0: min(136px, 36vh); --m-cards-h: 54px; }
+  :root,
+  .touch-controls {
+    --m-cluster-w: calc(var(--tb) * 2 + var(--ta) + var(--tg) * 2);
+    --m-cluster-h: calc(var(--tb) + var(--ta) + var(--tg));
+  }
+}
+
+/* ---------------- 메뉴: 좁은 폭 · 낮은 높이 · 터치 기기 ---------------- */
+@media (max-width: 900px), (max-height: 600px), (pointer: coarse) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  /* body 의 touch-action:none 을 메뉴 스크롤 컨테이너에서 풀어 준다 */
+  .screen {
+    padding: max(10px, var(--m-sat)) max(10px, var(--m-sar)) max(10px, var(--m-sab)) max(10px, var(--m-sal));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+  }
+  #select {
+    padding: max(8px, var(--m-sat)) max(8px, var(--m-sar)) max(8px, var(--m-sab)) max(8px, var(--m-sal));
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .tab-body,
+  .help-panel,
+  .settings-panel,
+  .result-panel,
+  .pause-panel,
+  .select-panel,
+  .detail-col,
+  #result-table {
+    touch-action: pan-x pan-y;
+    overscroll-behavior: contain;
+  }
+  @supports (height: 100dvh) {
+    .screen, #hud, .touch-controls { bottom: auto; height: 100dvh; }
+  }
+
+  /* margin:auto 중앙 정렬: 넘치면 위가 잘리지 않고 스크롤된다 */
+  .screen > .panel { margin: auto; max-width: 100%; }
+  #title > .logo { margin-top: auto; }
+  #title > .title-menu { margin-bottom: auto; }
+  .title-hint { bottom: calc(max(10px, var(--m-sab)) + 4px); max-width: calc(100% - 20px); }
+  .title-hint:empty { display: none; }
+
+  .help-panel,
+  .settings-panel,
+  .result-panel,
+  .pause-panel { max-height: var(--m-screen-h); }
+  .pause-panel { overflow: auto; }
+  .detail-col { max-height: var(--m-screen-h); }
+
+  /* 결과·설정·선택: 스크롤해도 버튼 줄은 보인다 */
+  .settings-panel .panel-actions,
+  .result-panel .select-actions,
+  .select-panel .select-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 10px 0 2px;
+    background: linear-gradient(0deg, rgba(16, 26, 58, .97) 72%, rgba(16, 26, 58, 0));
+  }
+  #result-table { max-width: 100%; overflow-x: auto; }
+}
+
+@media (max-width: 700px) {
+  #select { align-items: flex-start; }
+  .select-wrap { margin: auto 0; }
+  .select-panel { max-height: none; overflow: visible; align-self: stretch; min-width: 0; }
+  .pilot-list,
+  .robot-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* 320~430 세로 */
+@media (max-width: 430px) {
+  button.pilot { display: grid; grid-template-columns: 24px minmax(0, 1fr); grid-template-rows: auto auto; }
+  button.pilot .pilot-face { grid-row: 1 / 3; }
+  button.pilot .pilot-txt { grid-column: 2; }
+  button.pilot .pilot-desc { display: none; }
+  button.pilot .pilot-role { grid-column: 2; justify-self: start; padding: 1px 5px; font-size: 10px; white-space: nowrap; }
+  .panel { padding: 16px 14px; border-radius: 14px; }
+  .panel::before { left: 14px; width: 84px; }
+  .panel h2 { font-size: 24px; }
+  .select-panel h2 { font-size: 18px; }
+  .btn { padding: 10px 18px; font-size: 17px; }
+  .btn.big { padding: 10px 22px; font-size: 20px; }
+  .select-actions,
+  .panel-actions { gap: 10px; }
+  .select-actions .btn,
+  .panel-actions .btn { flex: 1 1 auto; }
+  .col,
+  .title-menu { min-width: min(260px, 100%); }
+
+  .logo h1 { font-size: clamp(44px, 16vw, 72px); }
+  .logo-sub { font-size: 10px; letter-spacing: .25em; }
+  .logo-ko { font-size: 18px; }
+  .title-hint { font-size: 12px; padding: 6px 12px; border-radius: 14px; }
+
+  .pilot-list { gap: 6px; }
+  button.pilot { min-width: 0; gap: 6px; padding-right: 6px; }
+  .pilot-txt { min-width: 0; }
+  .pilot-name,
+  .pilot-desc { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .pilot-face { width: 24px; height: 24px; border-width: 2px; }
+  button.robot-card { min-width: 0; padding: 8px 10px 8px 16px; }
+  .rc-name { font-size: 15px; }
+  .opt-row { gap: 8px 12px; }
+  .opt { flex-wrap: wrap; gap: 6px; }
+  .seg { flex-wrap: wrap; max-width: 100%; }
+  .seg button { padding: 6px 11px; }
+
+  .tabs .tab { padding: 6px 11px; font-size: 13px; }
+  .help-grid { grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 6px 10px; }
+  .help-grid > div:nth-child(odd) { white-space: normal; }
+  .pilot-help,
+  .robot-help { grid-template-columns: minmax(0, 1fr); }
+
+  .keys-grid { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 8px; }
+  .k-name { font-size: 12px; white-space: normal; }
+  .k-slot { min-width: 52px; padding: 4px 6px; font-size: 12px; }
+  .opts-grid { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }
+  .opts-grid label { grid-column: 1 / -1; }
+
+  .pause-body { flex-direction: column; align-items: stretch; }
+  .pause-panel .col { min-width: 0; }
+
+  .result-panel h2 { font-size: 34px; }
+  table.res { font-size: 12px; }
+  table.res tbody td { padding: 6px; }
+  table.res td.rank { width: 36px; font-size: 20px; }
+}
+
+/* 낮은 가로 화면: 타이틀 안내를 흐름에 넣어 메뉴와 겹치지 않게 */
+@media (max-height: 520px) {
+  #title { gap: 8px; padding-bottom: max(10px, var(--m-sab)); }
+  #title > .title-menu { margin-bottom: 0; }
+  .title-hint { position: static; transform: none; width: min(760px, 100%); margin-bottom: auto; }
+}
+
+@media (max-width: 900px), (max-height: 600px), (pointer: coarse) {
+  #title { gap: 12px; }
+  #title > .title-menu { margin-bottom: 12px; }
+  #title .title-hint { position: static; transform: none; margin: 0 auto auto; flex: 0 0 auto; }
+}
+
+/* ---------------- 터치 기기 HUD ----------------
+   아래 두 블록은 같은 규칙이다(html.touch-mode / pointer: coarse). 수정 시 함께 고친다. */
+
+  /* 키보드 안내 숨김 · 메뉴 터치 타깃 */
+  html.touch-mode #hud .keyhint,
+  html.touch-mode .pause-keys { display: none !important; }
+  html.touch-mode .btn { min-height: 48px; }
+  html.touch-mode .btn.big { min-height: 52px; }
+  html.touch-mode .seg button,
+  html.touch-mode .tabs .tab,
+  html.touch-mode .k-slot,
+  html.touch-mode button.pilot { min-height: 44px; }
+  html.touch-mode button.robot-card { min-height: 48px; }
+  html.touch-mode .opts-grid input[type=checkbox] { width: 28px; height: 28px; }
+  html.touch-mode .opts-grid input[type=range] { min-height: 36px; }
+
+  /* HUD: 4명 카드 상단 compact */
+  html.touch-mode #hud .cards {
+    top: calc(var(--m-sat) + 4px);
+    bottom: auto;
+    transform: none;
+    width: auto;
+    max-width: none;
+    display: grid;
+    gap: 4px;
+    align-items: start;
+  }
+  html.touch-mode #hud .card {
+    width: auto;
+    min-width: 0;
+    padding: 3px 6px 3px 9px;
+    gap: 1px;
+    border-width: 2px;
+    border-radius: 7px;
+    box-shadow: 0 3px 0 var(--ink);
+  }
+  html.touch-mode #hud .card::before { left: -2px; top: -2px; bottom: -2px; width: 6px; border-width: 2px; }
+  html.touch-mode #hud .card.me { transform: skewX(-8deg); box-shadow: 0 3px 0 var(--ink), 0 0 0 2px var(--yellow); }
+  html.touch-mode #hud .card.me::after { top: auto; bottom: -8px; right: 6px; padding: 0 4px; font-size: 8px; border-width: 1.5px; }
+  html.touch-mode #hud .card-name { font-size: 10.5px; }
+  html.touch-mode #hud .card-stock { font-size: 9px; letter-spacing: 0; }
+  html.touch-mode #hud .card .bar { height: 7px; border-width: 1.5px; }
+  html.touch-mode #hud .card .bar.rbar { height: 5px; }
+  html.touch-mode #hud .card-gauge { height: 5px; margin-right: 12px; border-width: 1.5px; }
+  html.touch-mode #hud .card-gauge::after { right: -12px; font-size: 9px; }
+  html.touch-mode #hud .card-robot { gap: 3px; }
+  html.touch-mode #hud .card-robot .rlabel { font-size: 8px; }
+  html.touch-mode #hud .card-state { min-height: 0; font-size: 8.5px; line-height: 1.1; }
+  html.touch-mode #hud .card-shield { height: 2px; margin-top: 1px; }
+  html.touch-mode #hud .timer { min-width: 64px; padding: 0 10px 2px; border-width: 3px; border-top-width: 0; box-shadow: 0 3px 0 var(--ink); }
+  html.touch-mode #hud .toast { padding: 4px 12px; font-size: 12px; border-width: 2px; }
+  html.touch-mode #hud .kf { padding: 2px 8px; font-size: 11px; border-width: 1.5px; border-left-width: 4px; }
+  html.touch-mode #hud .skill { min-width: 0; gap: 0; padding: 3px 9px; border-width: 2px; box-shadow: 0 3px 0 var(--ink); }
+  html.touch-mode #hud .skill .key { display: none; }
+  html.touch-mode #hud .skill .name { font-size: 11px; }
+  html.touch-mode #hud .ctx-hint {
+    width: max-content;
+    padding: 6px 12px;
+    font-size: 13px;
+    white-space: normal;
+    text-align: center;
+    border-width: 2px;
+  }
+  html.touch-mode #hud .combo .n { font-size: 44px; -webkit-text-stroke-width: 5px; }
+  html.touch-mode #hud .combo .t { font-size: 16px; }
+  html.touch-mode #hud .combo .cd-dmg { font-size: 13px; }
+  html.touch-mode #hud .combo .rate { font-size: 20px; -webkit-text-stroke-width: 4px; }
+  html.touch-mode #hud .combo .rate[data-lv="3"] { font-size: 22px; }
+  html.touch-mode #hud .combo .rate[data-lv="4"] { font-size: 24px; }
+
+  /* 세로: 카드 4열 → 타이머 → 전장 → 스킬 줄 → 아래 컨트롤 */
+  @media (orientation: portrait) {
+    html.touch-mode #hud .cards {
+      left: calc(var(--m-sal) + 4px);
+      right: calc(var(--m-sar) + 4px);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    html.touch-mode #hud .timer { top: calc(var(--m-sat) + var(--m-cards-h) + 2px); font-size: 20px; }
+    html.touch-mode #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 34px); max-width: calc(100vw - 24px); }
+    html.touch-mode #hud .combo { left: calc(var(--m-sal) + 8px); top: calc(var(--m-sat) + var(--m-cards-h) + 64px); max-width: 62vw; }
+    html.touch-mode #hud .killfeed { top: calc(var(--m-sat) + var(--m-cards-h) + 58px); right: calc(var(--m-sar) + 6px); max-width: 46vw; }
+    html.touch-mode #hud .skills {
+      left: calc(var(--m-sal) + 8px);
+      right: calc(var(--m-sar) + 8px);
+      bottom: calc(var(--m-zone) + 30px);
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 4px;
+    }
+    html.touch-mode #hud .ctx-hint { bottom: calc(var(--m-zone) + 62px); max-width: calc(100vw - 24px); }
+    html.touch-mode #hud .banner { font-size: clamp(36px, 13vw, 64px); }
+    html.touch-mode #hud .banner.go { font-size: clamp(48px, 17vw, 88px); }
+    html.touch-mode #hud .banner.danger { font-size: clamp(28px, 9vw, 48px); }
+    html.touch-mode #hud .banner.ko { font-size: clamp(72px, 26vw, 130px); }
+  }
+
+  /* 가로: 카드 2+2 사이 타이머, 좌 스틱 · 우 버튼 */
+  @media (orientation: landscape) {
+    html.touch-mode #hud .cards {
+      left: calc(max(var(--m-sal), var(--m-sar)) + var(--m-side));
+      right: calc(max(var(--m-sal), var(--m-sar)) + var(--m-side));
+      grid-template-columns: repeat(2, minmax(0, 1fr)) var(--m-timer-w) repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    html.touch-mode #hud .card:nth-child(3) { grid-column: 4; }
+    html.touch-mode #hud .timer { top: var(--m-sat); min-width: 72px; font-size: 22px; }
+    html.touch-mode #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 6px); max-width: 60vw; }
+    html.touch-mode #hud .combo { left: calc(var(--m-sal) + 14px); top: calc(var(--m-sat) + var(--m-cards-h) + 10px); max-width: 38vw; }
+    html.touch-mode #hud .killfeed { top: calc(var(--m-sat) + var(--m-cards-h) + 8px); right: calc(var(--m-sar) + 12px); }
+    html.touch-mode #hud .skills { right: calc(var(--m-sar) + var(--m-edge)); bottom: calc(var(--m-zone) + 8px); gap: 4px; }
+    html.touch-mode #hud .ctx-hint {
+      bottom: calc(var(--m-sab) + 40px);
+      max-width: max(160px, calc(100vw - 2 * (var(--m-cluster-w) + var(--m-edge) + 12px) - var(--m-sal) - var(--m-sar)));
+    }
+  }
+
+@media (pointer: coarse) {
+  /* 키보드 안내 숨김 · 메뉴 터치 타깃 */
+  html #hud .keyhint,
+  html .pause-keys { display: none !important; }
+  html .btn { min-height: 48px; }
+  html .btn.big { min-height: 52px; }
+  html .seg button,
+  html .tabs .tab,
+  html .k-slot,
+  html button.pilot { min-height: 44px; }
+  html button.robot-card { min-height: 48px; }
+  html .opts-grid input[type=checkbox] { width: 28px; height: 28px; }
+  html .opts-grid input[type=range] { min-height: 36px; }
+
+  /* HUD: 4명 카드 상단 compact */
+  html #hud .cards {
+    top: calc(var(--m-sat) + 4px);
+    bottom: auto;
+    transform: none;
+    width: auto;
+    max-width: none;
+    display: grid;
+    gap: 4px;
+    align-items: start;
+  }
+  html #hud .card {
+    width: auto;
+    min-width: 0;
+    padding: 3px 6px 3px 9px;
+    gap: 1px;
+    border-width: 2px;
+    border-radius: 7px;
+    box-shadow: 0 3px 0 var(--ink);
+  }
+  html #hud .card::before { left: -2px; top: -2px; bottom: -2px; width: 6px; border-width: 2px; }
+  html #hud .card.me { transform: skewX(-8deg); box-shadow: 0 3px 0 var(--ink), 0 0 0 2px var(--yellow); }
+  html #hud .card.me::after { top: auto; bottom: -8px; right: 6px; padding: 0 4px; font-size: 8px; border-width: 1.5px; }
+  html #hud .card-name { font-size: 10.5px; }
+  html #hud .card-stock { font-size: 9px; letter-spacing: 0; }
+  html #hud .card .bar { height: 7px; border-width: 1.5px; }
+  html #hud .card .bar.rbar { height: 5px; }
+  html #hud .card-gauge { height: 5px; margin-right: 12px; border-width: 1.5px; }
+  html #hud .card-gauge::after { right: -12px; font-size: 9px; }
+  html #hud .card-robot { gap: 3px; }
+  html #hud .card-robot .rlabel { font-size: 8px; }
+  html #hud .card-state { min-height: 0; font-size: 8.5px; line-height: 1.1; }
+  html #hud .card-shield { height: 2px; margin-top: 1px; }
+  html #hud .timer { min-width: 64px; padding: 0 10px 2px; border-width: 3px; border-top-width: 0; box-shadow: 0 3px 0 var(--ink); }
+  html #hud .toast { padding: 4px 12px; font-size: 12px; border-width: 2px; }
+  html #hud .kf { padding: 2px 8px; font-size: 11px; border-width: 1.5px; border-left-width: 4px; }
+  html #hud .skill { min-width: 0; gap: 0; padding: 3px 9px; border-width: 2px; box-shadow: 0 3px 0 var(--ink); }
+  html #hud .skill .key { display: none; }
+  html #hud .skill .name { font-size: 11px; }
+  html #hud .ctx-hint {
+    width: max-content;
+    padding: 6px 12px;
+    font-size: 13px;
+    white-space: normal;
+    text-align: center;
+    border-width: 2px;
+  }
+  html #hud .combo .n { font-size: 44px; -webkit-text-stroke-width: 5px; }
+  html #hud .combo .t { font-size: 16px; }
+  html #hud .combo .cd-dmg { font-size: 13px; }
+  html #hud .combo .rate { font-size: 20px; -webkit-text-stroke-width: 4px; }
+  html #hud .combo .rate[data-lv="3"] { font-size: 22px; }
+  html #hud .combo .rate[data-lv="4"] { font-size: 24px; }
+
+  /* 세로: 카드 4열 → 타이머 → 전장 → 스킬 줄 → 아래 컨트롤 */
+  @media (orientation: portrait) {
+    html #hud .cards {
+      left: calc(var(--m-sal) + 4px);
+      right: calc(var(--m-sar) + 4px);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    html #hud .timer { top: calc(var(--m-sat) + var(--m-cards-h) + 2px); font-size: 20px; }
+    html #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 34px); max-width: calc(100vw - 24px); }
+    html #hud .combo { left: calc(var(--m-sal) + 8px); top: calc(var(--m-sat) + var(--m-cards-h) + 64px); max-width: 62vw; }
+    html #hud .killfeed { top: calc(var(--m-sat) + var(--m-cards-h) + 58px); right: calc(var(--m-sar) + 6px); max-width: 46vw; }
+    html #hud .skills {
+      left: calc(var(--m-sal) + 8px);
+      right: calc(var(--m-sar) + 8px);
+      bottom: calc(var(--m-zone) + 30px);
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 4px;
+    }
+    html #hud .ctx-hint { bottom: calc(var(--m-zone) + 62px); max-width: calc(100vw - 24px); }
+    html #hud .banner { font-size: clamp(36px, 13vw, 64px); }
+    html #hud .banner.go { font-size: clamp(48px, 17vw, 88px); }
+    html #hud .banner.danger { font-size: clamp(28px, 9vw, 48px); }
+    html #hud .banner.ko { font-size: clamp(72px, 26vw, 130px); }
+  }
+
+  /* 가로: 카드 2+2 사이 타이머, 좌 스틱 · 우 버튼 */
+  @media (orientation: landscape) {
+    html #hud .cards {
+      left: calc(max(var(--m-sal), var(--m-sar)) + var(--m-side));
+      right: calc(max(var(--m-sal), var(--m-sar)) + var(--m-side));
+      grid-template-columns: repeat(2, minmax(0, 1fr)) var(--m-timer-w) repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    html #hud .card:nth-child(3) { grid-column: 4; }
+    html #hud .timer { top: var(--m-sat); min-width: 72px; font-size: 22px; }
+    html #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 6px); max-width: 60vw; }
+    html #hud .combo { left: calc(var(--m-sal) + 14px); top: calc(var(--m-sat) + var(--m-cards-h) + 10px); max-width: 38vw; }
+    html #hud .killfeed { top: calc(var(--m-sat) + var(--m-cards-h) + 8px); right: calc(var(--m-sar) + 12px); }
+    html #hud .skills { right: calc(var(--m-sar) + var(--m-edge)); bottom: calc(var(--m-zone) + 8px); gap: 4px; }
+    html #hud .ctx-hint {
+      bottom: calc(var(--m-sab) + 40px);
+      max-width: max(160px, calc(100vw - 2 * (var(--m-cluster-w) + var(--m-edge) + 12px) - var(--m-sal) - var(--m-sar)));
+    }
+  }
+}
+
+/* ---------------- 터치 컨트롤 ---------------- */
+#touch-controls[hidden],
+.touch-controls[hidden] { display: none !important; }
+
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 4;               /* #hud(3) 위, #flash(5)·.screen(10) 아래 */
+  pointer-events: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  font-family: var(--font);
+}
+.touch-controls .touch-stick,
+.touch-controls .touch-btn,
+.touch-controls .touch-menu { pointer-events: auto; touch-action: none; }
+.touch-controls .touch-actions,
+.touch-controls .touch-status { pointer-events: none; }
+
+/* 스틱: 기본 왼쪽 아래, 버튼 무리의 세로 중앙에 맞춘다 */
+.touch-stick {
+  position: absolute;
+  left: calc(var(--m-sal) + var(--m-edge) + 4px);
+  bottom: calc(var(--m-sab) + var(--m-edge) + max(0px, (var(--m-cluster-h) - var(--stick)) / 2));
+  width: var(--stick);
+  height: var(--stick);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 26, 58, .28) 0 54%, rgba(16, 26, 58, .5) 55% 100%);
+  border: 3px solid rgba(5, 7, 15, .75);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .18), 0 4px 0 rgba(5, 7, 15, .45);
+}
+.touch-stick::before {
+  /* 엄지가 조금 빗나가도 잡히도록 히트 영역만 넓힌다 */
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+}
+.touch-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44%;
+  height: 44%;
+  margin: -22% 0 0 -22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #c9d6ff 55%, #7f93c8);
+  border: 3px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  /* JS는 inline transform 또는 --kx/--ky 로 움직인다 */
+  transform: translate(var(--kx, 0px), var(--ky, 0px));
+  pointer-events: none;
+}
+.touch-stick.is-down { border-color: var(--cyan); box-shadow: inset 0 0 0 2px rgba(47, 230, 255, .35), 0 0 14px rgba(47, 230, 255, .45); }
+.touch-stick.is-down .touch-knob { background: radial-gradient(circle at 35% 30%, #ffffff, var(--cyan) 60%, #1b8fb0); }
+
+/* 버튼 무리: 공격은 항상 바깥 아래 모서리, 점프는 공격 옆 */
+.touch-actions {
+  position: absolute;
+  right: calc(var(--m-sar) + var(--m-edge));
+  bottom: calc(var(--m-sab) + var(--m-edge));
+  display: grid;
+  gap: var(--tg);
+  grid-template-columns: var(--tb) var(--ta);
+  grid-template-rows: var(--tb) var(--tb) var(--ta);
+  grid-template-areas:
+    "grd  hvy"
+    "dash jump"
+    "act  atk";
+}
+@media (orientation: landscape) {
+  .touch-actions {
+    grid-template-columns: var(--tb) var(--tb) var(--ta);
+    grid-template-rows: var(--tb) var(--ta);
+    grid-template-areas:
+      "grd dash hvy"
+      "act jump atk";
+  }
+}
+
+.touch-btn {
+  --tc: #3a4f96;
+  --sz: var(--tb);
+  position: relative;
+  width: var(--sz);
+  height: var(--sz);
+  min-width: 48px;
+  min-height: 48px;
+  place-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  font-family: inherit;
+  color: var(--white);
+  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--tc) 55%, #fff), var(--tc) 58%, color-mix(in srgb, var(--tc) 68%, #000));
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 0 4px 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, .2);
+  opacity: .92;
+  cursor: pointer;
+  transition: transform .06s, box-shadow .06s, filter .06s;
+}
+.touch-btn[data-touch-action="atk"]  { --tc: var(--carrot); --sz: var(--ta); grid-area: atk; }
+.touch-btn[data-touch-action="hvy"]  { --tc: var(--pink); grid-area: hvy; }
+.touch-btn[data-touch-action="grd"]  { --tc: #1f9fc0; grid-area: grd; }
+.touch-btn[data-touch-action="jump"] { --tc: #4a63c0; grid-area: jump; }
+.touch-btn[data-touch-action="dash"] { --tc: #7a4fd0; grid-area: dash; }
+.touch-btn[data-touch-action="act"]  { --tc: #2fa865; grid-area: act; }
+
+.touch-label {
+  max-width: 92%;
+  font-size: calc(13px * var(--m-k));
+  font-weight: 900;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: var(--ts-2);
+}
+.touch-btn[data-touch-action="atk"] .touch-label { font-size: calc(17px * var(--m-k)); }
+.touch-sub {
+  max-width: 88%;
+  font-size: calc(9.5px * var(--m-k));
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff3c4;
+  text-shadow: 0 1px 0 var(--ink), 0 0 2px var(--ink);
+}
+.touch-sub:empty { display: none; }
+
+.touch-btn.is-down {
+  transform: translateY(3px) scale(.94);
+  box-shadow: 0 1px 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, .35);
+  filter: brightness(1.2);
+  opacity: 1;
+}
+.touch-btn:disabled,
+.touch-btn[aria-disabled="true"] { filter: grayscale(.7) brightness(.8); opacity: .55; }
+
+/* 일시정지 버튼 */
+.touch-menu {
+  position: absolute;
+  top: calc(var(--m-sat) + var(--m-cards-h) + 6px);
+  right: calc(var(--m-sar) + 6px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 10px;
+  font: 900 14px/1 var(--font);
+  color: var(--white);
+  background: rgba(8, 12, 30, .72);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 3px 0 var(--ink);
+  cursor: pointer;
+}
+.touch-menu.is-down { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+@media (orientation: landscape) {
+  .touch-menu { top: calc(var(--m-sat) + 4px); }
+}
+
+/* 상태 한 줄: 세로는 컨트롤 바로 위 가운데, 가로는 스틱과 버튼 사이 아래 */
+.touch-status {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--m-zone) + 4px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--white);
+  background: rgba(8, 12, 30, .72);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  text-shadow: 0 1px 0 var(--ink);
+  overflow: hidden;
+}
+.touch-status:empty { display: none; }
+@media (orientation: landscape) {
+  .touch-status {
+    bottom: calc(var(--m-sab) + 8px);
+    max-width: max(120px, calc(100vw - 2 * (var(--m-cluster-w) + var(--m-edge) + 12px) - var(--m-sal) - var(--m-sar)));
+  }
+}
+
+.touch-btn:focus-visible,
+.touch-menu:focus-visible,
+.touch-stick:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+
+/* 왼손 배치: 좌우 반전 */
+.touch-controls.left-handed .touch-stick {
+  left: auto;
+  right: calc(var(--m-sar) + var(--m-edge) + 4px);
+}
+.touch-controls.left-handed .touch-actions {
+  right: auto;
+  left: calc(var(--m-sal) + var(--m-edge));
+  grid-template-columns: var(--ta) var(--tb);
+  grid-template-areas:
+    "hvy  grd"
+    "jump dash"
+    "atk  act";
+}
+@media (orientation: landscape) {
+  .touch-controls.left-handed .touch-actions {
+    grid-template-columns: var(--ta) var(--tb) var(--tb);
+    grid-template-areas:
+      "hvy dash grd"
+      "atk jump act";
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-btn,
+  .touch-menu { transition: none; }
+}
+
+/* Combat touch buttons already carry the hold/cooldown cues. */
+html.touch-mode #hud .ctx-hint { display: none; }
+html.touch-mode #hud .skills .skill:first-child,
+html.touch-mode #hud .skills .skill:last-child { display: none; }
+@media (orientation: portrait) {
+  :root { --m-cards-h: 76px; }
+  html.touch-mode #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 62px); }
+  html.touch-mode #hud .killfeed { display: none; }
+}

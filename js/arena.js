@@ -1,0 +1,991 @@
+// 하늘섬 아레나: 공용 환경(하늘, 조명, 구름) + 스테이지 3종 (당근 농장, 풍차 요새, 구름 정원)
+// 지형은 도형 목록으로 표현한다. 도형마다 발자국(원/회전 사각형)과 윗면 높이가 있다.
+//   disc: 원판 (holes 로 구멍), mound: 완만한 언덕, box: 블록/다리/움직이는 발판, ramp: 경사로
+// 게임 쪽 API: setStage, setQuality, groundAt, surfaceAt, pushOut, isVoid, safePoint, randomPoint, waypoint
+import * as THREE from 'three';
+
+const STEP = 0.7; // 걸어서 오를 수 있는 높이
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+const grad = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([90, 170, 230, 255]), 4, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.needsUpdate = true;
+  return t;
+})();
+const toon = (color, extra = {}) => new THREE.MeshToonMaterial({ color, gradientMap: grad, ...extra });
+const olMat = new THREE.MeshBasicMaterial({ color: 0x0b0d18, side: THREE.BackSide });
+olMat.onBeforeCompile = (s) => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normal * 0.08;'); };
+
+function mesh(geo, mat, parent, x = 0, y = 0, z = 0, outline = true) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  if (outline) {
+    const o = new THREE.Mesh(geo, olMat);
+    o.userData.outline = true;
+    m.add(o);
+  }
+  parent.add(m);
+  return m;
+}
+
+// ---------------- 절전 화질: 정적 메시 합치기 ----------------
+// 움직이지 않는 스테이지 메시를 재질별로 한 지오메트리로 굽는다. 윤곽선은 전부 한 번에 그린다.
+// 원본은 숨기기만 하므로 고화질로 돌아가면 그대로 다시 보인다. 충돌/길찾기는 도형 목록만 쓰므로 영향 없음.
+const _mw = new THREE.Matrix4(), _nm = new THREE.Matrix3(), _v = new THREE.Vector3();
+function bakeBatch(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map();
+  const hidden = [];
+  const piece = (mat, cast, recv, geo, matrix, start, count) => {
+    const key = mat.uuid + (cast ? '1' : '0') + (recv ? '1' : '0');
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { mat, cast, recv, pieces: [] }));
+    const idx = geo.index, total = idx ? idx.count : geo.attributes.position.count;
+    const s = Math.max(0, start), e = Math.min(total, start + count);
+    if (e > s) b.pieces.push({ geo, matrix: matrix.clone(), start: s, count: e - s });
+  };
+  // 숨길 수 있는 메시: 정적, 불투명, 보임, 그리고 자식이 전부 윤곽선이거나 함께 구워지는 메시.
+  // three.js 는 부모를 숨기면 자식도 숨기므로, 굽지 않는 자식(투명/움직임/그룹/인스턴스)이
+  // 하나라도 있으면 그 부모는 굽지 않고 그대로 둔다.
+  const ok = new Map();
+  const bakeable = (o) => {
+    if (ok.has(o)) return ok.get(o);
+    let r = !!o.isMesh && !o.isInstancedMesh && !o.userData.dyn && !o.userData.outline && o.visible;
+    if (r) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (mats.some((m) => !m || m.transparent)) r = false;
+    }
+    if (r) for (const c of o.children) if (!(c.userData.outline && c.isMesh && !c.material.transparent) && !bakeable(c)) { r = false; break; }
+    ok.set(o, r);
+    return r;
+  };
+  const walk = (o) => {
+    if (o.userData.dyn) return;
+    if (bakeable(o)) {
+      {
+        _mw.multiplyMatrices(inv, o.matrixWorld);
+        const geo = o.geometry;
+        if (Array.isArray(o.material)) {
+          for (const g of geo.groups) { const m = o.material[g.materialIndex]; if (m) piece(m, o.castShadow, o.receiveShadow, geo, _mw, g.start, g.count); }
+        } else piece(o.material, o.castShadow, o.receiveShadow, geo, _mw, 0, Infinity);
+        for (const c of o.children) if (c.userData.outline && c.visible) piece(c.material, false, false, geo, _mw, 0, Infinity);
+        hidden.push(o);
+      }
+    }
+    for (const c of o.children) walk(c);
+  };
+  walk(root);
+  const merged = [], geos = [];
+  for (const b of buckets.values()) {
+    const withUv = b.mat !== olMat;
+    let nv = 0, ni = 0;
+    for (const p of b.pieces) { nv += p.geo.index ? p.geo.attributes.position.count : p.count; ni += p.count; }
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = withUv ? new Float32Array(nv * 2) : null;
+    const index = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let vo = 0, io = 0;
+    for (const p of b.pieces) {
+      const g = p.geo, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, I = g.index;
+      _nm.getNormalMatrix(p.matrix);
+      const flip = p.matrix.determinant() < 0;
+      const v0 = I ? 0 : p.start, vn = I ? P.count : p.count;
+      for (let k = 0; k < vn; k++) {
+        const src = v0 + k, dst = vo + k;
+        _v.fromBufferAttribute(P, src).applyMatrix4(p.matrix);
+        pos[dst * 3] = _v.x; pos[dst * 3 + 1] = _v.y; pos[dst * 3 + 2] = _v.z;
+        if (N) { _v.fromBufferAttribute(N, src).applyMatrix3(_nm).normalize(); nor[dst * 3] = _v.x; nor[dst * 3 + 1] = _v.y; nor[dst * 3 + 2] = _v.z; }
+        if (uv && U) { uv[dst * 2] = U.getX(src); uv[dst * 2 + 1] = U.getY(src); }
+      }
+      for (let k = 0; k < p.count; k += 3) {
+        const a = I ? I.getX(p.start + k) : k, bb = I ? I.getX(p.start + k + 1) : k + 1, c = I ? I.getX(p.start + k + 2) : k + 2;
+        index[io++] = vo + a; index[io++] = vo + (flip ? c : bb); index[io++] = vo + (flip ? bb : c);
+      }
+      vo += vn;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (uv) geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    geo.computeBoundingSphere();
+    geos.push(geo);
+    const m = new THREE.Mesh(geo, b.mat);
+    m.castShadow = b.cast; m.receiveShadow = b.recv;
+    m.matrixAutoUpdate = false;
+    m.userData.batch = true;
+    m.visible = false;
+    root.add(m);
+    merged.push(m);
+  }
+  return { merged, hidden, geos };
+}
+
+let groundTex = null;
+function groundTexture() {
+  if (groundTex) return groundTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 1024;
+  const g = c.getContext('2d');
+  const cx = 512;
+  g.fillStyle = '#6fcf4f';
+  g.fillRect(0, 0, 1024, 1024);
+  for (let r = 0; r < 12; r++) {
+    for (let a = 0; a < 32; a++) {
+      if ((r + a) % 2) continue;
+      g.beginPath();
+      const r0 = r * 40, r1 = r0 + 40, a0 = (a / 32) * TAU, a1 = ((a + 1) / 32) * TAU;
+      g.arc(cx, cx, r1, a0, a1);
+      g.arc(cx, cx, r0, a1, a0, true);
+      g.fillStyle = '#7ddb5b';
+      g.fill();
+    }
+  }
+  // 가장자리 경고 링
+  const R = 500;
+  for (let a = 0; a < 72; a++) {
+    g.beginPath();
+    g.arc(cx, cx, R, (a / 72) * TAU, ((a + 1) / 72) * TAU);
+    g.arc(cx, cx, R - 26, ((a + 1) / 72) * TAU, (a / 72) * TAU, true);
+    g.fillStyle = a % 2 ? '#fff4d6' : '#ff8a1f';
+    g.fill();
+  }
+  g.lineWidth = 6;
+  g.strokeStyle = '#2a1a10';
+  g.beginPath(); g.arc(cx, cx, R - 27, 0, TAU); g.stroke();
+  for (let i = 0; i < 600; i++) {
+    const x = Math.random() * 1024, y = Math.random() * 1024;
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(40,120,40,.18)' : 'rgba(255,255,200,.12)';
+    g.fillRect(x, y, 3, 8);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  groundTex = t;
+  return t;
+}
+
+let stripeTex = null;
+function stripeTexture() {
+  if (stripeTex) return stripeTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1a1420';
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#ffb000';
+  for (let i = -128; i < 256; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 16, 0); g.lineTo(i + 16 + 128, 128); g.lineTo(i + 128, 128); g.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(4, 4);
+  stripeTex = t;
+  return t;
+}
+
+// ---------------- 도형 계산 ----------------
+const LC = { u: 0, v: 0 };
+function toLocal(s, x, z) {
+  const dx = x - s.x, dz = z - s.z;
+  LC.u = dx * s.c + dz * s.s;
+  LC.v = -dx * s.s + dz * s.c;
+  return LC;
+}
+function inHole(s, x, z) {
+  for (const h of s.holes) { const dx = x - h.x, dz = z - h.z; if (dx * dx + dz * dz < h.r * h.r) return true; }
+  return false;
+}
+// 윗면 높이. 발자국 밖이면 null
+function topAt(s, x, z) {
+  if (s.type === 'disc') {
+    const dx = x - s.x, dz = z - s.z;
+    if (dx * dx + dz * dz > s.r * s.r) return null;
+    if (s.holes && inHole(s, x, z)) return null;
+    return s.h;
+  }
+  if (s.type === 'mound') {
+    const dx = x - s.x, dz = z - s.z;
+    const d2 = (dx * dx + dz * dz) / (s.r * s.r);
+    if (d2 > 1) return null;
+    const f = 1 - d2;
+    return s.base + s.H * f * Math.sqrt(f);
+  }
+  const l = toLocal(s, x, z);
+  if (Math.abs(l.u) > s.hu || Math.abs(l.v) > s.hv) return null;
+  if (s.type === 'box') return s.h;
+  return s.h0 + ((l.u + s.hu) / (2 * s.hu)) * (s.h1 - s.h0);
+}
+// 발자국 위 가장 가까운 점
+const NP = { x: 0, z: 0, inside: false, d: 0, u: 0, v: 0 };
+function nearest(s, x, z) {
+  if (s.type === 'disc') {
+    const dx = x - s.x, dz = z - s.z, d = Math.hypot(dx, dz);
+    NP.d = d;
+    if (d <= s.r) { NP.x = x; NP.z = z; NP.inside = true; return NP; }
+    NP.x = s.x + (dx / d) * s.r; NP.z = s.z + (dz / d) * s.r; NP.inside = false;
+    return NP;
+  }
+  const l = toLocal(s, x, z);
+  const cu = clamp(l.u, -s.hu, s.hu), cv = clamp(l.v, -s.hv, s.hv);
+  NP.inside = cu === l.u && cv === l.v;
+  NP.u = l.u; NP.v = l.v;
+  NP.x = s.x + cu * s.c - cv * s.s;
+  NP.z = s.z + cu * s.s + cv * s.c;
+  return NP;
+}
+function heightAtNearest(s) {
+  if (s.type === 'ramp') {
+    const u = clamp(NP.inside ? NP.u : toLocal(s, NP.x, NP.z).u, -s.hu, s.hu);
+    return s.h0 + ((u + s.hu) / (2 * s.hu)) * (s.h1 - s.h0);
+  }
+  return s.h;
+}
+
+export function createArena(scene) {
+  const group = new THREE.Group();
+  scene.add(group);
+
+  // ---------------- 공용 환경 ----------------
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: { top: { value: new THREE.Color(0x2f7fe0) }, mid: { value: new THREE.Color(0x8fd0ff) }, bot: { value: new THREE.Color(0xffe0b0) } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, 0.5, -h)); gl_FragColor = vec4(c, 1.0); }',
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), skyMat);
+  sky.renderOrder = -1;
+  scene.add(sky);
+  scene.fog = new THREE.Fog(0xbfe4ff, 90, 380);
+
+  const hemi = new THREE.HemisphereLight(0xdff2ff, 0x6a8a4a, 1.15);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff1d8, 2.6);
+  sun.position.set(22, 40, 16);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const sc = sun.shadow.camera;
+  sc.left = -30; sc.right = 30; sc.top = 30; sc.bottom = -30; sc.near = 5; sc.far = 110;
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.04;
+  scene.add(sun);
+  scene.add(sun.target);
+  const amb = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(amb);
+
+  const floaters = [];
+  const islandMat = toon(0x6fcf4f), islandRock = toon(0x8a7070);
+  for (let i = 0; i < 7; i++) {
+    const g = new THREE.Group();
+    const a = (i / 7) * TAU + 0.3, d = 50 + (i % 3) * 18;
+    const s = 2.5 + (i % 3) * 1.6;
+    g.position.set(Math.cos(a) * d, -8 - (i % 4) * 7, Math.sin(a) * d);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(s, s * 0.9, 0.8, 12), islandMat);
+    const r = new THREE.Mesh(new THREE.ConeGeometry(s * 0.9, s * 2, 8), islandRock);
+    r.rotation.x = Math.PI; r.position.y = -s - 0.4;
+    g.add(t, r);
+    // 절전 화질에서 쓰는 인스턴스용: 단위 도형 → 원래 크기 배율
+    const parts = [[0, t, new THREE.Vector3(s, 0.8, s)], [1, r, new THREE.Vector3(s, s, s)]];
+    if (i % 2 === 0) {
+      const tr = new THREE.Mesh(new THREE.SphereGeometry(s * 0.45, 8, 6), toon(0x3faa3a));
+      tr.position.y = s * 0.6;
+      g.add(tr);
+      parts.push([2, tr, new THREE.Vector3(s, s, s)]);
+    }
+    scene.add(g);
+    floaters.push({ g, base: g.position.y, ph: i * 1.3, parts });
+  }
+  const cloudMat = toon(0xffffff, { transparent: true, opacity: 0.95 });
+  const puff = new THREE.SphereGeometry(1, 10, 8);
+  const clouds = [];
+  for (let i = 0; i < 12; i++) {
+    const c = new THREE.Group();
+    for (let k = 0; k < 4; k++) {
+      const m = new THREE.Mesh(puff, cloudMat);
+      m.position.set((k - 1.5) * 2.2, Math.sin(k * 1.7) * 0.6, Math.cos(k * 2.3) * 0.8);
+      m.scale.setScalar(2 + (k % 2) * 1.2);
+      c.add(m);
+    }
+    const a = (i / 12) * TAU, d = 70 + (i % 4) * 30;
+    c.position.set(Math.cos(a) * d, -22 + (i % 5) * 10 - (i % 2) * 30, Math.sin(a) * d);
+    c.scale.setScalar(1 + (i % 3) * 0.5);
+    scene.add(c);
+    clouds.push({ c, a, d, sp: 0.01 + (i % 3) * 0.006 });
+  }
+
+  // ---------------- 절전 화질: 배경 인스턴싱 ----------------
+  // 떠 있는 섬 18개 + 구름 조각 48개 메시를 인스턴스 메시 4개로 그린다 (첫 전환 때 한 번 만든다)
+  let lowEnv = null;
+  const _m = new THREE.Matrix4(), _s = new THREE.Matrix4();
+  function buildLowEnv() {
+    const kinds = [
+      [new THREE.CylinderGeometry(1, 0.9, 1, 12), islandMat],
+      [new THREE.ConeGeometry(0.9, 2, 8), islandRock],
+      [new THREE.SphereGeometry(0.45, 8, 6), toon(0x3faa3a)],
+    ];
+    const slots = [];
+    const counts = [0, 0, 0];
+    for (const f of floaters) for (const [k, mesh, sc] of f.parts) {
+      mesh.updateMatrix();
+      slots.push({ owner: f.g, k, idx: counts[k]++, L: new THREE.Matrix4().multiplyMatrices(mesh.matrix, _s.makeScale(sc.x, sc.y, sc.z)) });
+    }
+    const puffLow = new THREE.SphereGeometry(1, 8, 6);
+    const cloudLowMat = toon(0xffffff); // 불투명: 정렬/블렌딩 없이 그린다
+    let nc = 0;
+    for (const c of clouds) for (const p of c.c.children) {
+      p.updateMatrix();
+      slots.push({ owner: c.c, k: 3, idx: nc++, L: p.matrix.clone() });
+    }
+    counts.push(nc);
+    kinds.push([puffLow, cloudLowMat]);
+    const meshes = kinds.map(([geo, mat], k) => {
+      const im = new THREE.InstancedMesh(geo, mat, counts[k]);
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.frustumCulled = false; // 인스턴스가 매 프레임 움직이므로 경계 구를 다시 계산하지 않는다
+      im.visible = false;
+      scene.add(im);
+      return im;
+    });
+    lowEnv = { meshes, slots };
+  }
+  function writeLowEnv() {
+    let last = null;
+    for (const sl of lowEnv.slots) {
+      if (sl.owner !== last) { sl.owner.updateMatrix(); last = sl.owner; }
+      lowEnv.meshes[sl.k].setMatrixAt(sl.idx, _m.multiplyMatrices(sl.owner.matrix, sl.L));
+    }
+    for (const im of lowEnv.meshes) im.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---------------- 스테이지 상태 ----------------
+  const A = {
+    group, radius: 24, spawnPoints: [], obstacles: [], lights: { hemi, sun, amb }, stageId: null,
+    shapes: [], solids: [], walks: [], holes: [], movers: [], nodes: [], links: [],
+  };
+  let st = null; // 현재 스테이지의 메시/리소스
+  const G = (geo) => { st.geos.push(geo); return geo; };
+  const M = (mat) => { st.mats.push(mat); return mat; };
+  let mats = null;
+
+  function addShape(s) {
+    s.c = Math.cos(s.rot || 0); s.s = Math.sin(s.rot || 0);
+    if (s.walk === undefined) s.walk = true;
+    if (s.br === undefined) s.br = s.type === 'disc' || s.type === 'mound' ? s.r : Math.hypot(s.hu, s.hv);
+    s.vx = 0; s.vz = 0; s.pad = s.pad || 0;
+    A.shapes.push(s);
+    if (s.walk) A.walks.push(s);
+    if (s.solid) A.solids.push(s);
+    return s;
+  }
+
+  function disposeStage() {
+    if (!st) return;
+    group.remove(st.g);
+    for (const g of st.geos) g.dispose();
+    for (const m of st.mats) m.dispose();
+    st = null;
+    A.shapes = []; A.solids = []; A.walks = []; A.holes = []; A.movers = []; A.nodes = []; A.links = [];
+    A.obstacles = [];
+  }
+
+  function makeMats() {
+    return {
+      ground: M(new THREE.MeshToonMaterial({ map: groundTexture(), gradientMap: grad })),
+      grass: M(toon(0x6fcf4f)),
+      grassDark: M(toon(0x4f9a38)),
+      rim: M(toon(0x3f7d2c)),
+      dirt: M(toon(0x9a6a3e)),
+      rock: M(toon(0x7a6a6a)),
+      mound: M(toon(0x7fd65a, { side: THREE.DoubleSide })),
+      wood: M(toon(0xc98b4b)),
+      woodDark: M(toon(0x8a5a32)),
+      stone: M(toon(0x9aa3ad)),
+      stoneTop: M(toon(0xb8c0c8)),
+      brick: M(toon(0xd9a066)),
+      roof: M(toon(0xe0473a)),
+      white: M(toon(0xfff1dd)),
+      hay: M(toon(0xf2c65a)),
+      hayBand: M(toon(0xb3462e)),
+      metal: M(toon(0x5f7fa8)),
+      metalTop: M(toon(0x8fd8ff)),
+      cap: M(toon(0xff4f6a)),
+      dot: M(toon(0xffffff)),
+      holeWall: M(new THREE.MeshBasicMaterial({ color: 0x160f1c, side: THREE.BackSide })),
+      stripe: M(new THREE.MeshToonMaterial({ map: stripeTexture(), gradientMap: grad })),
+      glow: M(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.2, 2.6), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })),
+    };
+  }
+
+  // ---------------- 지형 빌더 ----------------
+  function floorTopGeo(r, holes, cx, cz) {
+    if (!holes || !holes.length) return G(new THREE.CircleGeometry(r, 72));
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, r, 0, TAU, false);
+    for (const h of holes) { const p = new THREE.Path(); p.absarc(h.x - cx, -(h.z - cz), h.r, 0, TAU, true); shape.holes.push(p); }
+    const geo = G(new THREE.ShapeGeometry(shape, 48));
+    const uv = geo.attributes.uv, pos = geo.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / (2 * r) + 0.5, pos.getY(i) / (2 * r) + 0.5);
+    return geo;
+  }
+
+  // 떠 있는 섬: 잔디 윗면, 흙층, 아래 바위
+  function island(x, z, r, h, o = {}) {
+    const holes = o.holes || null;
+    addShape({ type: 'disc', x, z, r, h, thick: o.thick || 30, holes, solid: true });
+    const top = mesh(floorTopGeo(r, holes, x, z), mats.ground, st.g, x, h, z, false);
+    top.rotation.x = -Math.PI / 2;
+    top.castShadow = false;
+    const seg = Math.max(24, Math.round(r * 3));
+    mesh(G(new THREE.CylinderGeometry(r, r, 1.2, seg, 1, true)), mats.grassDark, st.g, x, h - 0.6, z, false).castShadow = false;
+    const rim = mesh(G(new THREE.TorusGeometry(r, 0.3, 6, seg)), mats.rim, st.g, x, h - 0.05, z, false);
+    rim.rotation.x = Math.PI / 2;
+    rim.castShadow = false;
+    mesh(G(new THREE.CylinderGeometry(r * 0.99, r * 0.88, 3, seg)), mats.dirt, st.g, x, h - 2.6, z, false).castShadow = false;
+    const ch = Math.max(8, r * 1.1);
+    const rockGeo = G(new THREE.ConeGeometry(r * 0.88, ch, 14, 3));
+    const pos = rockGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > ch / 2 - 0.01) continue;
+      const k = 1 + (Math.abs(Math.sin(i * 12.9898 + x) * 43758.5453) % 1) * 0.18;
+      pos.setX(i, pos.getX(i) * k); pos.setZ(i, pos.getZ(i) * k);
+    }
+    rockGeo.computeVertexNormals();
+    const rock = mesh(rockGeo, mats.rock, st.g, x, h - 4.1 - ch / 2, z, false);
+    rock.rotation.x = Math.PI;
+    rock.castShadow = false;
+    if (holes) for (const hl of holes) {
+      A.holes.push({ ...hl, top: h });
+      const wall = mesh(G(new THREE.CylinderGeometry(hl.r, hl.r, 5, 32, 1, true)), mats.holeWall, st.g, hl.x, h - 2.5, hl.z, false);
+      wall.castShadow = false;
+      const ring = mesh(G(new THREE.RingGeometry(hl.r, hl.r + 0.85, 40)), mats.stripe, st.g, hl.x, h + 0.025, hl.z, false);
+      ring.rotation.x = -Math.PI / 2;
+      ring.castShadow = false;
+    }
+  }
+
+  function block(x, z, hu, hv, rot, top, bottom, side, cap, o = {}) {
+    const geo = G(new THREE.BoxGeometry(hu * 2, top - bottom, hv * 2));
+    const m = mesh(geo, [side, side, cap || side, side, side, side], st.g, x, (top + bottom) / 2, z, o.outline !== false);
+    m.rotation.y = -rot;
+    const s = addShape({ type: 'box', x, z, hu, hv, rot, h: top, thick: top - bottom, solid: true, walk: o.walk !== false });
+    return { m, s };
+  }
+
+  function ramp(x, z, hu, hv, rot, h0, h1, bottom = 0) {
+    const sh = new THREE.Shape();
+    sh.moveTo(-hu, bottom); sh.lineTo(hu, bottom); sh.lineTo(hu, h1); sh.lineTo(-hu, h0); sh.closePath();
+    const geo = G(new THREE.ExtrudeGeometry(sh, { depth: hv * 2, bevelEnabled: false }));
+    geo.translate(0, 0, -hv);
+    const m = mesh(geo, mats.wood, st.g, x, 0, z);
+    m.rotation.y = -rot;
+    // 디딤판 줄
+    const n = Math.max(2, Math.round(hu * 1.2));
+    for (let i = 0; i < n; i++) {
+      const u = -hu + ((i + 0.5) / n) * hu * 2;
+      const y = h0 + ((u + hu) / (2 * hu)) * (h1 - h0);
+      const b = new THREE.Mesh(G(new THREE.BoxGeometry(0.16, 0.08, hv * 2 - 0.1)), mats.woodDark);
+      b.position.set(u, y + 0.03, 0);
+      b.rotation.z = Math.atan2(h1 - h0, hu * 2);
+      m.add(b);
+    }
+    addShape({ type: 'ramp', x, z, hu, hv, rot, h0, h1, h: Math.max(h0, h1), thick: Math.max(h0, h1) - bottom, solid: true });
+  }
+
+  function mound(x, z, r, H, base = 0) {
+    const pts = [];
+    const N = 14;
+    for (let i = N; i >= 0; i--) {
+      const d = (r * i) / N, f = 1 - (d / r) ** 2;
+      pts.push(new THREE.Vector2(d, base + H * f * Math.sqrt(f) + 0.03));
+    }
+    const m = mesh(G(new THREE.LatheGeometry(pts, 36)), mats.mound, st.g, x, 0, z, false);
+    m.castShadow = false;
+    addShape({ type: 'mound', x, z, r, H, base, solid: false });
+  }
+
+  // 점프 버섯: 밟으면 목표 지점(to)으로 포물선을 그리며 날아간다
+  function pad(x, z, base, power, to) {
+    const g = new THREE.Group();
+    g.position.set(x, base, z);
+    st.g.add(g);
+    const cap = mesh(G(new THREE.SphereGeometry(1.15, 18, 8, 0, TAU, 0, Math.PI / 2)), mats.cap, g, 0, 0, 0);
+    cap.scale.y = 0.3;
+    cap.userData.dyn = true;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU + 0.4, rr = i === 0 ? 0 : 0.62;
+      const d = new THREE.Mesh(G(new THREE.CircleGeometry(0.2, 10)), mats.dot);
+      const px = i === 0 ? 0 : Math.cos(a) * rr, pz = i === 0 ? 0 : Math.sin(a) * rr;
+      const f = 1 - (px * px + pz * pz) / (1.15 * 1.15);
+      d.position.set(px, Math.sqrt(Math.max(0, f)) * 1.15 * 0.3 + 0.01, pz);
+      d.lookAt(px * 0.6, 2, pz * 0.6);
+      g.add(d);
+    }
+    const ring = new THREE.Mesh(G(new THREE.RingGeometry(1.2, 1.55, 32)), mats.glow);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.04;
+    ring.userData.dyn = true;
+    g.add(ring);
+    const s = addShape({ type: 'disc', x, z, r: 1.05, h: base + 0.33, pad: power, solid: false });
+    if (to) s.padTo = { x: to[0], z: to[1], y: 0 };
+    st.pads.push(s);
+    st.anim.push((t) => { const k = 1 + Math.sin(t * 5 + x) * 0.05; cap.scale.set(k, 0.3 / k, k); ring.scale.setScalar(1 + ((t * 0.8 + x) % 1) * 0.4); ring.material.opacity = 0.8; });
+  }
+
+  function hay(x, z, rot) {
+    const g = new THREE.Group();
+    g.position.set(x, 0.75, z);
+    g.rotation.y = -rot;
+    st.g.add(g);
+    const c = mesh(G(new THREE.CylinderGeometry(0.75, 0.75, 3.4, 18)), mats.hay, g, 0, 0, 0);
+    c.rotation.z = Math.PI / 2;
+    for (const s of [-1, 1]) {
+      const b = new THREE.Mesh(G(new THREE.TorusGeometry(0.77, 0.07, 6, 20)), mats.hayBand);
+      b.position.x = s * 0.9; b.rotation.y = Math.PI / 2;
+      g.add(b);
+    }
+    addShape({ type: 'box', x, z, hu: 1.7, hv: 0.78, rot, h: 1.5, thick: 1.5, solid: true });
+  }
+
+  function stone(x, z, r, top) {
+    const m = mesh(G(new THREE.DodecahedronGeometry(1, 0)), mats.stone, st.g, x, top * 0.5, z);
+    m.scale.set(r * 1.05, top * 0.62, r);
+    m.rotation.y = x;
+    addShape({ type: 'disc', x, z, r, h: top, thick: top, solid: true });
+  }
+
+  function windmill(x, z, base = 0) {
+    const mill = new THREE.Group();
+    mill.position.set(x, base, z);
+    st.g.add(mill);
+    mesh(G(new THREE.CylinderGeometry(1.1, 1.6, 6, 8)), mats.white, mill, 0, 3, 0);
+    mesh(G(new THREE.ConeGeometry(1.6, 2.2, 8)), mats.roof, mill, 0, 7.1, 0);
+    const blades = new THREE.Group();
+    blades.position.set(0, 5.6, 1.3);
+    blades.userData.dyn = true;
+    mill.add(blades);
+    const bladeGeo = G(new THREE.BoxGeometry(0.6, 4.2, 0.1));
+    for (let i = 0; i < 4; i++) {
+      const b = mesh(bladeGeo, mats.dot, blades, 0, 0, 0);
+      b.position.set(Math.sin((i * Math.PI) / 2) * 2.1, Math.cos((i * Math.PI) / 2) * 2.1, 0);
+      b.rotation.z = (-i * Math.PI) / 2;
+    }
+    st.anim.push((t, dt) => { blades.rotation.z -= dt * 1.2; });
+    addShape({ type: 'disc', x, z, r: 1.8, h: base + 8, thick: 8, solid: true, walk: false });
+  }
+
+  // 두 점 사이를 오가는 발판
+  function mover(ax, az, bx, bz, top, hu, hv, period, phase = 0) {
+    const rot = Math.atan2(bz - az, bx - ax);
+    const g = new THREE.Group();
+    g.userData.dyn = true;
+    st.g.add(g);
+    const m = mesh(G(new THREE.BoxGeometry(hu * 2, 0.5, hv * 2)), [mats.metal, mats.metal, mats.metalTop, mats.metal, mats.metal, mats.metal], g, 0, top - 0.25, 0);
+    m.rotation.y = -rot;
+    const jet = new THREE.Mesh(G(new THREE.ConeGeometry(0.5, 1.2, 10, 1, true)), mats.glow);
+    jet.rotation.x = Math.PI;
+    jet.position.y = top - 1.1;
+    g.add(jet);
+    const s = addShape({ type: 'box', x: ax, z: az, hu, hv, rot, h: top, thick: 0.6, solid: true, moving: true });
+    s.path = { ax, az, bx, bz, w: TAU / period, t: phase * period };
+    s.mesh = g;
+    A.movers.push(s);
+    moveMover(s, 0);
+  }
+  function moveMover(s, dt) {
+    const p = s.path;
+    p.t += dt;
+    const k = 0.5 - 0.5 * Math.cos(p.t * p.w);
+    const dk = 0.5 * p.w * Math.sin(p.t * p.w);
+    s.x = p.ax + (p.bx - p.ax) * k; s.z = p.az + (p.bz - p.az) * k;
+    s.vx = (p.bx - p.ax) * dk; s.vz = (p.bz - p.az) * dk;
+    s.mesh.position.set(s.x, 0, s.z);
+  }
+
+  function carrotPatches(list) {
+    const n0 = list.length * 15;
+    const top = new THREE.InstancedMesh(G(new THREE.ConeGeometry(0.22, 0.7, 5)), mats.grass, n0);
+    const head = new THREE.InstancedMesh(G(new THREE.SphereGeometry(0.2, 8, 6)), M(toon(0xff8a1f)), n0);
+    const soilGeo = G(new THREE.CircleGeometry(2.6, 20));
+    const dm = new THREE.Object3D();
+    let n = 0;
+    for (const [px, pz, py = 0] of list) {
+      const soil = new THREE.Mesh(soilGeo, mats.woodDark);
+      soil.rotation.x = -Math.PI / 2;
+      soil.position.set(px, py + 0.02, pz);
+      soil.receiveShadow = true;
+      st.g.add(soil);
+      for (let i = 0; i < 15; i++, n++) {
+        const a = i * 2.4, rr = 0.4 + (i % 5) * 0.42;
+        const x = px + Math.cos(a) * rr, z = pz + Math.sin(a) * rr;
+        dm.position.set(x, py + 0.1, z); dm.rotation.set(0, a, 0); dm.scale.setScalar(1); dm.updateMatrix();
+        head.setMatrixAt(n, dm.matrix);
+        dm.position.set(x, py + 0.55, z); dm.rotation.set(0.2 * Math.sin(a), a, 0.2 * Math.cos(a)); dm.updateMatrix();
+        top.setMatrixAt(n, dm.matrix);
+      }
+    }
+    top.castShadow = head.castShadow = true;
+    st.g.add(top, head);
+  }
+
+  function posts(R, count, spread) {
+    const p = new THREE.InstancedMesh(G(new THREE.CylinderGeometry(0.16, 0.2, 1.1, 6)), mats.wood, count);
+    const dm = new THREE.Object3D();
+    for (let i = 0; i < count; i++) {
+      const a = Math.PI + (i / (count - 1) - 0.5) * spread;
+      dm.position.set(Math.sin(a) * (R - 0.6), 0.5, Math.cos(a) * (R - 0.6));
+      dm.updateMatrix();
+      p.setMatrixAt(i, dm.matrix);
+    }
+    p.castShadow = true;
+    st.g.add(p);
+  }
+
+  function flag(x, z, base, color) {
+    mesh(G(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6)), mats.woodDark, st.g, x, base + 1.3, z, false);
+    const f = new THREE.Mesh(G(new THREE.PlaneGeometry(1.1, 0.7)), M(toon(color, { side: THREE.DoubleSide })));
+    f.position.set(x + 0.55, base + 2.25, z);
+    f.userData.dyn = true;
+    st.g.add(f);
+    st.anim.push((t) => { f.rotation.y = Math.sin(t * 3 + x) * 0.35; });
+  }
+
+  // ---------------- 스테이지 정의 ----------------
+  const BUILD = {
+    farm() {
+      A.radius = 24;
+      island(0, 0, 24, 0);
+      mound(-12, 5, 6.5, 1.9);
+      mound(12, -5, 5.5, 1.4);
+      // 언덕 위 전망대 + 경사로
+      block(4, -13, 3.8, 2.6, 0, 2.2, 0, mats.brick, mats.stoneTop);
+      ramp(4, -8.35, 2.1, 1.6, -Math.PI / 2, 0, 2.2);
+      pad(-4, -11, 0, 17, [3, -13]);
+      pad(15.5, 7.5, 0, 17, [12, -4]);
+      hay(-10, -7.5, 0.4);
+      hay(8.5, 9.5, -0.7);
+      stone(-7.5, 12.5, 1.6, 1.1);
+      stone(16, -13, 1.8, 1.3);
+      windmill(0, -19.5);
+      carrotPatches([[-16.5, -10], [6, 16], [18.5, 2], [-3, 16.5]]);
+      posts(24, 28, Math.PI * 0.9);
+      return {
+        spawns: [[0, 12], [14, 2], [-2, -7], [-14.5, -2]],
+        nodes: [[0, 0], [0, 12], [12, 12], [-12, 12], [16, 0], [-17, -3], [-12, -14], [10, -14], [4, -5.6], [4, -12.8], [-4, -11], [-6, -3], [6, 3], [15.5, 7.5], [20, -6]],
+        special: [[10, 2, 'pad']],
+      };
+    },
+    fort() {
+      A.radius = 25;
+      island(0, 0, 25, 0, { holes: [{ x: -13, z: 10, r: 3 }, { x: 13, z: -10, r: 3.2 }] });
+      // 가운데 요새와 양쪽 경사로
+      block(0, -3, 4.5, 4.5, 0, 3.2, 0, mats.stone, mats.stoneTop);
+      ramp(7.5, -3, 3.05, 1.7, Math.PI, 0, 3.2);
+      ramp(-7.5, -3, 3.05, 1.7, 0, 0, 3.2);
+      // 남쪽 디딤 계단: 점프로 한 단씩
+      block(0, 2.6, 3, 1.1, 0, 1.5, 0, mats.brick, mats.stoneTop);
+      // 벽 튕기기용 낮은 담
+      block(-15, -9, 3, 0.5, 0.7, 2, 0, mats.brick, mats.stoneTop);
+      block(16, 7, 3, 0.5, -0.8, 2, 0, mats.brick, mats.stoneTop);
+      block(-6, 13, 2.2, 0.5, 0.25, 2, 0, mats.brick, mats.stoneTop);
+      // 요새 북쪽 모서리 기둥
+      stone(-3.9, -6.9, 0.55, 4.6);
+      stone(3.9, -6.9, 0.55, 4.6);
+      flag(-3.9, -6.9, 4.6, 0xff4d5e);
+      flag(3.9, -6.9, 4.6, 0x2fb8ff);
+      windmill(0, -21);
+      pad(-18, 1, 0, 19, [-2, -3]);
+      posts(25, 24, Math.PI * 0.8);
+      return {
+        spawns: [[0, 13], [16, -1], [0, -3], [-16, -2]],
+        nodes: [[0, -3], [3.2, -3], [-3.2, -3], [11.4, -3], [-11.4, -3], [0, 8], [0, 14], [10, 12], [-6, 17], [-7, 5], [8, 4], [15, 1], [-15, 2], [-10, -13], [0, -13], [7, -15], [18, -4], [-18, -6], [19, 13], [-20, 8], [-18, 1]],
+        special: [[20, 0, 'pad']],
+      };
+    },
+    sky() {
+      A.radius = 22;
+      island(0, 13, 6.5, 0);
+      island(0, -3, 7.5, 2.4);
+      island(16, 1, 6, 0);
+      island(-16, 1, 6, 0);
+      // 남쪽 섬 → 가운데 섬 경사로
+      ramp(0, 6, 2.05, 1.6, -Math.PI / 2, 0, 2.4);
+      // 서쪽 다리
+      {
+        const ax = 0, az = 13, bx = -16, bz = 1;
+        const rot = Math.atan2(bz - az, bx - ax), len = Math.hypot(bx - ax, bz - az);
+        block((ax + bx) / 2, (az + bz) / 2, len / 2 - 3, 1.1, rot, 0, -0.4, mats.wood, mats.wood);
+      }
+      // 동쪽은 움직이는 발판으로 연결
+      mover(5.4, 8.9, 11.1, 4.6, 0, 1.6, 1.6, 6.5);
+      // 북쪽 허공을 가로지르는 낮은 발판
+      mover(-9, -12.4, 9, -12.4, 1.3, 1.8, 1.6, 9, 0.25);
+      // 동/서 섬 점프 버섯: 가운데 섬으로
+      pad(13, -3, 0, 18, [3.5, -3]);
+      pad(-13, -3, 0, 18, [-3.5, -3]);
+      hay(18.5, 3.5, 0.3);
+      stone(-18.5, 4, 1.3, 1);
+      carrotPatches([[0, 16, 0], [-3, -5, 2.4]]);
+      flag(0, -9.2, 2.4, 0xffc21f);
+      return {
+        spawns: [[0, 14], [17, 1], [0, -3], [-17, 1]],
+        nodes: [[0, 13], [0, 9], [0, 3.2], [0, -3], [5, -5], [-5, -5], [6.6, -0.8], [-6.6, -0.8], [11.4, 1.8], [-11.4, 1.8], [16, 1], [-16, 1], [13, -3], [-13, -3], [-8, 7], [-4, 10.2], [-12, 4], [3, 15], [-3, 15]],
+        // [노드, 노드, 종류]: 점프 (가장자리에서 건너뛰기), 버섯 (밟으면 발사)
+        links: [[6, 8, 'jump'], [7, 9, 'jump'], [12, 4, 'pad'], [13, 5, 'pad']],
+      };
+    },
+  };
+
+  // ---------------- 질의 ----------------
+  function gAt(x, z, y, noMovers, out) {
+    let best = -Infinity, bs = null;
+    const lim = y + STEP;
+    for (const s of A.walks) {
+      if (noMovers && s.moving) continue;
+      const dx = x - s.x, dz = z - s.z;
+      if (dx * dx + dz * dz > s.br * s.br) continue;
+      const h = topAt(s, x, z);
+      if (h === null || h > lim || h <= best) continue;
+      best = h; bs = s;
+    }
+    if (!bs) return null;
+    if (out) { out.h = best; out.vx = bs.vx; out.vz = bs.vz; out.pad = bs.pad; out.padTo = bs.padTo || null; out.s = bs; return out; }
+    return best;
+  }
+  const SURF = { h: 0, vx: 0, vz: 0, pad: 0, padTo: null, s: null };
+
+  A.groundAt = (x, z, y) => gAt(x, z, y, false);
+  A.surfaceAt = (x, z, y) => gAt(x, z, y, false, SURF);
+  A.isVoid = (x, z) => gAt(x, z, 1e6, false) === null;
+
+  A.pushOut = (e) => {
+    let bounced = false;
+    const r = e.radius, y = e.pos.y;
+    for (const s of A.solids) {
+      const dx0 = e.pos.x - s.x, dz0 = e.pos.z - s.z;
+      if (dx0 * dx0 + dz0 * dz0 > (s.br + r) * (s.br + r)) continue;
+      if (s.holes && inHole(s, e.pos.x, e.pos.z)) continue;
+      const n = nearest(s, e.pos.x, e.pos.z);
+      let nx, nz, pen, ht;
+      if (!n.inside) {
+        const ddx = e.pos.x - n.x, ddz = e.pos.z - n.z, d = Math.hypot(ddx, ddz);
+        if (d >= r || d < 1e-6) continue;
+        ht = heightAtNearest(s);
+        if (ht <= y + STEP || ht - s.thick >= y + e.height) continue;
+        nx = ddx / d; nz = ddz / d; pen = r - d;
+      } else {
+        ht = s.type === 'ramp' ? heightAtNearest(s) : s.h;
+        if (ht <= y + STEP || ht - s.thick >= y + e.height) continue;
+        if (s.type === 'disc') {
+          const d = n.d;
+          if (d < 1e-4) { nx = 1; nz = 0; } else { nx = dx0 / d; nz = dz0 / d; }
+          pen = s.r - d + r;
+        } else {
+          const du = s.hu - Math.abs(n.u), dv = s.hv - Math.abs(n.v);
+          let lu = 0, lv = 0;
+          if (du < dv) { lu = n.u < 0 ? -1 : 1; pen = du + r; } else { lv = n.v < 0 ? -1 : 1; pen = dv + r; }
+          nx = lu * s.c - lv * s.s; nz = lu * s.s + lv * s.c;
+        }
+      }
+      e.pos.x += nx * pen; e.pos.z += nz * pen;
+      const vn = e.vel.x * nx + e.vel.z * nz;
+      if (vn < 0) {
+        if (e.state === 'launched' && vn < -10) { e.vel.x -= nx * vn * 1.6; e.vel.z -= nz * vn * 1.6; bounced = true; }
+        else { e.vel.x -= nx * vn; e.vel.z -= nz * vn; }
+      }
+    }
+    // 구멍 안으로 떨어진 뒤에는 옆 바닥 속으로 파고들지 않게
+    for (const h of A.holes) {
+      if (y > h.top - 0.3) continue;
+      const dx = e.pos.x - h.x, dz = e.pos.z - h.z, d = Math.hypot(dx, dz);
+      if (d > h.r + r + 1) continue;
+      const lim = Math.max(0.1, h.r - r * 0.8);
+      if (d > lim) { e.pos.x = h.x + (dx / d) * lim; e.pos.z = h.z + (dz / d) * lim; }
+    }
+    return bounced;
+  };
+
+  // 평평하고 넓은 자리인지 (움직이는 발판, 버섯 제외)
+  function flatAt(x, z, clear) {
+    const s = gAt(x, z, 1e6, false, SURF);
+    if (!s || s.s.moving || s.pad) return null;
+    const h = s.h;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * TAU;
+      const q = gAt(x + Math.cos(a) * clear, z + Math.sin(a) * clear, 1e6, false, SURF);
+      if (!q || Math.abs(q.h - h) > 0.12 || q.s.moving || q.pad) return null;
+    }
+    return h;
+  }
+
+  A.safePoint = (x, z, clear = 2.4) => {
+    let h = flatAt(x, z, clear);
+    if (h !== null) return { x, y: h, z };
+    for (let rr = 1.5; rr < 30; rr += 1.5) {
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * TAU + rr;
+        const px = x + Math.cos(a) * rr, pz = z + Math.sin(a) * rr;
+        h = flatAt(px, pz, clear);
+        if (h !== null) return { x: px, y: h, z: pz };
+      }
+    }
+    const sp = A.spawnPoints[0];
+    return { x: sp.x, y: sp.y, z: sp.z };
+  };
+
+  A.randomPoint = (margin = 2) => {
+    for (let i = 0; i < 60; i++) {
+      const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * (A.radius - 2);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      const h = flatAt(x, z, margin);
+      if (h !== null) return { x, y: h, z };
+    }
+    return A.safePoint(0, 0, margin);
+  };
+
+  // ---------------- AI 길찾기 ----------------
+  function walkable(a, b) {
+    let y = gAt(a.x, a.z, a.y + 0.3, true);
+    if (y === null) return false;
+    const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+    if (L < 0.05) return Math.abs(y - b.y) < 1.2;
+    const n = Math.ceil(L / 0.7), px = (-dz / L) * 0.55, pz = (dx / L) * 0.55;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, x = a.x + dx * t, z = a.z + dz * t;
+      const h = gAt(x, z, y, true);
+      if (h === null) return false;
+      const hi = gAt(x, z, 1e6, true);
+      if (hi > y + STEP) return false;
+      if (gAt(x + px, z + pz, y, true) === null || gAt(x - px, z - pz, y, true) === null) return false;
+      y = h;
+    }
+    return Math.abs(y - b.y) < 1.2;
+  }
+
+  function buildNav(def) {
+    const nodes = (def.nodes || []).map(([x, z]) => ({ x, z, y: gAt(x, z, 1e6, true) }));
+    A.nodes = nodes.filter((n) => n.y !== null);
+    const idx = new Map(nodes.map((n, i) => [i, A.nodes.indexOf(n)]));
+    A.links = A.nodes.map(() => []);
+    for (let i = 0; i < A.nodes.length; i++) for (let j = 0; j < A.nodes.length; j++) {
+      if (i === j) continue;
+      const a = A.nodes[i], b = A.nodes[j];
+      const d = Math.hypot(a.x - b.x, a.z - b.z);
+      if (d > 17) continue;
+      if (walkable(a, b)) A.links[i].push({ to: j, cost: d, kind: 'walk' });
+    }
+    for (const [a, b, kind] of def.links || []) {
+      const i = idx.get(a), j = idx.get(b);
+      if (i === undefined || j === undefined || i < 0 || j < 0) continue;
+      const d = Math.hypot(A.nodes[i].x - A.nodes[j].x, A.nodes[i].z - A.nodes[j].z);
+      A.links[i].push({ to: j, cost: d * 1.2 + 2, kind });
+    }
+  }
+
+  // from/to: {x,y,z}. 곧장 걸어갈 수 있으면 null, 아니면 다음에 향할 지점 {x, z, jump}
+  A.waypoint = (from, to, mem) => {
+    const gy = gAt(from.x, from.z, from.y + 0.3, false);
+    const air = gy === null || from.y - gy > 0.8;
+    if (mem && mem.navAir) {
+      if (air && performance.now() < mem.navAirUntil) return { x: mem.navAir.x, z: mem.navAir.z };
+      if (!air) mem.navAir = null;
+    }
+    if (air) return null;
+    const f = { x: from.x, y: gy, z: from.z };
+    if (walkable(f, to)) return null;
+    const N = A.nodes.length;
+    if (!N) return null;
+    const byDist = (p) => A.nodes.map((n, i) => [Math.hypot(n.x - p.x, n.z - p.z), i]).sort((a, b) => a[0] - b[0]).slice(0, 6);
+    const dist = new Float64Array(N).fill(Infinity), prev = new Int16Array(N).fill(-1), kindTo = new Array(N).fill('walk');
+    for (const [d, i] of byDist(f)) if (walkable(f, A.nodes[i])) dist[i] = d;
+    const goal = new Float64Array(N).fill(Infinity);
+    for (const [d, i] of byDist(to)) if (walkable(A.nodes[i], to)) goal[i] = d;
+    const done = new Uint8Array(N);
+    for (;;) {
+      let u = -1, bd = Infinity;
+      for (let i = 0; i < N; i++) if (!done[i] && dist[i] < bd) { bd = dist[i]; u = i; }
+      if (u < 0) break;
+      done[u] = 1;
+      for (const e of A.links[u]) {
+        const nd = dist[u] + e.cost;
+        if (nd < dist[e.to]) { dist[e.to] = nd; prev[e.to] = u; kindTo[e.to] = e.kind; }
+      }
+    }
+    let g = -1, gb = Infinity;
+    for (let i = 0; i < N; i++) if (dist[i] + goal[i] < gb) { gb = dist[i] + goal[i]; g = i; }
+    if (g < 0) return { x: to.x, z: to.z };
+    const path = [];
+    for (let k = g; k >= 0; k = prev[k]) path.unshift(k);
+    let k = 0;
+    while (k < path.length - 1 && Math.hypot(A.nodes[path[k]].x - f.x, A.nodes[path[k]].z - f.z) < 1.3) k++;
+    const n = A.nodes[path[k]];
+    const kind = k > 0 ? kindTo[path[k]] : 'walk';
+    if (mem) {
+      if (kind === 'jump' || kind === 'pad') { mem.navAir = n; mem.navAirUntil = performance.now() + 2500; }
+      else if (k + 1 < path.length && kindTo[path[k + 1]] === 'pad') { mem.navAir = A.nodes[path[k + 1]]; mem.navAirUntil = performance.now() + 2500; }
+    }
+    if (kind === 'pad' && k > 0) return { x: n.x, z: n.z };
+    return { x: n.x, z: n.z, jump: kind === 'jump' };
+  };
+
+  // ---------------- 스테이지 교체 ----------------
+  A.setStage = (id) => {
+    if (!BUILD[id]) id = 'farm';
+    if (A.stageId === id && st) return;
+    disposeStage();
+    st = { g: new THREE.Group(), geos: [], mats: [], anim: [], pads: [] };
+    group.add(st.g);
+    mats = makeMats();
+    const def = BUILD[id]();
+    A.stageId = id;
+    for (const s of st.pads) if (s.padTo) s.padTo.y = gAt(s.padTo.x, s.padTo.z, 1e6, true) ?? 0;
+    A.spawnPoints = def.spawns.map(([x, z]) => new THREE.Vector3(x, gAt(x, z, 1e6, true) ?? 0, z));
+    if (def.special) for (const [a, b] of def.special) { /* 표시용 예약 */ void a; void b; }
+    buildNav(def);
+    st.t = 0;
+    applyStageQuality();
+  };
+
+  // ---------------- 화질 ----------------
+  // 절전: 정적 스테이지 메시를 재질별로 합치고 배경 섬/구름을 인스턴싱한다.
+  // 보이는 메시만 바꾸고 지형 도형/길찾기/스폰은 건드리지 않는다. 여러 번 불러도 안전하다.
+  A.quality = 'high';
+  function applyStageQuality() {
+    if (!st) return;
+    const low = A.quality === 'low';
+    if (low && !st.batch) {
+      st.batch = bakeBatch(st.g);
+      st.geos.push(...st.batch.geos);
+    }
+    if (!st.batch) return;
+    for (const o of st.batch.hidden) o.visible = !low;
+    for (const m of st.batch.merged) m.visible = low;
+  }
+  A.setQuality = (low) => {
+    const q = low ? 'low' : 'high';
+    if (A.quality === q) return A;
+    A.quality = q;
+    if (low && !lowEnv) buildLowEnv();
+    for (const f of floaters) f.g.visible = !low;
+    for (const c of clouds) c.c.visible = !low;
+    if (lowEnv) {
+      for (const im of lowEnv.meshes) im.visible = !!low;
+      if (low) writeLowEnv();
+    }
+    applyStageQuality();
+    return A;
+  };
+
+  A.update = (dt, time) => {
+    for (const s of A.movers) moveMover(s, dt);
+    if (st) { st.t += dt; for (const f of st.anim) f(st.t, dt); }
+    for (const f of floaters) { f.g.position.y = f.base + Math.sin(time * 0.5 + f.ph) * 1.2; f.g.rotation.y += dt * 0.05; }
+    for (const c of clouds) { c.a += dt * c.sp; c.c.position.x = Math.cos(c.a) * c.d; c.c.position.z = Math.sin(c.a) * c.d; }
+    if (A.quality === 'low') writeLowEnv();
+  };
+
+  A.setStage('farm');
+  return A;
+}

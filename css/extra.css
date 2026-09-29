@@ -1,0 +1,407 @@
+/* 추가: 콜아웃 변형, 킬 피드 */
+.callout.good > span { color: #7dff9a; }
+.callout.bad > span { color: #ff5a6a; }
+.callout.warn > span { color: var(--carrot); }
+.callout.sk > span { color: var(--cyan); font-size: 34px; }
+.killfeed {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+.kf {
+  --c: #fff;
+  padding: 4px 14px;
+  font: italic 900 15px/1.2 var(--font);
+  color: var(--white);
+  background: rgba(8, 12, 30, .78);
+  border: 2px solid var(--ink);
+  border-left: 6px solid var(--c);
+  transform: skewX(-10deg);
+  animation: kf-in .25s cubic-bezier(.2, 1.6, .4, 1);
+}
+@keyframes kf-in { from { opacity: 0; transform: translateX(40px) skewX(-10deg); } }
+@media (max-height: 520px) {
+  #select { align-items: flex-start; overflow-y: auto; }
+  .select-panel { max-height: none !important; overflow: visible !important; }
+  .select-wrap { padding: 6px 0 12px; }
+  .select-panel h2 { margin: 2px 0 4px !important; font-size: 16px !important; }
+  .pilot, .robot-card { padding-top: 4px !important; padding-bottom: 4px !important; }
+  .robot-list { gap: 6px !important; }
+  .robot-detail .skill-desc, .robot-detail .stat { display: none !important; }
+  .select-actions { position: sticky; bottom: 0; padding-top: 6px; }
+}
+@media (max-height: 520px) { .killfeed { top: 6px; right: 8px; } .kf { font-size: 12px; } }
+
+/* ================= 메뉴: 조작법 / 설정 / 선택 상세 / 키 안내 ================= */
+.title-hint { pointer-events: none; }
+@media (max-height: 820px) {
+  #title { gap: 3vh; padding-bottom: 70px; }
+  .title-menu { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .logo h1 { font-size: clamp(56px, 19vh, 150px); }
+  .settings-panel { gap: 7px; padding-top: 16px; padding-bottom: 16px; }
+  .settings-panel h2 { margin-bottom: 2px; }
+  .settings-panel .help-note { padding: 5px 10px; font-size: 12px; }
+  .k-slot { padding: 3px 8px; }
+  .keys-grid { gap: 5px 18px; }
+}
+.sec-h {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--carrot);
+  text-shadow: var(--ts-2);
+}
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 4px;
+}
+.help-panel .panel-actions .btn { align-self: auto; margin-top: 0; }
+.help-note.hl { border-left-color: var(--cyan); color: #e9fbff; background: rgba(47, 230, 255, .1); }
+
+/* 탭 */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tabs .tab {
+  padding: 7px 16px;
+  font-size: 15px;
+  font-weight: 900;
+  background: rgba(0, 0, 0, .3);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 0 3px 0 var(--ink);
+  transform: skewX(-8deg);
+  cursor: pointer;
+}
+.tabs .tab:hover { background: rgba(255, 255, 255, .12); }
+.tabs .tab.on { background: var(--cyan); color: var(--ink); }
+.help-panel { width: min(980px, 96vw); }
+.tab-body {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--carrot) transparent;
+}
+.tab-body:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.help-grid > div:nth-child(odd) { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* 기술 목록 */
+ul.move-list, ul.traits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+ul.move-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.mv-in {
+  grid-row: span 2;
+  align-self: start;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  color: var(--ink);
+  background: linear-gradient(180deg, #fff, #d9e2ee);
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  box-shadow: 0 2px 0 var(--ink);
+}
+.mv-name { font-weight: 900; color: var(--white); }
+.mv-desc { font-weight: 600; color: #c9d6ff; font-size: 11.5px; }
+ul.move-list.big li { font-size: 15px; }
+ul.move-list.big .mv-in { font-size: 13px; padding: 2px 9px; }
+ul.move-list.big .mv-desc { font-size: 13px; }
+ul.traits li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff3c4;
+}
+ul.traits li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: .45em;
+  width: 6px;
+  height: 6px;
+  background: var(--c, var(--carrot));
+  border: 1px solid var(--ink);
+  transform: rotate(45deg);
+}
+.pilot-help, .robot-help {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.ph-card {
+  --c: var(--carrot);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, .25);
+  border: 3px solid var(--ink);
+  border-top: 6px solid var(--c);
+  border-radius: 10px;
+}
+.ph-card h3, .pilot-detail h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--c);
+  text-shadow: var(--ts-2);
+}
+.ph-desc { font-size: 12px; color: #dbe4ff; font-weight: 600; }
+.pd-role {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  color: var(--ink);
+  text-shadow: none;
+  background: var(--c, var(--carrot));
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  transform: skewX(-10deg);
+}
+
+/* 설정 */
+.settings-panel {
+  width: min(720px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--carrot) transparent;
+}
+.keys-grid {
+  display: grid;
+  gap: 6px 22px;
+  grid-template-columns: minmax(96px, auto) 1fr 1fr minmax(96px, auto) 1fr 1fr;
+  align-items: center;
+}
+.k-name { font-size: 13px; font-weight: 900; color: var(--steel); white-space: nowrap; }
+.k-slot {
+  min-width: 64px;
+  padding: 5px 8px;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffffff, #d9e2ee);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  box-shadow: 0 3px 0 var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.k-slot:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.k-slot.empty { color: #6b7896; background: #c3ccdb; }
+.k-slot.wait {
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--yellow), var(--carrot));
+  animation: kslot-blink .7s steps(2) infinite;
+}
+@keyframes kslot-blink { 50% { box-shadow: 0 3px 0 var(--ink), 0 0 0 3px var(--cyan); } }
+.keys-status { min-height: 1.3em; font-size: 13px; font-weight: 800; color: var(--yellow); }
+.opts-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(140px, 260px) auto;
+  gap: 8px 14px;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+.opts-grid label { color: var(--steel); }
+.opts-grid output { font-variant-numeric: tabular-nums; min-width: 3ch; }
+.opts-grid input[type=range] { width: 100%; accent-color: var(--carrot); }
+.opts-grid input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--carrot); justify-self: start; }
+.opts-grid input:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+.opt-note { font-size: 12px; color: #c9d6ff; font-weight: 600; }
+
+/* 선택: 파일럿 카드 역할 표시, 오른쪽 상세 */
+button.pilot { --c: var(--carrot); padding-right: 8px; }
+.pilot-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; text-align: left; }
+.pilot-desc { font-size: 11px; font-weight: 700; opacity: .8; white-space: nowrap; }
+.pilot-role {
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--ink);
+  background: var(--c);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  transform: skewX(-10deg);
+}
+button.pilot.on .pilot-role { background: var(--white); }
+.pilot-list { display: grid; grid-template-columns: 1fr 1fr; }
+.opt-stage { flex-basis: 100%; }
+.stage-desc { font-size: 12.5px; font-weight: 700; color: #c9d6ff; min-height: 1.2em; margin-top: -4px; }
+.detail-col {
+  margin-left: auto;
+  width: min(380px, 38vw);
+  max-height: 94vh;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--carrot) transparent;
+}
+.detail-col .robot-detail { width: auto; max-width: none; margin: 0; align-self: stretch; }
+.pilot-detail {
+  --c: var(--carrot);
+  padding: 12px 16px;
+  background: linear-gradient(160deg, rgba(16, 26, 58, .82), rgba(16, 26, 58, .6));
+  border: 3px solid var(--ink);
+  border-left: 8px solid var(--c);
+  border-radius: 14px;
+  box-shadow: 0 6px 0 var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pilot-detail > p { font-size: 12.5px; font-weight: 600; color: #dbe4ff; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.stats .stat { grid-template-columns: 44px 1fr; gap: 6px; }
+.robot-detail .stats { margin: 2px 0; }
+
+/* 일시정지 */
+.pause-body { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.pause-keys, .kh-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px 10px;
+  margin: 0;
+  align-items: center;
+}
+.pause-keys dt, .kh-list dt { display: flex; gap: 3px; margin: 0; }
+.pause-keys dd, .kh-list dd { margin: 0; font-size: 13px; font-weight: 800; }
+.pause-keys {
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, .25);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+}
+
+/* 게임 중 키 안내 (왼쪽 아래) */
+.keyhint {
+  position: absolute;
+  left: 12px;
+  bottom: 14px;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 220px;
+}
+.kh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--white);
+  background: rgba(8, 12, 30, .72);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: .85;
+}
+.kh-toggle kbd { font-size: 10px; padding: 1px 5px; min-width: 0; box-shadow: 0 2px 0 var(--ink); }
+.kh-toggle:hover { opacity: 1; }
+.keyhint .kh-body {
+  order: -1;
+  padding: 8px 10px;
+  background: rgba(8, 12, 30, .7);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 0 4px 0 var(--ink);
+}
+.keyhint.collapsed .kh-body { display: none; }
+.kh-list { gap: 3px 8px; }
+.kh-list kbd { font-size: 11px; padding: 1px 6px; min-width: 22px; box-shadow: 0 2px 0 var(--ink); }
+.kh-list dd { font-size: 12px; text-shadow: 0 1px 0 var(--ink); }
+.kh-robot { display: none; }
+#hud.riding .kh-robot { display: grid; }
+#hud.riding .kh-human { display: none; }
+#hud.riding .kh-body { border-color: var(--carrot); }
+
+@media (max-width: 1150px) {
+  .keyhint { bottom: 132px; }
+}
+@media (max-width: 760px) {
+  .keys-grid { grid-template-columns: minmax(90px, auto) 1fr 1fr; }
+}
+@media (max-height: 760px) {
+  .detail-col .robot-detail > p { display: none; }
+  .pilot-detail { gap: 4px; padding: 8px 12px; }
+  .detail-col { gap: 8px; }
+  ul.move-list li { font-size: 11.5px; }
+  .mv-desc { font-size: 10.5px; }
+}
+@media (max-height: 520px) {
+  .title-menu { flex-wrap: wrap; justify-content: center; }
+  .tabs .tab { padding: 4px 10px; font-size: 12px; }
+  .help-panel, .settings-panel { max-height: 96vh; gap: 6px; }
+  .k-slot { padding: 2px 6px; font-size: 12px; min-width: 48px; }
+  .k-name { font-size: 11px; }
+  .keys-grid { gap: 4px 12px; }
+  .opts-grid { font-size: 12px; gap: 4px 10px; }
+  .sec-h { font-size: 13px; }
+  .pilot-list { gap: 5px; }
+  .pilot-desc { display: none; }
+  .stage-desc { font-size: 10.5px; }
+  .detail-col { width: 40vw; max-height: 96vh; }
+  .detail-col { align-self: flex-start; position: sticky; top: 0; }
+  .pilot-detail h3 { font-size: 15px; }
+  .pilot-detail > p, .pilot-detail .stats { display: none; }
+  ul.traits li { font-size: 10.5px; }
+  .keyhint { bottom: 96px; left: 6px; }
+  .kh-list kbd { font-size: 9px; }
+  .kh-list dd { font-size: 10px; }
+  .keyhint .kh-body { padding: 5px 7px; }
+  .pause-keys dd { font-size: 11px; }
+  .pause-body { gap: 12px; }
+  .pause-panel .col { gap: 8px; min-width: 200px; }
+  ul.move-list.big li { font-size: 12px; }
+}
+@media (max-width: 700px) {
+  .detail-col { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-slot.wait { animation: none; }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "./",
+  "name": "로봇 래빗 ROBOT RABBIT",
+  "short_name": "로봇 래빗",
+  "description": "당근 리모컨으로 토끼 로봇을 소환해 탑승하는 3D 난투 액션",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#101a3a",
+  "theme_color": "#101a3a",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/rabbit.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
