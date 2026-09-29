@@ -8,6 +8,7 @@
 //   land: 착지하면 발생하는 이벤트 후 종료, hop: 'hop' 이벤트 때 위로 뛰는 속도, iv: [t0, t1] 무적
 //   armor: 슈퍼 아머, hold: [고정 시각, 최대 충전] 강공격 키를 누르고 있는 동안 모으기
 //   hit.spike: 아래로 내리꽂기 (바닥에서 튕김), hit.chase: 맞히면 추격 점프 가능, hit.air: 공중 띄우기 타격
+//   hit.grab: 잡기 (가드 무시, 공격자 뒤로 던짐). dodge: 방어용 회피기. counter: [t0, t1] 반격 자세. hopBack: hop 때 뒤로 뛰는 속도
 import { P } from './poses.js';
 
 const S = P.stance;
@@ -309,7 +310,256 @@ export const HUMAN_ACTS = {
       { t0: 0.62, t1: 0.7, fwd: 0, up: 0.6, r: 1.6, radial: 1, dmg: 8, kb: 15, lift: 6, launch: true, power: 2, snd: 'heavy' },
     ],
   },
+  // ---------- 도리: 탱커 가디언 ----------
+  doriBash: {
+    dur: 0.62, chain: 0.6, armor: true,
+    frames: [
+      [0, S],
+      [0.1, { hy: -0.2, tx: 0.55, ty: -0.35, alx: -1.5, alz: -0.35, flx: -1.6, arx: -0.6, frx: -1.6, llx: -0.9, slx: 0.9, lrx: 0.5, srx: 0.8 }],
+      [0.4, { hy: -0.2, tx: 0.55, ty: -0.35, alx: -1.5, alz: -0.35, flx: -1.6, arx: -0.6, frx: -1.6, llx: -0.9, slx: 0.9, lrx: 0.5, srx: 0.8 }],
+      [0.62, S],
+    ],
+    hits: [{ t0: 0.1, t1: 0.36, fwd: 0.85, up: 1.0, r: 0.85, dmg: 11, kb: 16, lift: 7, launch: true, power: 2, guardBreak: true, snd: 'heavy' }],
+    lunge: [0.08, 0.36, 13],
+    events: [[0.0, 'whiffHeavy']],
+  },
+  doriLift: {
+    dur: 0.56, chain: 0.5, armor: true, hop: 9,
+    frames: [
+      [0, CROUCH],
+      [0.1, { hy: 0.1, tx: -0.3, alx: -2.8, alz: -0.2, flx: -0.4, arx: -2.4, frx: -0.4, llx: -0.2, slx: 0.3, lrx: 0.5, srx: 0.6 }],
+      [0.4, { hy: 0.1, tx: -0.3, alx: -2.8, flx: -0.4, arx: -2.4, frx: -0.4, ...TUCK }],
+      [0.56, { tx: 0.1, ...TUCK, alx: -1.2, flx: -1.6 }],
+    ],
+    hits: [{ t0: 0.06, t1: 0.18, fwd: 0.85, up: 1.2, r: 0.9, dmg: 10, kb: 2.5, lift: 15.5, launch: true, chase: true, power: 2, snd: 'heavy' }],
+    events: [[0.06, 'hop']],
+  },
+  doriDrop: {
+    dur: 0.9, chain: 0.9, air: true, dive: [4, -24], land: 'doriLand',
+    frames: [
+      [0, { tx: -0.3, alx: -2.6, arx: -2.6, ...TUCK }],
+      [0.12, { tx: 0.5, alx: -1.4, alz: -0.3, flx: -1.5, arx: -1.0, frx: -1.4, llx: -1.2, slx: 1.3, lrx: -1.2, srx: 1.3 }],
+      [0.9, { tx: 0.5, alx: -1.4, alz: -0.3, flx: -1.5, arx: -1.0, frx: -1.4, llx: -1.2, slx: 1.3, lrx: -1.2, srx: 1.3 }],
+    ],
+    hits: [{ t0: 0.04, t1: 0.9, fwd: 0.4, up: 0.3, r: 0.95, dmg: 8, kb: 5, lift: 0, spike: true, power: 2, snd: 'heavy' }],
+  },
+
+  // ---------- 하루: 슈터 견제 ----------
+  haruShot: {
+    dur: 0.36, chain: 0.3,
+    frames: [
+      [0, S],
+      [0.06, { hy: -0.05, ty: -0.3, alx: -1.57, alz: -0.1, flx: -0.05, arx: -1.5, arz: 0.25, frx: -1.2, llx: -0.4, lrx: 0.3, slx: 0.4, srx: 0.3 }],
+      [0.22, { hy: -0.05, ty: -0.3, alx: -1.57, alz: -0.1, flx: -0.05, arx: -0.9, arz: 0.1, frx: -0.6, llx: -0.4, lrx: 0.3, slx: 0.4, srx: 0.3 }],
+      [0.36, S],
+    ],
+    events: [[0.11, 'sling']],
+  },
+  haruKick: {
+    dur: 0.52, chain: 0.46, hop: 9,
+    frames: [
+      [0, CROUCH],
+      [0.08, { hy: 0.1, tx: -0.35, lrx: -2.3, srx: 0.1, llx: 0.3, slx: 0.8, alz: 1.0, arz: -1.0, flx: -1, frx: -1 }],
+      [0.36, { hy: 0.1, tx: -0.3, lrx: -2.2, srx: 0.2, llx: 0.3, slx: 0.8, alz: 1.0, arz: -1.0, flx: -1, frx: -1 }],
+      [0.52, { tx: 0.1, ...TUCK }],
+    ],
+    hits: [{ t0: 0.06, t1: 0.17, fwd: 0.8, up: 1.15, r: 0.8, dmg: 9, kb: 2, lift: 15, launch: true, chase: true, power: 2, snd: 'kick' }],
+    events: [[0.05, 'hop']],
+  },
+  haruVolley: {
+    dur: 0.46, chain: 0.4,
+    frames: [
+      [0, { hy: -0.3, tx: 0.3, llx: -0.8, slx: 1.2 }],
+      [0.08, { hy: -0.2, ty: -0.3, alx: -1.57, flx: -0.05, arx: -1.4, arz: 0.3, frx: -1.2, llx: -0.6, lrx: 0.4, slx: 0.8, srx: 0.5 }],
+      [0.34, { hy: -0.2, ty: 0.3, alx: -1.57, flx: -0.05, arx: -0.8, frx: -0.5, llx: -0.6, lrx: 0.4, slx: 0.8, srx: 0.5 }],
+      [0.46, S],
+    ],
+    events: [[0.1, 'slingFan']],
+  },
+  haruAirShot: {
+    dur: 0.46, chain: 0.4, air: true, hang: 5, floatT: 0.4,
+    frames: [
+      [0, { tx: 0.4, nx: 0.4, alx: -1.0, flx: -0.05, arx: -0.8, frx: -1.0, ...TUCK }],
+      [0.3, { tx: 0.45, nx: 0.4, alx: -1.0, flx: -0.05, arx: -0.4, frx: -0.4, ...TUCK }],
+      [0.46, { tx: 0.1, ...TUCK }],
+    ],
+    events: [[0.1, 'slingDown']],
+  },
+
+  // ---------- 타로: 그래플러 ----------
+  taroGrab: {
+    dur: 0.6, chain: 0.56,
+    frames: [
+      [0, S],
+      [0.08, { hy: -0.2, tx: 0.5, alx: -1.5, alz: -0.3, flx: -0.4, arx: -1.5, arz: 0.3, frx: -0.4, llx: -0.7, slx: 0.9, lrx: 0.4, srx: 0.7 }],
+      [0.2, { hy: -0.1, tx: -0.6, nx: -0.4, alx: -2.9, flx: -0.5, arx: -2.9, frx: -0.5, llx: -0.2, slx: 0.4, lrx: 0.3, srx: 0.4 }],
+      [0.42, { hy: -0.15, tx: -0.5, alx: -2.6, flx: -0.6, arx: -2.6, frx: -0.6, llx: -0.3, slx: 0.5, lrx: 0.3, srx: 0.5 }],
+      [0.6, S],
+    ],
+    hits: [{ t0: 0.07, t1: 0.16, fwd: 0.75, up: 1.0, r: 0.7, dmg: 13, kb: 9, lift: 13, launch: true, chase: true, grab: true, guardBreak: true, power: 2, snd: 'heavy' }],
+    lunge: [0.02, 0.1, 6],
+  },
+  taroLift: {
+    dur: 0.56, chain: 0.5, armor: true, hop: 8,
+    frames: [
+      [0, CROUCH],
+      [0.1, { hy: 0.1, tx: -0.4, alx: -2.9, flx: -0.4, arx: -2.9, frx: -0.4, llx: -0.2, slx: 0.3, lrx: 0.4, srx: 0.5 }],
+      [0.4, { hy: 0.1, tx: -0.35, alx: -2.8, flx: -0.4, arx: -2.8, frx: -0.4, ...TUCK }],
+      [0.56, { tx: 0.1, ...TUCK }],
+    ],
+    hits: [{ t0: 0.06, t1: 0.18, fwd: 0.8, up: 1.2, r: 0.85, dmg: 11, kb: 2, lift: 15.5, launch: true, chase: true, power: 2, snd: 'heavy' }],
+    events: [[0.06, 'hop']],
+  },
+  taroDashGrab: {
+    dur: 0.66, chain: 0.62,
+    frames: [
+      [0, { hy: -0.25, tx: 0.7, alx: -1.5, alz: -0.3, flx: -0.3, arx: -1.5, arz: 0.3, frx: -0.3, llx: -0.8, slx: 0.8, lrx: 0.6, srx: 0.8 }],
+      [0.28, { hy: -0.25, tx: 0.7, alx: -1.5, alz: -0.3, flx: -0.3, arx: -1.5, arz: 0.3, frx: -0.3, llx: -0.8, slx: 0.8, lrx: 0.6, srx: 0.8 }],
+      [0.4, { hy: -0.1, tx: -0.6, nx: -0.4, alx: -2.9, flx: -0.5, arx: -2.9, frx: -0.5, llx: -0.2, slx: 0.4, lrx: 0.3, srx: 0.4 }],
+      [0.66, S],
+    ],
+    hits: [{ t0: 0.04, t1: 0.3, fwd: 0.8, up: 1.0, r: 0.75, dmg: 12, kb: 10, lift: 12, launch: true, chase: true, grab: true, guardBreak: true, power: 2, snd: 'heavy' }],
+    lunge: [0, 0.3, 14],
+  },
+  taroPress: {
+    dur: 0.9, chain: 0.9, air: true, dive: [6, -22], land: 'pressLand',
+    frames: [
+      [0, { tx: -0.2, alz: 1.4, arz: -1.4, llx: -0.6, slx: 0.8, lrx: -0.6, srx: 0.8 }],
+      [0.12, { hx: 0.9, tx: 0.4, alz: 1.5, arz: -1.5, alx: -0.3, arx: -0.3, llx: -0.2, slx: 0.3, lrx: -0.2, srx: 0.3 }],
+      [0.9, { hx: 0.9, tx: 0.4, alz: 1.5, arz: -1.5, alx: -0.3, arx: -0.3, llx: -0.2, slx: 0.3, lrx: -0.2, srx: 0.3 }],
+    ],
+    hits: [{ t0: 0.04, t1: 0.9, fwd: 0.5, up: 0.3, r: 1.0, dmg: 9, kb: 5, lift: 0, spike: true, power: 2, snd: 'heavy' }],
+  },
+  // 버티기 반격이 발동했을 때의 되받아치기 모션 (판정은 game.counterStrike 가 처리)
+  taroCounter: {
+    dur: 0.42, chain: 0.4,
+    frames: [
+      [0, { hy: -0.2, tx: 0.5, alx: -1.5, flx: -0.4, arx: -1.5, frx: -0.4, llx: -0.7, slx: 0.9, lrx: 0.4, srx: 0.7 }],
+      [0.14, { hy: -0.1, tx: -0.6, nx: -0.4, alx: -2.9, flx: -0.5, arx: -2.9, frx: -0.5, llx: -0.2, slx: 0.4, lrx: 0.3, srx: 0.4 }],
+      [0.42, S],
+    ],
+  },
+
+  // ---------- 루나: 컨트롤러 ----------
+  lunaTrap: {
+    dur: 0.4, chain: 0.34,
+    frames: [
+      [0, S],
+      [0.1, { hy: -0.25, tx: 0.6, nx: 0.3, arx: -0.9, frx: -0.3, alx: -0.6, flx: -1.2, llx: -0.8, slx: 1.1, lrx: 0.4, srx: 0.8 }],
+      [0.28, { hy: -0.25, tx: 0.6, nx: 0.3, arx: -0.7, frx: -0.2, alx: -0.6, flx: -1.2, llx: -0.8, slx: 1.1, lrx: 0.4, srx: 0.8 }],
+      [0.4, S],
+    ],
+    events: [[0.14, 'trap']],
+  },
+  lunaRise: {
+    dur: 0.56, chain: 0.5, hop: 11,
+    frames: [
+      [0, CROUCH],
+      [0.1, { hy: 0.1, tx: -0.2, alx: -2.9, arx: -2.9, alz: 0.3, arz: -0.3, ...TUCK }],
+      [0.4, { hy: 0.1, hry: 6.283, tx: -0.2, alx: -2.9, arx: -2.9, alz: 0.3, arz: -0.3, ...TUCK }],
+      [0.56, { hry: 6.283, tx: 0.1, ...TUCK }],
+    ],
+    hits: [{ t0: 0.06, t1: 0.2, fwd: 0.6, up: 1.3, r: 1.0, radial: 0.5, dmg: 9, kb: 2, lift: 15.5, launch: true, chase: true, power: 2, snd: 'kick' }],
+    events: [[0.06, 'hop']],
+  },
+  lunaDrop: {
+    dur: 0.44, chain: 0.4, air: true, hang: 4.5, floatT: 0.4,
+    frames: [
+      [0, { tx: 0.3, nx: 0.4, arx: -0.6, frx: -0.2, ...TUCK }],
+      [0.2, { tx: 0.45, nx: 0.5, arx: 0.2, frx: -0.1, ...TUCK }],
+      [0.44, { tx: 0.1, ...TUCK }],
+    ],
+    events: [[0.12, 'trapDrop']],
+  },
+
+  // ---------- 스킬 2: 방어 기술 ----------
+  // guard/parry 는 state 'guard' 로 처리하고, 나머지는 짧은 무적/반격 기술
+  rollDodge: {
+    dur: 0.4, chain: 0.4, iv: [0, 0.3], dodge: true,
+    frames: [
+      [0, { hy: -0.45, tx: 0.8, nx: 0.5, alx: -2, arx: -2, llx: -1.6, slx: 2.2, lrx: -1.6, srx: 2.2 }],
+      [0.3, { hy: -0.45, hx: 6.283, tx: 0.8, nx: 0.5, alx: -2, arx: -2, llx: -1.6, slx: 2.2, lrx: -1.6, srx: 2.2 }],
+      [0.4, { ...S, hx: 6.283 }],
+    ],
+    lunge: [0, 0.3, 15],
+  },
+  backFlip: {
+    dur: 0.42, chain: 0.3, iv: [0, 0.34], hop: 10.5, hopBack: 7.5, dodge: true,
+    frames: [
+      [0, CROUCH],
+      [0.08, { hx: 1.4, tx: -0.3, ...TUCK, alz: 1.0, arz: -1.0 }],
+      [0.34, { hx: 6.283, tx: 0.2, ...TUCK, alz: 0.8, arz: -0.8 }],
+      [0.42, { hx: 6.283, tx: 0.1, ...TUCK }],
+    ],
+    events: [[0.02, 'hop']],
+  },
+  smokeStep: {
+    dur: 0.36, chain: 0.3, iv: [0, 0.24], dodge: true,
+    frames: [
+      [0, { hy: -0.2, tx: -0.4, nx: -0.2, alx: -1.2, flx: -1.6, arx: -1.2, frx: -1.6, llx: 0.3, slx: 0.5, lrx: -0.5, srx: 0.8 }],
+      [0.24, { hy: -0.2, tx: -0.3, alx: -1.0, flx: -1.5, arx: -1.0, frx: -1.5, llx: 0.2, slx: 0.4, lrx: -0.4, srx: 0.7 }],
+      [0.36, S],
+    ],
+    lunge: [0, 0.22, -15],
+    events: [[0.0, 'smoke']],
+  },
+  barrierCast: {
+    dur: 0.24, chain: 0.2,
+    frames: [
+      [0, S],
+      [0.08, { hy: -0.2, tx: 0.2, alx: -1.8, alz: -0.6, flx: -0.3, arx: -1.8, arz: 0.6, frx: -0.3, llx: -0.5, slx: 0.7, lrx: 0.4, srx: 0.5 }],
+      [0.24, P.guard],
+    ],
+    events: [[0.02, 'barrier']],
+  },
+  brace: {
+    dur: 0.62, chain: 0.62, counter: [0, 0.5],
+    frames: [
+      [0, S],
+      [0.06, { hy: -0.32, tx: 0.35, nx: 0.25, alx: -1.3, alz: -0.4, flx: -1.9, arx: -1.3, arz: 0.4, frx: -1.9, llx: -0.9, llz: 0.25, slx: 1.2, lrx: 0.5, lrz: -0.25, srx: 1.0 }],
+      [0.5, { hy: -0.32, tx: 0.35, nx: 0.25, alx: -1.3, alz: -0.4, flx: -1.9, arx: -1.3, arz: 0.4, frx: -1.9, llx: -0.9, llz: 0.25, slx: 1.2, lrx: 0.5, lrz: -0.25, srx: 1.0 }],
+      [0.62, S],
+    ],
+    events: [[0.0, 'brace']],
+  },
+  blinkStep: {
+    dur: 0.22, chain: 0.16, iv: [0, 0.22], dodge: true,
+    frames: [
+      [0, { hy: -0.1, tx: 0.2, alz: 1.2, arz: -1.2 }],
+      [0.22, S],
+    ],
+    events: [[0.0, 'blink']],
+  },
+  // 브레이크 버스트: 연속 피격 중 스킬 2 로 탈출
+  burst: {
+    dur: 0.3, chain: 0.26, iv: [0, 0.3],
+    frames: [
+      [0, { hy: -0.1, tx: -0.3, alx: -0.4, alz: 1.5, arx: -0.4, arz: -1.5, llx: -0.3, slx: 0.4, lrx: 0.3, srx: 0.4 }],
+      [0.3, S],
+    ],
+  },
 };
+
+// ---------------- 타이밍 다듬기 ----------------
+// 전체 타임라인(키프레임, 판정, 전진, 이벤트)을 k 배로 줄인다. 전진 거리는 유지되도록 속도를 1/k 배
+function quicken(def, k) {
+  def.dur *= k;
+  def.chain *= k;
+  def.frames = def.frames.map(([t, p]) => [t * k, p]);
+  if (def.hits) def.hits = def.hits.map((h) => ({ ...h, t0: h.t0 * k, t1: h.t1 * k, every: h.every ? h.every * k : h.every }));
+  if (def.lunge) def.lunge = [def.lunge[0] * k, def.lunge[1] * k, def.lunge[2] / k];
+  if (def.events) def.events = def.events.map(([t, e]) => [t * k, e]);
+  if (def.iv) def.iv = [def.iv[0] * k, def.iv[1] * k];
+  if (def.hold) def.hold = [def.hold[0] * k, def.hold[1]];
+  if (def.counter) def.counter = [def.counter[0] * k, def.counter[1] * k];
+}
+// 무겁게 느껴지던 기술의 선딜/후딜을 줄인다 (60Hz 고정 스텝 기준 1~5 프레임)
+const QUICK = {
+  kick3: 0.86, heavy: 0.85, tackle: 0.86, summon: 0.78, airKick: 0.9, airSpike: 0.88, air1: 0.94, air2: 0.94,
+  ricoCharge: 0.88, ricoUpper: 0.92, ricoRush: 0.88, mimiHop: 0.92, mimiRoll: 0.88, mimiBoomerang: 0.9,
+  junSweep: 0.88, junKnee: 0.92, junSlide: 0.88, junAxe: 0.9, soraSpin: 0.9, soraFlip: 0.92, soraKnee: 0.88, soraSwallow: 0.92,
+};
+for (const [k, v] of Object.entries(QUICK)) if (HUMAN_ACTS[k]) quicken(HUMAN_ACTS[k], v);
 
 // ---------------- 로봇 ----------------
 const RS = { hy: -0.1, tx: 0.1, alx: -0.5, flx: -1.1, alz: 0.22, arx: -0.5, frx: -1.1, arz: -0.22, llx: -0.2, lrx: 0.15, slx: 0.3, srx: 0.25 };
@@ -510,6 +760,10 @@ export const ROBOT_ACTS = {
     events: [[0.0, 'ultimate'], [0.1, 'charge'], [0.77, 'megaSlam']],
   },
 };
+
+// 로봇 기본 콤보와 스킬도 조금 더 빠르게
+const RQUICK = { tp1: 0.9, tp2: 0.86, bk3: 0.9, hs1: 0.86, hs2: 0.86, rocket: 0.9, missiles: 0.92, stomp: 0.92, megaSlam: 0.92, drill: 0.94 };
+for (const [k, v] of Object.entries(RQUICK)) if (ROBOT_ACTS[k]) quicken(ROBOT_ACTS[k], v);
 
 export const ROBOT_MOVES = {
   titan: { combo: 'tp1', k: 'rocket', l: 'stomp' },

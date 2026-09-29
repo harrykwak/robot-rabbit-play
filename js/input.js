@@ -6,8 +6,8 @@ const pressed = new Set();
 export const ACTIONS = ['up', 'down', 'left', 'right', 'atk', 'hvy', 'grd', 'jump', 'dash', 'act', 'pause'];
 export const ACTION_NAMES = {
   up: '위로 이동', down: '아래로 이동', left: '왼쪽 이동', right: '오른쪽 이동',
-  atk: '공격 · 콤보', hvy: '강공격', grd: '가드', jump: '점프', dash: '대시',
-  act: '리모컨 · 탑승', pause: '일시정지',
+  atk: '공격', hvy: '스킬 1', grd: '스킬 2', jump: '점프', dash: '대시',
+  act: '호출·탑승', pause: '일시정지',
 };
 const DEFAULTS = {
   up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],

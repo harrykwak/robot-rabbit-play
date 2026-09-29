@@ -37,8 +37,9 @@ export class RemoteCtrl {
   reset() { this.in=neutral(); this.latest=neutral(); this.received=-Infinity; this.lat=Object.fromEntries(EDGES.map(k=>[k,-Infinity])); }
 }
 
-const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT'];
-const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel'];
+// v1.4: cd1/cd2/cd2Max (skill HUD), hitsTaken (break burst), bubbleT (Dori barrier), exposedT (robot weak point)
+const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT'];
+const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT'];
 const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaternion.toArray().map(round),s:mesh.scale.toArray().map(round),visible:mesh.visible});
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
   parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
@@ -50,6 +51,7 @@ export function captureSnapshot(game,{matchId,seq,onInvalid}) {
     robots:game.robots.map(r=>({...fighterState(r),...numbers(r,RNUM),id:r.id,type:r.type,owner:r.owner?.id??null,pilot:r.pilot?.id??null,cds:numbers(r.cds,['k','l','dash']),ring:rootState(r.ring)})),
     projectiles:game.projectiles.map(p=>({...rootState(p.mesh),type:p.type})),
     carrots:game.carrots.map(c=>rootState(c.mesh)),
+    traps:(game.traps||[]).map(t=>rootState(t.mesh)),
     shields:game.shields.map(s=>({...rootState(s.mesh),color:s.h.color,alpha:round(Math.min(1,s.mesh.material.uniforms.alpha.value))})),
     rings:game.fx.rings.filter(r=>r.on&&r.m.visible).map(r=>({...rootState(r.m),color:r.m.material.color.toArray().map(round),alpha:round(r.m.material.opacity)})),
     beams:game.robots.map(r=>r.beam?.snapshot?.()).filter(Boolean).map(b=>({...b,from:b.from.map(round),to:b.to.map(round)}))};
@@ -72,6 +74,7 @@ export function validateSnapshot(s,matchId) {
     if(!s.humans.every(h=>h.riding===null||s.robots.find(r=>r.id===h.riding)?.pilot===h.id) || !s.robots.every(r=>r.pilot===null||s.humans[r.pilot].riding===r.id)) return false;
     if(!Array.isArray(s.projectiles)||s.projectiles.length>64||!s.projectiles.every(p=>validRoot(p)&&['shot','boomer','fist','missile'].includes(p.type)))return false;
     if(!Array.isArray(s.carrots)||s.carrots.length>8||!s.carrots.every(validRoot))return false;
+    if(!Array.isArray(s.traps)||s.traps.length>8||!s.traps.every(validRoot))return false;
     if(!Array.isArray(s.shields)||s.shields.length>8||!s.shields.every(p=>validRoot(p)&&integer(p.color,0,0xffffff)&&num(p.alpha,0,1)))return false;
     if(!Array.isArray(s.rings)||s.rings.length>40||!s.rings.every(p=>validRoot(p)&&vector(p.color,3,100)&&num(p.alpha,0,5)))return false;
     if(!Array.isArray(s.beams)||s.beams.length>4||!s.beams.every(b=>vector(b.from,3)&&vector(b.to,3)&&num(b.width,.01,10)&&integer(b.color,0,0xffffff)))return false;
@@ -84,7 +87,7 @@ export class PeerReplica {
   constructor(game,{matchId,localIndex=1}) {
     this.game=game; this.matchId=matchId; this.localIndex=localIndex; this.seq=-1; this.targets=new Map(); this.pools={};
     this.group=new THREE.Group(); game.scene.add(this.group);
-    this.geometries={shot:new THREE.SphereGeometry(.42,8,6),boomer:new THREE.TorusGeometry(.7,.16,6,12),fist:new THREE.BoxGeometry(1.6,1.6,2),missile:new THREE.ConeGeometry(.45,1.7,8),carrot:new THREE.ConeGeometry(.4,1.7,8),shield:new THREE.IcosahedronGeometry(1,1),ring:new THREE.PlaneGeometry(2,2),beam:new THREE.CylinderGeometry(1,1,1,8)};
+    this.geometries={shot:new THREE.SphereGeometry(.42,8,6),boomer:new THREE.TorusGeometry(.7,.16,6,12),fist:new THREE.BoxGeometry(1.6,1.6,2),missile:new THREE.ConeGeometry(.45,1.7,8),carrot:new THREE.ConeGeometry(.4,1.7,8),trap:new THREE.CircleGeometry(.9,12),shield:new THREE.IcosahedronGeometry(1,1),ring:new THREE.PlaneGeometry(2,2),beam:new THREE.CylinderGeometry(1,1,1,8)};
     this.geometries.beam.translate(0,.5,0); this.up=new THREE.Vector3(0,1,0); this.direction=new THREE.Vector3();
   }
   accept(s) {
@@ -115,6 +118,7 @@ export class PeerReplica {
     if(previousPhase!=='end'&&s.phase==='end'){const win=g.results()[0].h===g.player;g.ui.banner(win?'VICTORY!':'GAME SET',win?'win':'ko');audio.stopMusic();audio.sfx(win?'victory':'defeat');}
     this.visuals('projectiles',s.projectiles,p=>p.type);
     this.visuals('carrots',s.carrots,()=> 'carrot');
+    this.visuals('traps',s.traps,()=> 'trap');
     this.visuals('shields',s.shields,()=> 'shield');
     this.visuals('rings',s.rings,()=> 'ring');
     this.visuals('beams',s.beams,()=> 'beam');
@@ -138,7 +142,7 @@ export class PeerReplica {
     items.forEach((s,i)=>{
       const type=typeOf(s);let entry=pool[i];
       if(!entry||entry.type!==type){if(entry){this.group.remove(entry.mesh);entry.mesh.material.dispose();}
-        const material=new THREE.MeshBasicMaterial({color:type==='shot'?0xff68d0:type==='fist'?0xaeeeff:0xffa233,transparent:true,depthWrite:!['ring','shield','beam'].includes(type),side:THREE.DoubleSide});
+        const material=new THREE.MeshBasicMaterial({color:type==='shot'?0xff68d0:type==='fist'?0xaeeeff:type==='trap'?0xb46cff:0xffa233,transparent:true,depthWrite:!['ring','shield','beam','trap'].includes(type),side:THREE.DoubleSide});
         if(type==='ring')material.map=this.game.fx.tex.ring;
         entry=pool[i]={type,mesh:new THREE.Mesh(this.geometries[type],material)};this.group.add(entry.mesh);
       }

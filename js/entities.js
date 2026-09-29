@@ -27,6 +27,13 @@ for (const k of Object.keys(P)) HP[k] = makePose(P[k]);
 const FLAT = { h: 0, vx: 0, vz: 0, pad: 0 };
 const ROBOT_COMBO = new Set(['tp1', 'tp2', 'bk1', 'bk2', 'bk3', 'blaster', 'hs1', 'hs2']);
 const STUNNED = new Set(['hurt', 'launched', 'down']);
+// 탑승 중 하차: 호출 버튼을 이만큼 누르고 있기
+export const EJECT_HOLD = 0.6;
+// 스킬 2 종류 → 액션 이름 (guard/parry 는 state 'guard')
+const SKILL2_ACT = { roll: 'rollDodge', flip: 'backFlip', smoke: 'smokeStep', barrier: 'barrierCast', brace: 'brace', blink: 'blinkStep' };
+const GUARD_KINDS = new Set(['guard', 'parry']);
+// 공격으로 치지 않는 기술: 배리어를 깨지 않는다
+const NON_ATTACK = new Set(['barrierCast', 'rollDodge', 'backFlip', 'smokeStep', 'blinkStep', 'brace', 'burst', 'summon']);
 
 class Fighter {
   constructor(game, rig, kind) {
@@ -209,6 +216,22 @@ export class Human extends Fighter {
     this.guardStart = -99;
     this.parryBuff = 0;
     this.combo = { n: 0, dmg: 0, t: 0, target: null, best: 0 };
+    // 스킬 쿨다운 (cd1: 스킬 1, cd2: 스킬 2 방어기 / 브레이크 버스트)
+    this.cd1 = 0;
+    this.cd2 = 0;
+    this.cd2Max = (pilot.skill2 && pilot.skill2.cd) || 1;
+    // 일방적인 전투 방지: 쉬지 않고 연속으로 맞은 횟수와 자유롭게 움직인 시간
+    this.hitsTaken = 0;
+    this.freeT = 0;
+    this.stunChain = 0;    // 연속 경직 시간
+    this.bubbleT = 0;      // 도리 당근 배리어
+    this.comeback = 1;     // 뒤처진 만큼 게이지 충전 배율 (game.update 가 매 틱 계산)
+    // UI 가 매 틱 읽는 값: 객체를 재사용해 할당을 만들지 않는다
+    this._hud = [
+      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false },
+      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false },
+    ];
+    this._ctx = { kind: null, progress: 0, label: '', hint: '', near: false };
     g.scene.add(rig.root);
   }
 
@@ -224,6 +247,118 @@ export class Human extends Fighter {
     if (this.act && this.act.name === 'summon') this.rig.remote.visible = false;
     this.act = null;
     this.floatT = 0;
+  }
+
+  // ---------- 스킬 (UI 계약) ----------
+  // skillHud(): [스킬 1, 스킬 2]. 매 틱 읽어도 되도록 캐시 객체를 갱신해 돌려준다
+  //   { name, cd, cdMax, ready, hold(누르고 있는 기술), burst(지금 스킬 2 로 브레이크 버스트 가능), active(발동 중) }
+  //   탑승 중에는 로봇 스킬 1/2 (cds.k / cds.l) 를 같은 모양으로 돌려준다
+  skillHud() {
+    const h = this._hud, a = h[0], b = h[1];
+    const r = this.riding;
+    if (r) {
+      const st = r.stats.skills, mul = (this.P.robot && this.P.robot.cd) || 1;
+      a.name = st[1].name; a.cdMax = st[1].cd * mul; a.cd = r.cds.k; a.ready = r.cds.k <= 0; a.hold = false; a.burst = false; a.active = !!(r.act && r.act.name === r.moves.k);
+      b.name = st[2].name; b.cdMax = st[2].cd * mul; b.cd = r.cds.l; b.ready = r.cds.l <= 0; b.hold = false; b.burst = false; b.active = !!(r.act && r.act.name === r.moves.l);
+      return h;
+    }
+    const s1 = this.P.skill1, s2 = this.P.skill2;
+    a.name = s1.name; a.cdMax = s1.cd; a.cd = this.cd1; a.ready = this.cd1 <= 0; a.hold = false; a.burst = false;
+    a.active = !!(this.act && this.act.name === this.P.acts.heavy);
+    b.name = s2.name; b.cdMax = this.cd2Max; b.cd = this.cd2; b.ready = this.cd2 <= 0; b.hold = GUARD_KINDS.has(s2.kind);
+    b.burst = this.canBurst();
+    b.active = this.state === 'guard' || this.bubbleT > 0 || !!(this.act && this.act.def.counter);
+    return h;
+  }
+
+  // 콤보 한계: 더 이상 공중에 붙잡아 둘 수 없다
+  juggleCapped() { return this.hitsTaken >= RULES.juggleCap || this.stunChain >= RULES.juggleTime; }
+
+  // 연속으로 맞는 중 스킬 2 로 탈출할 수 있는가
+  canBurst() {
+    return this.hitsTaken >= RULES.burstHits && this.cd2 <= 0 && !(this.koT > 0) && this.hp > 0 && !this.riding
+      && (this.state === 'hurt' || this.state === 'launched');
+  }
+
+  // 스킬 1: 파일럿 대표 기술 (쿨다운)
+  useSkill1(name) {
+    if (!name || this.cd1 > 0 || !HUMAN_ACTS[name]) return false;
+    this.cd1 = this.P.skill1.cd;
+    this.doAct(name);
+    return true;
+  }
+
+  // 스킬 2 를 지금 쓸 수 있는가 (부작용 없음)
+  skill2Ready(i) {
+    const sk = this.P.skill2;
+    if (!sk || this.cd2 > 0) return false;
+    if (GUARD_KINDS.has(sk.kind)) return !!i.grd && this.onGround;
+    if (!i.grdP) return false;
+    return this.onGround || sk.kind === 'blink' || sk.kind === 'barrier' || sk.kind === 'smoke';
+  }
+
+  // 스킬 2: 방어 기술. guard/parry 는 누르고 있는 동안 가드, 나머지는 쿨다운 기술
+  useSkill2(i) {
+    if (!this.skill2Ready(i)) return false;
+    const sk = this.P.skill2;
+    if (GUARD_KINDS.has(sk.kind)) { this.startGuard(); return true; }
+    const inMag = Math.hypot(i.mx, i.mz);
+    if (sk.kind === 'roll' && inMag > 0.2) this.facing = Math.atan2(i.mx, i.mz);
+    this.cd2 = this.cd2Max = sk.cd;
+    this.doAct(SKILL2_ACT[sk.kind]);
+    return true;
+  }
+
+  // 가드를 풀면 짧은 쿨다운. 최대 유지 시간을 다 써서 풀리면 조금 더 길다
+  endGuard(timeout = false) {
+    this.setState('normal');
+    const sk = this.P.skill2;
+    this.cd2 = this.cd2Max = timeout ? 1.2 : (sk && sk.cd) || 0.3;
+  }
+
+  jumpUp(mul = 1) {
+    const g = this.g;
+    this.vel.y = (this.P.jump || 11.5) * mul; this.onGround = false;
+    g.sound('jump', this.pos, 0.7);
+    g.fx.dust(this.pos, 5, 0.6);
+  }
+
+  startDash(i, inMag, speed) {
+    const g = this.g;
+    this.setState('dash');
+    const dx = inMag > 0.2 ? i.mx / inMag : Math.sin(this.facing);
+    const dz = inMag > 0.2 ? i.mz / inMag : Math.cos(this.facing);
+    this.facing = Math.atan2(dx, dz);
+    const ds = 17 + speed * 0.3;
+    this.vel.x = dx * ds; this.vel.z = dz * ds;
+    if (!this.onGround) this.vel.y = Math.max(this.vel.y, 2);
+    this.invuln = Math.max(this.invuln, 0.16);
+    this.dashCd = 0.45;
+    g.sound('dash', this.pos, 0.8);
+    g.fx.dust(this.pos, 6, 0.7);
+  }
+
+  // 루나 순간이동: 스틱 방향(없으면 뒤)으로. 발밑이 없는 곳으로는 가지 않는다
+  blink() {
+    const g = this.g, i = this.ctrl.in;
+    const m = Math.hypot(i.mx, i.mz);
+    const dx = m > 0.2 ? i.mx / m : -Math.sin(this.facing);
+    const dz = m > 0.2 ? i.mz / m : -Math.cos(this.facing);
+    const d = (this.P.skill2 && this.P.skill2.dist) || 4.5;
+    const ox = this.pos.x, oz = this.pos.z;
+    g.fx.sparkle(tA.copy(this.pos).setY(this.pos.y + 1), this.color);
+    g.fx.ring(tA.copy(this.pos).setY(this.pos.y + 0.08), null, 0.3, 1.6, 0.3, this.color, 0.9);
+    let ok = false;
+    for (const k of [1, 0.65, 0.35]) {
+      this.pos.x = ox + dx * d * k; this.pos.z = oz + dz * d * k;
+      const s = this.ground(this.pos.y + 0.6);
+      if (s && (!this.onGround || Math.abs(s.h - this.pos.y) < 1.6)) { ok = true; break; }
+    }
+    if (!ok) { this.pos.x = ox; this.pos.z = oz; }
+    this.vel.x = dx * 3; this.vel.z = dz * 3;
+    if (!this.onGround) this.vel.y = Math.max(this.vel.y, 2);
+    g.fx.sparkle(tA.copy(this.pos).setY(this.pos.y + 1), this.color);
+    g.sound('dash', this.pos, 0.7, 1.6);
   }
 
   update(dt, realDt) {
@@ -250,35 +385,43 @@ export class Human extends Fighter {
     this.stateT += dt;
     this.chaseT -= dt;
     this.parryBuff = Math.max(0, this.parryBuff - dt);
+    if (this.cd1 > 0) this.cd1 = Math.max(0, this.cd1 - dt);
+    if (this.cd2 > 0) this.cd2 = Math.max(0, this.cd2 - dt);
+    if (this.bubbleT > 0) { this.bubbleT -= dt; if (this.bubbleT <= 0) g.endBubble(this); }
+    // 자유롭게 움직인 시간이 쌓이면 연속 피격 수를 초기화한다
+    if (STUNNED.has(this.state)) { this.freeT = 0; this.stunChain += dt; }
+    else if (this.hitsTaken > 0 || this.stunChain > 0) { this.freeT += dt; if (this.freeT >= RULES.freeReset) { this.hitsTaken = 0; this.stunChain = 0; } }
     const fighting = g.phase === 'fight';
     if (fighting && !this.robot) this.addGauge(RULES.gaugePassive * dt * (g.enemyRiding(this) ? RULES.enemyRobotGauge : 1));
     const canSummon = this.gauge >= RULES.gaugeMax && !this.robot;
-    // 소환 입력 버퍼: 경직 중에 눌러도 0.5초 안에 풀리면 소환
+    // 호출 입력 버퍼: 경직 중에 눌러도 0.5초 안에 풀리면 호출
     if (i.actP && canSummon) this.summonBuf = 0.5;
     else if (this.summonBuf > 0) this.summonBuf -= dt;
-    // 긴급 소환: 맞고 있거나 날아가는 중에도 게이지 MAX 면 배리어를 터뜨리며 소환
+    // 긴급 호출: 맞고 있거나 날아가는 중에도 게이지 MAX 면 배리어를 터뜨리며 호출
     if (fighting && this.summonBuf > 0 && canSummon && STUNNED.has(this.state) && this.koT <= 0) {
       this.summonBuf = 0;
       g.emergencySummon(this);
       this.doAct('summon');
     }
+    // 브레이크 버스트: 연속으로 맞는 중 스킬 2 를 소모해 빠져나온다
+    if (fighting && i.grdP && this.canBurst()) g.breakBurst(this);
 
     let wantX = 0, wantZ = 0;
     const speed = P.speed || 7.4;
     const inMag = Math.hypot(i.mx, i.mz);
     const canCtl = fighting;
     if (this.onGround) { this.airJumpsLeft = P.airJumps || 0; if (this.state !== 'act') this.airCount = 0; }
+    const chaseOK = this.chaseT > 0 && this.chaseTarget && !this.chaseTarget.dead;
 
     switch (this.state) {
       case 'normal': {
         if (!canCtl) break;
         wantX = i.mx; wantZ = i.mz;
-        if (i.jump && this.chaseT > 0 && this.chaseTarget && !this.chaseTarget.dead) {
+        if (chaseOK && (i.jump || (i.atk && this.onGround))) {
+          // 띄운 직후: 점프나 공격 버튼으로 추격 점프 (터치에서는 점프 버튼이 없어도 된다)
           this.superJump();
         } else if (i.jump && this.onGround) {
-          this.vel.y = P.jump || 11.5; this.onGround = false;
-          g.sound('jump', this.pos, 0.7);
-          g.fx.dust(this.pos, 5, 0.6);
+          this.jumpUp();
         } else if (i.jump && this.airJumpsLeft > 0) {
           this.airJumpsLeft--;
           this.vel.y = (P.jump || 11.5) * 0.95;
@@ -286,51 +429,50 @@ export class Human extends Fighter {
           g.sound('jump', this.pos, 0.6, 1.35);
           g.fx.sparkle(tA.copy(this.pos), this.color);
         } else if (i.dash && this.dashCd <= 0) {
-          this.setState('dash');
-          const dx = inMag > 0.2 ? i.mx / inMag : Math.sin(this.facing);
-          const dz = inMag > 0.2 ? i.mz / inMag : Math.cos(this.facing);
-          this.facing = Math.atan2(dx, dz);
-          const ds = 16 + speed * 0.3;
-          this.vel.x = dx * ds; this.vel.z = dz * ds;
-          if (!this.onGround) this.vel.y = Math.max(this.vel.y, 2);
-          this.invuln = Math.max(this.invuln, 0.16);
-          this.dashCd = 0.6;
-          g.sound('dash', this.pos, 0.8);
-          g.fx.dust(this.pos, 6, 0.7);
-        } else if (i.atk || i.hvy) {
+          this.startDash(i, inMag, speed);
+        } else if (i.atk) {
           if (this.airborne) {
-            if (i.hvy) this.doAct(P.acts.airHvy);
-            else if (this.faceAirTarget()) this.doAct(this.nextAir());
+            if (this.faceAirTarget()) this.doAct(this.nextAir());
             else if (this.pos.y - this.gh > 0.9) this.doAct('airKick');
-          } else if (this.onGround) this.doAct(i.hvy ? P.acts.heavy : 'jab1');
+          } else if (this.onGround) this.doAct('jab1');
+        } else if (i.hvy && this.cd1 <= 0 && (this.airborne || this.onGround)) {
+          this.useSkill1(this.airborne ? P.acts.airHvy : P.acts.heavy);
         } else if (this.summonBuf > 0 && canSummon) {
           this.summonBuf = 0;
           this.doAct('summon');
-        } else if (i.act && this.onGround) {
-          const r = g.boardableNear(this);
-          if (r) this.beginBoard(r);
-          else if (i.grd) this.startGuard();
-        } else if (i.grd && this.onGround) {
-          this.startGuard();
+        } else if (i.act && this.onGround && g.boardableNear(this)) {
+          this.beginBoard(g.boardableNear(this));
+        } else if (i.grd || i.grdP) {
+          this.useSkill2(i);
         }
         break;
       }
       case 'dash': {
         if (canCtl && i.atk) { this.doAct('tackle'); break; }
-        if (canCtl && i.hvy) { this.doAct(P.acts.dashHvy); break; }
-        if (canCtl && i.jump && this.onGround) { this.setState('normal'); this.vel.y = (P.jump || 11.5) * 0.9; this.onGround = false; g.sound('jump', this.pos, 0.7); break; }
-        this.vel.x *= Math.exp(-dt * 2.5);
-        this.vel.z *= Math.exp(-dt * 2.5);
+        if (canCtl && i.hvy && this.cd1 <= 0) { this.useSkill1(P.acts.dashHvy); break; }
+        if (canCtl && (i.grdP || i.grd) && this.useSkill2(i)) break;
+        if (canCtl && i.jump && this.onGround) { this.setState('normal'); this.jumpUp(0.9); break; }
+        this.vel.x *= Math.exp(-dt * 3);
+        this.vel.z *= Math.exp(-dt * 3);
         if (Math.random() < 0.5) g.fx.trailPuff(tA.copy(this.pos).setY(this.pos.y + 0.8), this.color, 0.45);
-        if (this.stateT > 0.26) this.setState('normal');
+        if (this.stateT > 0.22) this.setState('normal');
         break;
       }
       case 'act': {
         const a = this.act;
         if (!a) { this.setState('normal'); break; }
         const d = a.def;
-        // 띄운 직후 점프: 기술을 캔슬하고 추격 점프
-        if (canCtl && i.jump && this.chaseT > 0 && this.chaseTarget && !this.chaseTarget.dead && a.hits.size > 0 && !d.air) { this.act = null; this.superJump(); break; }
+        // 띄운 직후: 기술을 캔슬하고 추격 점프 (점프, 또는 땅에서 공격 버튼)
+        if (canCtl && chaseOK && a.hits.size > 0 && !d.air && (i.jump || (i.atk && this.onGround && !d.hop))) { this.act = null; this.superJump(); break; }
+        // 잽 시작 직후(판정 전)에는 점프/대시로 캔슬된다: 위로 튕기는 터치 입력과 키보드 모두 부드럽게
+        if (canCtl && (a.name === 'jab1' || a.name === 'jab2') && a.t < 0.1 && a.hits.size === 0 && this.onGround) {
+          if (i.jump) { this.act = null; this.setState('normal'); this.jumpUp(); break; }
+          if (i.dash && this.dashCd <= 0) { this.act = null; this.startDash(i, inMag, speed); break; }
+        }
+        // 공격 후딜은 방어 기술로 캔슬된다 (사람 상태에서도 몸을 지킬 수 있게)
+        if (canCtl && !d.dodge && !d.counter && a.name !== 'summon' && a.t >= d.chain && !this.airborne && (i.grdP || i.grd) && this.skill2Ready(i)) {
+          this.act = null; this.setState('normal'); this.useSkill2(i); break;
+        }
         if (canCtl && i.atk) a.buf = 'atk';
         else if (canCtl && i.hvy) a.buf = 'hvy';
         // 모으기: 강공격 키를 누르고 있는 동안 멈춰서 힘을 모은다
@@ -338,7 +480,7 @@ export class Human extends Fighter {
           if (i.hvyD && a.charge < d.hold[1] && canCtl) {
             a.charge += dt;
             a.mult = 1 + a.charge * 1.1;
-            if (inMag > 0.3) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 8));
+            if (inMag > 0.3) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 10));
             if (Math.random() < 0.6) { this.rig.handR.getWorldPosition(tA); g.fx.trailPuff(tA, a.charge > 0.9 ? 0xffe060 : this.color, 0.35 + a.charge * 0.4); }
             this.chargeTick = (this.chargeTick || 0) - dt;
             if (this.chargeTick <= 0) { this.chargeTick = 0.16; g.sound('boardTick', this.pos, 0.35, 0.7 + a.charge); }
@@ -361,7 +503,7 @@ export class Human extends Fighter {
               g.fx.dust(this.pos, 8, 0.9);
               g.fx.shockwave(this.pos, 2.2, 0xffe0a0, 0.3);
               g.sound('land', this.pos, 0.9);
-              g.shake(0.1, this.pos);
+              g.shake(0.06, this.pos);
             }
             this.act = null; this.setState('normal'); this.dashCd = 0.1;
             break;
@@ -381,8 +523,10 @@ export class Human extends Fighter {
         break;
       }
       case 'guard': {
-        if (!i.grd || !canCtl) { this.setState('normal'); break; }
-        if (inMag > 0.3) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 8));
+        const sk = P.skill2;
+        if (!i.grd || !canCtl) { this.endGuard(); break; }
+        if (sk && sk.hold && this.stateT > sk.hold) { this.endGuard(true); break; }
+        if (inMag > 0.3) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 12));
         if (i.act) { const r = g.boardableNear(this); if (r) this.beginBoard(r); }
         break;
       }
@@ -405,7 +549,15 @@ export class Human extends Fighter {
         this.vel.x *= Math.exp(-dt * 9);
         this.vel.z *= Math.exp(-dt * 9);
         if (this.koT > 0) { this.koT -= dt; if (this.koT <= 0) { g.kill(this, 'ko'); return; } break; }
-        if (this.stateT > 0.6) { this.setState('normal'); this.invuln = 0.5; }
+        // 누워 있는 동안은 무적: 쓰러진 상대를 계속 때리는 걸 막는다
+        this.invuln = Math.max(this.invuln, 0.05);
+        const quick = canCtl && this.stateT > RULES.quickRise && (i.atk || i.hvy || i.jump || i.dash || i.grdP || inMag > 0.5);
+        if (this.stateT > RULES.downTime || quick) {
+          this.setState('normal');
+          this.invuln = RULES.wakeInvuln;
+          this.hitsTaken = 0; this.stunChain = 0;
+          if (quick && inMag > 0.5) { this.facing = Math.atan2(i.mx, i.mz); this.vel.x = i.mx * speed * 1.2; this.vel.z = i.mz * speed * 1.2; }
+        }
         break;
       }
       case 'boarding': {
@@ -424,11 +576,11 @@ export class Human extends Fighter {
     if (this.state === 'normal' || this.state === 'guard') {
       const m = Math.hypot(wantX, wantZ);
       const sp = this.state === 'guard' ? 0 : speed;
-      const accel = this.onGround ? 60 : this.padT > 0 ? 3 : 26;
+      const accel = this.onGround ? 85 : this.padT > 0 ? 3 : 34;
       const tx = wantX * sp, tz = wantZ * sp;
       this.vel.x += clamp(tx - this.vel.x, -accel * dt, accel * dt);
       this.vel.z += clamp(tz - this.vel.z, -accel * dt, accel * dt);
-      if (m > 0.15 && this.state === 'normal') this.facing = angLerp(this.facing, Math.atan2(wantX, wantZ), 1 - Math.exp(-dt * 16));
+      if (m > 0.15 && this.state === 'normal') this.facing = angLerp(this.facing, Math.atan2(wantX, wantZ), 1 - Math.exp(-dt * 24));
       this.moveAmt = Math.hypot(this.vel.x, this.vel.z) / speed;
     } else if (this.state === 'act') {
       const a = this.act;
@@ -451,7 +603,7 @@ export class Human extends Fighter {
     this.physics(dt);
     this.buildPose(dt);
     this.syncRoot();
-    if (this.invuln > 0 && this.state !== 'dash' && !(this.act && this.act.def.iv)) this.rig.root.visible = Math.floor(this.invuln * 14) % 2 === 0;
+    if (this.invuln > 0 && this.state !== 'dash' && this.state !== 'down' && !(this.act && this.act.def.iv)) this.rig.root.visible = Math.floor(this.invuln * 14) % 2 === 0;
     else this.rig.root.visible = true;
   }
 
@@ -526,7 +678,8 @@ export class Human extends Fighter {
   addGauge(v) {
     if (this.robot || this.riding) return;
     const was = this.gauge;
-    this.gauge = Math.min(RULES.gaugeMax, this.gauge + v * (this.P.gaugeMul || 1));
+    // 역전 도움(comeback)은 뒤처진 사람에게만 1 보다 크다
+    this.gauge = Math.min(RULES.gaugeMax, this.gauge + v * (this.P.gaugeMul || 1) * (this.comeback || 1));
     if (was < RULES.gaugeMax && this.gauge >= RULES.gaugeMax) this.g.gaugeFull(this);
   }
 
@@ -544,9 +697,11 @@ export class Human extends Fighter {
     this.setState('act');
     const g = this.g;
     if (name === 'summon') g.startShield(this);
-    else if (this.shieldT > 0) g.endShield(this, true);
+    else if (this.shieldT > 0 && !NON_ATTACK.has(name)) g.endShield(this, true);
+    // 도리 배리어: 공격하면 풀린다
+    if (this.bubbleT > 0 && !NON_ATTACK.has(name)) { this.bubbleT = 0; g.endBubble(this); }
     if (name === 'heavy' || name === 'kick3' || d.armor) g.sound('whiff', this.pos, 0.8, 0.8);
-    else if (name !== 'summon') g.sound('whiff', this.pos, 0.6, 1.1 + Math.random() * 0.15);
+    else if (name !== 'summon' && name !== 'barrierCast' && name !== 'brace') g.sound('whiff', this.pos, 0.6, 1.1 + Math.random() * 0.15);
     if (name === 'airKick') { const f = this.fwd(); this.vel.set(f.x * 10, -17, f.z * 10); }
     if (d.dive) { const f = this.fwd(); this.vel.set(f.x * d.dive[0], d.dive[1], f.z * d.dive[0]); }
     if (d.air && !d.dive) {
@@ -563,12 +718,19 @@ export class Human extends Fighter {
     if (ev === 'remoteOut') { this.rig.remote.visible = true; g.sound('grab', this.pos, 0.5, 1.4); }
     else if (ev === 'remoteBeep') { g.sound('remote', this.pos, 1); this.rig.handR.getWorldPosition(tA); g.fx.sparkle(tA, 0xff9a3c); }
     else if (ev === 'summonCall') { this.rig.remote.visible = false; g.summonRobot(this); }
+    else if (ev === 'sling' || ev === 'slingFan' || ev === 'slingDown') g.throwSling(this, ev);
+    else if (ev === 'trap' || ev === 'trapDrop') g.placeTrap(this, ev === 'trapDrop');
+    else if (ev === 'barrier') g.startBubble(this);
+    else if (ev === 'brace') { g.sound('grab', this.pos, 0.7, 0.8); g.fx.ring(tA.copy(this.pos).setY(this.pos.y + 0.08), null, 0.4, 1.8, 0.25, this.color, 0.9); }
+    else if (ev === 'blink') this.blink();
+    else if (ev === 'smoke') g.smokeBurst(this);
     else if (ev === 'whiffHeavy') g.sound('whiff', this.pos, 0.8, 0.75);
     else if (ev === 'hop') {
       const d = a.def;
       this.vel.y = d.hop; this.onGround = false;
       const f = this.fwd();
-      this.vel.x = f.x * 2.5; this.vel.z = f.z * 2.5;
+      const fs = d.hopBack ? -d.hopBack : 2.5;
+      this.vel.x = f.x * fs; this.vel.z = f.z * fs;
       g.fx.dust(this.pos, 6, 0.7);
       g.sound('jump', this.pos, 0.6, 1.1);
     } else if (ev === 'boomerang') g.throwBoomerang(this);
@@ -592,7 +754,9 @@ export class Human extends Fighter {
 
   physics(dt) {
     const g = this.g;
-    let grav = this.state === 'launched' ? (this.juggleT > 0 ? 17 : 27) : 34;
+    // 연속 피격이 한계를 넘으면 공중에 붙잡아 둘 수 없다: 체공 보정 없이 빨리 떨어진다
+    const capped = this.juggleCapped();
+    let grav = this.state === 'launched' ? (capped ? 38 : this.juggleT > 0 ? 17 : 27) : 34;
     const locked = this.state === 'act' && this.act && this.act.lock;
     if (locked) grav = 0;
     else if (this.floatT > 0) { this.floatT -= dt; grav = 12; if (this.vel.y < -3) this.vel.y = -3; }
@@ -619,12 +783,12 @@ export class Human extends Fighter {
         this.plat = s.vx || s.vz ? { vx: s.vx, vz: s.vz } : null;
         if (st === 'launched') {
           const hsp = Math.hypot(this.vel.x, this.vel.z);
-          if (impact > 7) {
+          if (impact > 7 && !capped) {
             this.vel.y = impact * 0.38;
             this.vel.x *= 0.7; this.vel.z *= 0.7;
             g.fx.dust(this.pos, 10, 1.1);
             g.sound('land', this.pos, 1, 0.8);
-            g.shake(0.08, this.pos);
+            g.shake(0.05, this.pos);
           } else {
             this.vel.y = 0;
             this.onGround = true;
@@ -732,6 +896,9 @@ export class Robot extends Fighter {
     this.cds = { k: 0, l: 0, dash: 0 };
     this.id = 100 + g.robotSeq++;
     this.stagger = 0;
+    // 사람의 반격: 약점 노출 시간과 사람에게 누적으로 맞은 피해 (일정량이면 휘청)
+    this.exposedT = 0;
+    this.humanDmg = 0;
     this.dashT = 0;
     this.stepSign = 1;
     this.missileIdx = 0;
@@ -790,6 +957,7 @@ export class Robot extends Fighter {
     }
     this.frozen = false;
     if (this.hs > 0) { this.hs -= realDt; this.frozen = true; this.syncRoot(); return; }
+    if (this.exposedT > 0 && Math.random() < 0.4) { tA.copy(this.pos).setY(this.pos.y + this.height * (0.4 + Math.random() * 0.5)); this.g.fx.trailPuff(tA, 0xffe070, 0.8); }
 
     if (this.state === 'idle') {
       this.idleT -= dt;
@@ -820,6 +988,8 @@ export class Robot extends Fighter {
     this.cds.k = Math.max(0, this.cds.k - dt);
     this.cds.l = Math.max(0, this.cds.l - dt);
     this.cds.dash -= dt;
+    if (this.exposedT > 0) this.exposedT -= dt;
+    if (this.humanDmg > 0) this.humanDmg = Math.max(0, this.humanDmg - dt * 8);
     if (fighting) this.armor -= RULES.robotDrain * dt;
     if (this.armor <= 0) { g.destroyRobot(this, 'armor'); return; }
 
@@ -827,7 +997,7 @@ export class Robot extends Fighter {
     if (!i.act) pilot.needRelease = false;
     if (i.act && !pilot.needRelease && fighting) {
       pilot.ejectHold += dt;
-      if (pilot.ejectHold > 0.6) { g.eject(pilot, false); return; }
+      if (pilot.ejectHold > EJECT_HOLD) { g.eject(pilot, false); return; }
     } else pilot.ejectHold = 0;
 
     const sp = this.stats.speed * (bonus.speed || 1);
@@ -895,10 +1065,10 @@ export class Robot extends Fighter {
         if (Math.random() < 0.6) g.fx.trailPuff(tA.copy(this.pos).setY(this.pos.y + this.height * 0.5), this.team >= 0 ? this.pilot.color : 0xffffff, 1.4);
         if (i.atk) { this.dashT = 0; this.doAct(this.moves.combo); }
       } else {
-        const accel = this.onGround ? 40 : this.padT > 0 ? 3 : 18;
+        const accel = this.onGround ? 58 : this.padT > 0 ? 3 : 22;
         this.vel.x += clamp(wx * sp - this.vel.x, -accel * dt, accel * dt);
         this.vel.z += clamp(wz * sp - this.vel.z, -accel * dt, accel * dt);
-        if (inMag > 0.15) this.facing = angLerp(this.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 9));
+        if (inMag > 0.15) this.facing = angLerp(this.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 13));
         if (i.jump && this.onGround) {
           this.vel.y = this.stats.jump; this.onGround = false;
           g.sound('dash', this.pos, 1, 0.6);
@@ -1007,5 +1177,4 @@ export class Robot extends Fighter {
     if (this.beam) { this.beam.stop(); this.beam = null; }
   }
 }
-
 

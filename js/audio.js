@@ -415,7 +415,7 @@ SFX.throw = (t, o, p) => {
   return 0.35;
 };
 
-// ── 게이지 / 소환 ──
+// ── 게이지 / 호출 ──
 SFX.gaugeFull = (t, o, p) => {
   [84, 88, 91, 96].forEach((m, i) => {
     const tt = t + i * 0.055;

@@ -15,7 +15,7 @@ import * as audio from './audio.js';
 import { createTouchControls } from './touch.js';
 import { normalizePreferences, touchEnabled, qualityProfile } from './preferences.js';
 import { controlLabel, formatControls } from './control-labels.js';
-import { FixedClock, RenderBudget, FrameStats } from './frame-budget.js';
+import { FixedClock, RenderBudget, FrameStats, Interpolator } from './frame-budget.js';
 import { MISSIONS, loadProgress, saveProgress, missionStatus, isUnlocked, recordResult } from './campaign.js';
 import { PeerLobby } from './peer-lobby.js';
 import { PeerSession } from './peer-session.js';
@@ -31,8 +31,12 @@ let mobileControls = touchEnabled(preferences, hasTouch());
 let profile = qualityProfile(preferences, hasTouch(), devicePixelRatio, innerWidth, innerHeight);
 let contextLost = false;
 let renderDirty = true;
+let shownSpectating = false;
 const simulationClock = new FixedClock();
 const renderBudget = new RenderBudget();
+// 시뮬레이션은 60Hz 고정, 화면은 두 틱 사이를 보간해 그린다 (30/60/120Hz 어느 화면에서도 끊김 없이)
+const interp = new Interpolator(THREE);
+const interpTargets = [];
 setModelQuality(profile.low);
 const savePreferences = () => { try { localStorage.setItem('rr-mobile', JSON.stringify(preferences)); } catch { /* session settings still work */ } };
 
@@ -134,6 +138,7 @@ function show(id) {
   document.documentElement.classList.toggle('in-match', mode === 'game' && !id);
   $('mission-hud').classList.toggle('hidden', mode !== 'game' || !!id || !activeMission);
   $('finish-spectating').classList.add('hidden');
+  shownSpectating = false;
   window.NativeGame?.setPlaying(mode === 'game' && !id);
   resizeView();
 }
@@ -244,21 +249,40 @@ function buildPreview() {
 }
 
 function renderPilots() {
-  const el = document.getElementById('pilot-list');
-  el.innerHTML = '';
+  const list = document.getElementById('pilot-list');
+  list.innerHTML = '';
   PILOTS.forEach((p, i) => {
     const b = document.createElement('button');
     b.className = 'pilot' + (i === cfg.pilot ? ' on' : '');
     b.setAttribute('aria-pressed', String(i === cfg.pilot));
     b.style.setProperty('--c', hex(p.color));
-    b.innerHTML = '<span class="pilot-face"></span><span class="pilot-txt"><span class="pilot-name"></span><span class="pilot-desc"></span></span><span class="pilot-role"></span>';
+    b.innerHTML = '<span class="pilot-face"></span><span class="pilot-txt"><span class="pilot-name"></span><span class="pilot-desc"></span><span class="pilot-skills"></span></span><span class="pilot-role"></span>';
     b.querySelector('.pilot-face').style.background = hex(p.color);
     b.querySelector('.pilot-name').textContent = p.name;
     b.querySelector('.pilot-desc').textContent = p.desc;
-    b.querySelector('.pilot-role').textContent = p.role || '';
+    const role = roleOf(p), skills = [p.skill1?.name, p.skill2?.name].filter(Boolean);
+    b.querySelector('.pilot-role').textContent = role;
+    for (const s of skills) b.querySelector('.pilot-skills').appendChild(el('span', 'ps', s));
+    b.setAttribute('aria-label', p.name + ', ' + role + (skills.length ? ', 스킬 ' + skills.join(', ') : ''));
     b.onclick = () => { cfg.pilot = i; audio.sfx('ui'); renderSelect(); };
-    el.appendChild(b);
+    list.appendChild(b);
   });
+}
+// 클래스 · 세부 역할 (cls/sub 가 없으면 role 문자열)
+function roleOf(p) { return p.cls ? p.cls + (p.sub ? ' · ' + p.sub : '') : p.role || ''; }
+// 파일럿 스킬 1/2 요약 줄: [키] 이름 · 쿨다운
+function pilotSkillRows(p) {
+  const ul = el('ul', 'skill-desc pilot-skill-rows');
+  const rows = [['hvy', '스킬 1', p.skill1], ['grd', '스킬 2', p.skill2]];
+  for (const [action, slot, s] of rows) {
+    if (!s) continue;
+    const li = el('li');
+    li.appendChild(el('b', '', controlLabel(action) === slot ? slot : slot + ' ' + controlLabel(action)));
+    const hold = s.kind === 'guard' || s.kind === 'parry';
+    li.appendChild(document.createTextNode(' ' + s.name + (hold ? ' (누르고 있기)' : s.cd ? ' (' + s.cd + '초)' : '')));
+    ul.appendChild(li);
+  }
+  return ul;
 }
 function renderRobots() {
   const el = document.getElementById('robot-list');
@@ -341,9 +365,10 @@ function renderPilotDetail() {
   d.style.setProperty('--c', hex(p.color));
   const h = el('h3');
   h.appendChild(el('span', '', p.name));
-  if (p.role) h.appendChild(el('span', 'pd-role', p.role));
+  if (roleOf(p)) h.appendChild(el('span', 'pd-role', roleOf(p)));
   d.appendChild(h);
   d.appendChild(el('p', '', p.desc));
+  d.appendChild(pilotSkillRows(p));
   d.appendChild(statBars(p.stats, { power: '파워', speed: '스피드', air: '공중', tech: '기술' }));
   if (p.traits && p.traits.length) {
     const ul = el('ul', 'traits');
@@ -381,7 +406,7 @@ for (const [id, key] of [['seg-diff', 'diff'], ['seg-stock', 'stock']]) {
 }
 
 // ---------------- 조작법 ----------------
-const BARRIER_TEXT = '게이지 MAX 에서 리모컨을 누르면 배리어가 펼쳐져 주변 적을 밀어내고, 로봇이 착지해 탑승할 때까지 공격을 막아줍니다. 맞는 중에도 누를 수 있습니다.';
+const BARRIER_TEXT = '게이지 MAX 에서 호출하면 배리어가 펼쳐져 주변 적을 밀어내고, 로봇이 착지해 탑승할 때까지 공격을 막아줍니다. 맞는 중에도 호출할 수 있습니다.';
 const HELP_TABS = [['basic', '기본 조작'], ['combo', '공통 콤보'], ['pilot', '파일럿별 기술'], ['robot', '로봇 조작']];
 let helpTab = 'basic';
 function keyRows(rows) {
@@ -434,18 +459,21 @@ function renderHelp() {
     body.appendChild(keyRows([
       ['{move}', '이동'],
       ['{atk}', '공격: 연타하면 콤보 · 공중에서 공중 콤보 · 대시 중 태클'],
-      ['{hvy}', '강공격: 파일럿 전용 기술 (가드 브레이크, 띄우기)'],
-      ['{grd}', '가드 (누르고 있기)'],
-      ['{jump}', '점프'],
+      ['{hvy}', '스킬 1: 파일럿 대표 공격 기술 (쿨다운)'],
+      ['{grd}', '스킬 2: 파일럿 방어 기술 (가드·구르기·배리어·반격 등, 쿨다운)'],
+      ['{jump}', '점프 · 띄운 직후 {atk} 버튼으로도 따라 뛰어요'],
       ['{dash}', '대시 (짧은 무적)'],
-      ['{act}', '당근 리모컨 (게이지 MAX) · 로봇 옆에서 누르고 있으면 탑승'],
+      ['{act}', '호출 (게이지 MAX) · 로봇 옆에서 누르고 있으면 탑승 · 타고 있을 때 길게 하차'],
       ['{pause}', '일시정지'],
-      ['F1', '게임 중 키 안내 켜기/끄기'],
+      ...(mobileControls ? [] : [['F1', '게임 중 키 안내 켜기/끄기']]),
     ]));
-    body.appendChild(note('소환 배리어 — ' + BARRIER_TEXT, 'help-note hl'));
+    body.appendChild(note('브레이크 버스트 — 연속으로 맞아 콤보에 갇히면 스킬 2 버튼이 BREAK 로 반짝입니다. {grd} 를 누르면 스킬 2 쿨다운을 쓰고 주변을 밀어내며 빠져나옵니다.'.replace(/\{grd\}/g, controlLabel('grd')), 'help-note hl'));
+    body.appendChild(note('쓰러졌을 때는 아무 버튼이나 누르거나 스틱을 밀면 바로 일어납니다. 일어난 직후 잠깐 무적이에요.'));
+    if (mobileControls) body.appendChild(note('터치: 큰 버튼은 공격, 옆의 작은 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 나타나고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 오른쪽 화면(또는 공격 버튼)을 위로 튕기면 점프, 옆·아래로 밀면 대시예요.', 'help-note hl'));
+    body.appendChild(note('호출 배리어 — ' + BARRIER_TEXT, 'help-note hl'));
     body.appendChild(note('당근 게이지는 시간이 지나거나, 때리거나, 맞거나, 콤보를 이어가면 찹니다. 적이 로봇에 타고 있으면 더 빨리 찹니다.'));
     body.appendChild(note('빈 로봇은 누구나 탈 수 있습니다. 주인은 0.8초, 다른 사람은 2.2초가 걸리니 적 로봇이 떨어지면 달려가서 방해하거나 빼앗으세요. 탑승하려는 사람을 때리면 탑승이 취소됩니다.'));
-    body.appendChild(note('게임패드: 왼쪽 스틱 이동, A 점프, X 공격, Y 강공격, B 가드/스킬2, RB 대시, LB 리모컨/탑승, Start 일시정지'));
+    body.appendChild(note('게임패드: 왼쪽 스틱 이동, A 점프, X 공격, Y 스킬 1, B 스킬 2, RB 대시, LB 호출/탑승/하차, Start 일시정지'));
   } else if (helpTab === 'combo') {
     body.appendChild(moveList(COMMON_MOVES, 'move-list big'));
     body.appendChild(note('타수가 이어지는 동안 화면 왼쪽에 콤보 수가 표시됩니다. 콤보가 길어질수록 한 타의 피해는 조금씩 줄어들지만 게이지는 더 많이 찹니다.'));
@@ -456,9 +484,10 @@ function renderHelp() {
       c.style.setProperty('--c', hex(p.color));
       const h = el('h3');
       h.appendChild(el('span', '', p.name));
-      if (p.role) h.appendChild(el('span', 'pd-role', p.role));
+      if (roleOf(p)) h.appendChild(el('span', 'pd-role', roleOf(p)));
       c.appendChild(h);
       c.appendChild(el('p', 'ph-desc', p.desc));
+      c.appendChild(pilotSkillRows(p));
       if (p.traits) { const ul = el('ul', 'traits'); for (const t of p.traits) ul.appendChild(el('li', '', t)); c.appendChild(ul); }
       c.appendChild(moveList(p.moves));
       grid.appendChild(c);
@@ -593,6 +622,8 @@ for (const id of ['opt-touch', 'opt-quality', 'opt-fps', 'opt-diagnostics', 'opt
   $(id).addEventListener('change', () => {
     preferences.touch = $('opt-touch').value;
     preferences.quality = $('opt-quality').value;
+    // 프레임 설정을 직접 바꾸면 자동 30 전환을 다시 시험한다
+    if (preferences.frameRate !== $('opt-fps').value) renderBudget.capped = false;
     preferences.frameRate = $('opt-fps').value;
     preferences.diagnostics = $('opt-diagnostics').checked;
     preferences.leftHanded = $('opt-left-handed').checked;
@@ -645,18 +676,18 @@ function fillDl(dl, rows) {
 }
 function renderKeyHints() {
   fillDl($('kh-human'), [
-    ['{move}', '이동'], ['{atk}', '공격 · 연타 콤보'], ['{atk}|{atk}|{hvy}', '띄우기'], ['{hvy}', '강공격'], ['{grd}', '가드'],
-    ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '리모컨 · 길게 탑승'],
+    ['{move}', '이동'], ['{atk}', '공격 · 연타 콤보'], ['{atk}|{atk}|{hvy}', '띄우기'], ['{hvy}', '스킬 1'], ['{grd}', '스킬 2'],
+    ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '호출 · 길게 탑승'],
   ]);
   fillDl($('kh-robot'), [
     ['{move}', '이동'], ['{atk}', '콤보'], ['{hvy}', '스킬 1'], ['{grd}', '스킬 2'], ['{jump}', '점프'], ['{dash}', '부스트'], ['{act}', '길게 하차'],
   ]);
   fillDl($('pause-keys'), [
-    ['{move}', '이동'], ['{atk}', '공격 · 콤보 / 로봇 콤보'], ['{hvy}', '강공격 / 스킬 1'], ['{grd}', '가드 / 스킬 2'],
-    ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '리모컨 · 탑승 · 하차'], ['{pause}', '일시정지'], ['F1', '키 안내'],
+    ['{move}', '이동'], ['{atk}', '공격 · 콤보 / 로봇 콤보'], ['{hvy}', '스킬 1'], ['{grd}', '스킬 2'],
+    ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '호출 · 탑승 · 하차'], ['{pause}', '일시정지'], ['F1', '키 안내'],
   ]);
-  $('title-hint').textContent = input.fmtKeys('{move} 이동 · {atk} 공격 · {hvy} 강공격 · {grd} 가드 · {jump} 점프 · {dash} 대시 · {act} 리모컨. 주먹으로 게이지를 채워 리모컨을 누르면 배리어가 지켜 주는 동안 토끼 로봇이 떨어집니다. 먼저 올라타세요.');
-  if (mobileControls) $('title-hint').textContent = '터치로 바로 플레이 · 왼손 이동, 오른손 공격! 당근 게이지를 채워 로봇을 소환하고, 가까이에서 길게 눌러 탑승하세요.';
+  $('title-hint').textContent = input.fmtKeys('{move} 이동 · {atk} 공격 · {hvy} 스킬 1 · {grd} 스킬 2 · {jump} 점프 · {dash} 대시 · {act} 호출. 주먹으로 게이지를 채워 호출하면 배리어가 지켜 주는 동안 토끼 로봇이 떨어집니다. 먼저 올라타세요.');
+  if (mobileControls) $('title-hint').textContent = '터치로 바로 플레이 · 왼손 이동, 오른손 공격! 당근 게이지가 차면 호출 버튼이 나타나요. 로봇 가까이에서 탑승을 길게 누르세요.';
 }
 function refreshKeysUI() {
   renderKeyHints();
@@ -766,7 +797,7 @@ game.onEnd = (res) => {
       if (outcome.evaluation.cleared && !nextMission) message.textContent += ' · 모든 도전을 완주했어요!';
     } else message.textContent = '이번 경기는 기록에 반영되지 않았어요.';
   } else message.textContent = peerSession.active ? '친구 대전을 마쳤어요. 대기실에서 준비하면 다시 함께 할 수 있어요.'
-    : win ? '멋진 승부였어요! 다른 로봇과 무대에도 도전해 보세요.' : '가드로 버티고, 당근이 차면 로봇을 소환해 보세요.';
+    : win ? '멋진 승부였어요! 다른 로봇과 무대에도 도전해 보세요.' : '방어 스킬로 버티고, 당근이 차면 로봇을 호출해 보세요.';
   $('next-mission').classList.toggle('hidden', !nextMission);
   document.getElementById('result-title').textContent = win ? '승리!' : res.findIndex((r) => r.h === game.player) + 1 + '위';
   const tbl = document.createElement('table');
@@ -897,22 +928,22 @@ function frame(now = performance.now()) {
   requestAnimationFrame(frame);
   const cpuStart = performance.now();
   if (document.hidden || contextLost) {
-    simulationClock.reset(); lastMenuFrame = lastRenderFrame = null;
+    simulationClock.reset(); interp.reset(); lastMenuFrame = lastRenderFrame = null;
     input.endFrame(); return;
   }
   if (mode === 'game') {
     // Poll and consume once per simulation tick. Catch-up ticks cannot repeat taps.
     simulationClock.advance(now, dt => {
+      interp.capture(collectInterpTargets());
       touch.update(game.player);
       input.poll();
       if (input.intents.pause && game.phase !== 'end') pauseGame();
       else { if (peerSession.active) peerSession.update(dt, input.intents); else game.update(dt, false); uiElapsed += dt; }
-      $('finish-spectating').classList.toggle('hidden', peerSession.active || mode !== 'game' || !game.player?.out || game.phase !== 'fight');
       input.endFrame();
       return mode === 'game';
     });
   } else {
-    simulationClock.reset();
+    simulationClock.reset(); interp.reset();
     input.poll();
     if (input.intents.pause) {
       if (cur === 'help' || cur === 'settings') back();
@@ -924,6 +955,12 @@ function frame(now = performance.now()) {
   const target = renderBudget.fps(mode, preferences.frameRate, hasTouch());
   if (!renderBudget.due(now, target, renderDirty)) return;
   renderDirty = false;
+  const interpolating = mode === 'game';
+  if (interpolating) { interp.apply(simulationClock.alpha); camera.updateMatrixWorld(); }
+  if (mode === 'game') {
+    const spectating = !peerSession.active && !!game.player?.out && game.phase === 'fight';
+    if (spectating !== shownSpectating) { shownSpectating = spectating; $('finish-spectating').classList.toggle('hidden', !spectating); }
+  }
   if (uiElapsed > 0 && mode !== 'menu') { ui.update(game, uiElapsed); uiElapsed = 0; }
   if (mode === 'menu') {
     const dt = lastMenuFrame === null ? 0 : Math.min(.1, (now - lastMenuFrame) / 1000);
@@ -955,13 +992,40 @@ function frame(now = performance.now()) {
       camera.rotateY(innerWidth / innerHeight > 1 ? 0.42 : 0);
     }
   } else lastMenuFrame = null;
+  fx.beforeRender();
+  updateShadows();
   renderer.info.reset();
   if (composer) composer.render();
   else renderer.render(scene, camera);
+  if (interpolating) interp.restore();
+  if (interpolating) camera.updateMatrixWorld();
   frameStats.record(now, performance.now() - cpuStart, renderer.info.render.calls, renderer.info.render.triangles,
     { mode, target, dpr: profile.dpr, thermal: renderBudget.thermal });
-  if (mode === 'game' && lastRenderFrame !== null && renderBudget.observe(now - lastRenderFrame, now, target, preferences.quality !== 'high')) applyRenderQuality();
+  if (mode === 'game' && lastRenderFrame !== null) {
+    const change = renderBudget.observe(now - lastRenderFrame, now, target, preferences.quality !== 'high', preferences.frameRate === 'auto', profile.dpr > 1.05);
+    if (change === 'scale') applyRenderQuality();
+    else if (change === 'fps') renderBudget.reset();
+  }
   lastRenderFrame = mode === 'game' ? now : null;
+}
+// 움직이는 루트 오브젝트만 보간한다. 뼈 포즈는 틱 단위로 두어도 눈에 띄지 않고 비용이 크다.
+function collectInterpTargets() {
+  const list = interpTargets;
+  list.length = 0;
+  list.push(camera);
+  for (const h of game.humans) if (h.rig.root.parent === scene) list.push(h.rig.root);
+  for (const r of game.robots) { list.push(r.rig.root); if (r.ring) list.push(r.ring); }
+  for (const p of game.projectiles) if (p.mesh) list.push(p.mesh);
+  for (const c of game.carrots) if (c.mesh) list.push(c.mesh);
+  for (const s of game.shields) if (s.mesh) list.push(s.mesh);
+  return list;
+}
+
+// 그림자: 정지 화면(일시정지/결과)에서는 다시 그리지 않는다. 경기와 메뉴에서는 캐릭터가 움직이므로 매 렌더 갱신.
+renderer.shadowMap.autoUpdate = false;
+function updateShadows() {
+  if (!renderer.shadowMap.enabled) return;
+  if (mode === 'game' || mode === 'menu') renderer.shadowMap.needsUpdate = true;
 }
 
 buildPreview();

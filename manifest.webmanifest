@@ -2,7 +2,7 @@
   "id": "./",
   "name": "로봇 래빗 ROBOT RABBIT",
   "short_name": "로봇 래빗",
-  "description": "당근 리모컨으로 토끼 로봇을 소환해 탑승하는 3D 난투 액션",
+  "description": "당근 리모컨으로 토끼 로봇을 호출해 탑승하는 3D 난투 액션",
   "lang": "ko",
   "dir": "ltr",
   "start_url": "./",

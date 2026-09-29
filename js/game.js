@@ -1,32 +1,63 @@
-// 난투 진행: 전투 판정, 소환, 탑승, 로봇 스킬, 발사체, 카메라, 규칙
+// 난투 진행: 전투 판정, 호출, 탑승, 로봇 스킬, 발사체, 카메라, 규칙
 import * as THREE from 'three';
-import { Human, Robot } from './entities.js';
+import { Human, Robot, EJECT_HOLD } from './entities.js';
 import { createCarrot } from './models.js';
 import { ROBOT_STATS, RULES, PILOTS, ROBOT_ORDER, DIFFICULTY } from './data.js';
 import { AICtrl } from './ai.js';
 import * as audio from './audio.js';
 import * as input from './input.js';
 
-const keyName = (a) => document.documentElement.classList.contains('touch-mode') && a === 'act' ? '소환 버튼' : input.actionLabel(a);
+const keyName = (a) => document.documentElement.classList.contains('touch-mode') && a === 'act' ? '호출 버튼' : input.actionLabel(a);
 
 const V = () => new THREE.Vector3();
 const tA = V(), tB = V(), tC = V(), tD = V(), tDir = V(), UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const HS = [0.065, 0.11, 0.13, 0.19];
-const SHAKE = [0.09, 0.22, 0.38, 0.62];
+// 히트스톱/흔들림: 작은 타격은 가볍게, 큰 타격만 묵직하게
+const HS = [0.04, 0.07, 0.115, 0.18];
+const SHAKE = [0.04, 0.12, 0.3, 0.56];
+// 인트로 카운트다운 한 칸 길이 (초)
+export const INTRO_STEP = 0.55;
+
+// CPU 파일럿 고르기: 혼자 할 때는 무작위, 친구 대전은 두 기기가 같은 결과를 내도록 설정값으로 정한다
+export function pickOpponents(cfg, count, rand = Math.random) {
+  const taken = [cfg.pilot];
+  if (cfg.peer) taken.push(cfg.peer.pilot);
+  const pool = PILOTS.map((p, i) => i).filter((i) => !taken.includes(i));
+  let seed = 0;
+  if (cfg.peer) {
+    const key = [cfg.pilot, cfg.peer.pilot, cfg.stage, cfg.robot, cfg.peer.robot, cfg.playerName, cfg.peer.name].join('|');
+    for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
+    rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  }
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return [...taken, ...pool].slice(0, count);
+}
 const STUN = new Set(['hurt', 'launched', 'down']);
 // 콤보 등급: 타수 기준
 const RATINGS = [[25, 'CARROT CRAZY!!'], [15, 'AMAZING!'], [10, 'GREAT!'], [6, 'NICE!'], [3, 'GOOD']];
 export function comboRating(n) { for (const [k, s] of RATINGS) if (n >= k) return s; return ''; }
 
-// 소환 배리어 셰이더: 가장자리가 밝은 반투명 구체 + 흐르는 줄무늬
+// 배리어 셰이더: 가장자리가 밝은 반투명 구체 + 흐르는 줄무늬
 function shieldMaterial(color) {
-  return new THREE.ShaderMaterial({
+  // 색별로 재사용한다. 새 ShaderMaterial 은 프로그램 조회 비용이 크다
+  const free = shieldPool.get(color);
+  if (free && free.length) { const m = free.pop(); m.uniforms.alpha.value = 1; m.uniforms.time.value = 0; return m; }
+  const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
     uniforms: { color: { value: new THREE.Color(color) }, time: { value: 0 }, alpha: { value: 1 } },
     vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vP = position; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
     fragmentShader: 'uniform vec3 color; uniform float time; uniform float alpha; varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.0); float band = smoothstep(0.82, 1.0, sin(vP.y * 14.0 - time * 7.0)); float hex = smoothstep(0.9, 1.0, abs(sin(atan(vP.z, vP.x) * 9.0)) ) * 0.25; float a = (0.06 + f * 0.85 + band * 0.18 + hex * f) * alpha; gl_FragColor = vec4(color * (1.3 + f * 1.8), a); }',
   });
+  m.userData.poolColor = color;
+  return m;
+}
+const shieldPool = new Map();
+function releaseShieldMaterial(m) {
+  const c = m.userData.poolColor;
+  if (c === undefined) { m.dispose(); return; }
+  if (!shieldPool.has(c)) shieldPool.set(c, []);
+  const list = shieldPool.get(c);
+  if (list.length < 3) list.push(m); else m.dispose();
 }
 
 export class Game {
@@ -56,6 +87,10 @@ export class Game {
     this.shotMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.2, 2.6), toneMapped: false });
     this.shieldGeo = new THREE.IcosahedronGeometry(1, 3);
     this.shields = [];
+    this.traps = [];
+    // 루나 끈끈이 덫: 공유 지오메트리/재질 (덫마다 새로 만들지 않는다)
+    this.trapGeo = new THREE.TorusGeometry(0.85, 0.16, 6, 20);
+    this.trapMat = new THREE.MeshBasicMaterial({ color: 0xc58cff, transparent: true, opacity: 0.85, toneMapped: false });
     this.carrotT = 6;
     this.stockCount = 3;
     this.player = null;
@@ -68,8 +103,7 @@ export class Game {
     this.peerMatch = !!cfg.peer;
     this.stockCount = cfg.stock;
     this.diff = cfg.diff;
-    const order = cfg.peer ? [cfg.pilot, cfg.peer.pilot, ...PILOTS.map((p, i) => i).filter(i => i !== cfg.pilot && i !== cfg.peer.pilot)].slice(0,4)
-      : [cfg.pilot, ...PILOTS.map((p, i) => i).filter((i) => i !== cfg.pilot)];
+    const order = pickOpponents(cfg, 4);
     const types = [cfg.robot, ...ROBOT_ORDER.filter((t) => t !== cfg.robot)];
     for (let n = 0; n < 4; n++) {
       const h = new Human(this, n, PILOTS[order[n]], n === 0, cfg.diff);
@@ -100,9 +134,11 @@ export class Game {
     for (const h of this.humans) { this.scene.remove(h.rig.root); h.rig.dispose(); }
     for (const r of this.robots) r.dispose();
     for (const p of this.projectiles) this.removeProj(p);
-    for (const c of this.carrots) this.scene.remove(c.mesh);
-    for (const s of this.shields) { this.scene.remove(s.mesh); s.mesh.material.dispose(); }
+    for (const c of this.carrots) this.releaseCarrot(c.mesh);
+    for (const s of this.shields) { this.scene.remove(s.mesh); releaseShieldMaterial(s.mesh.material); }
     this.shields = [];
+    for (const t of this.traps) this.scene.remove(t.mesh);
+    this.traps = [];
     this.humans = []; this.robots = []; this.projectiles = []; this.carrots = []; this.timers = [];
     this.fx.clear();
     this.ui.reset();
@@ -121,6 +157,7 @@ export class Game {
     const dt = realDt * this.timeScale;
     this.time += dt;
     this.updatePhase(realDt);
+    if (this.phase === 'fight') this.updateComeback();
     for (const h of this.humans) {
       if (h.isPlayer && !h.autoplay) h.ctrl.poll();
       else if (!h.dead && !h.out) h.ctrl.think(dt);
@@ -142,6 +179,7 @@ export class Game {
     this.updateShields(dt);
     this.updateCombos(realDt);
     this.updateProjectiles(dt);
+    this.updateTraps(dt);
     this.updateCarrots(dt);
     this.fx.update(dt, realDt);
     this.arena.update(dt, this.time);
@@ -152,7 +190,7 @@ export class Game {
   updatePhase(realDt) {
     if (this.phase === 'intro') {
       this.introT += realDt;
-      const step = Math.floor(this.introT / 0.8);
+      const step = Math.floor(this.introT / INTRO_STEP);
       if (step !== this.introStep && step <= 3) {
         this.introStep = step;
         if (step < 3) { this.ui.banner(['3', '2', '1'][step], 'ready'); audio.sfx('countdown'); }
@@ -221,20 +259,34 @@ export class Game {
     return tf.x * -dir.x + tf.z * -dir.z > 0.1;
   }
 
-  // 배리어/패리로 막힌 공격: 공격자를 튕겨낸다
+  // 배리어/패리/반격으로 막힌 공격: 공격자를 튕겨낸다. 로봇은 약점이 드러난다
   repelAttacker(att, t, dir, at, kind) {
     const byRobot = att && att.kind === 'robot';
-    if (att) att.hs = Math.max(att.hs, 0.1);
-    t.hs = Math.max(t.hs, 0.08);
+    if (att) att.hs = Math.max(att.hs, 0.08);
+    t.hs = Math.max(t.hs, 0.06);
     if (att && !byRobot && att.kind === 'human' && !att.riding) {
       att.cancelAct();
       att.setState('hurt');
       att.stun = kind === 'parry' ? 0.75 : 0.35;
       att.vel.x = dir.x * 7; att.vel.z = dir.z * 7;
-    } else if (byRobot && kind === 'parry') {
+    } else if (byRobot && (kind === 'parry' || kind === 'counter')) {
       att.stagger = Math.max(att.stagger, 0.6);
+      this.exposeRobot(att, 2.2);
       if (att.act && att.act.name !== 'laser') { att.act = null; if (att.beam) { att.beam.stop(); att.beam = null; } }
     }
+  }
+
+  // 로봇 약점 노출: 사람 공격이 더 아프게 들어간다
+  exposeRobot(r, time) {
+    if (!r || r.kind !== 'robot' || r.state !== 'active') return;
+    r.exposedT = Math.max(r.exposedT || 0, time);
+    this.ui.callout(r.pos, '약점 노출!', r.pilot && r.pilot.isPlayer ? 'bad' : 'sk', r.height + 0.6);
+  }
+
+  // 연속 피격 감쇠: 쉬지 않고 맞을수록 경직과 체공이 짧아진다 (1 → juggleMin)
+  hitDecay(n) {
+    if (n <= RULES.juggleFrom) return 1;
+    return Math.max(RULES.juggleMin, 1 - (n - RULES.juggleFrom) * RULES.juggleStep);
   }
 
   // 모든 공격이 최종적으로 이곳을 거친다
@@ -246,16 +298,15 @@ export class Game {
     const playerInvolved = (src && src.isPlayer) || t === this.player || (t.kind === 'robot' && t.pilot === this.player);
     let color = src ? src.color : 0xffffff;
     // 콤보 보정: 같은 상대를 오래 때릴수록 피해 감소
-    let cmb = null;
     if (src && src.combo) {
-      cmb = src.combo;
+      const cmb = src.combo;
       const n = cmb.t > 0 && cmb.target === t ? cmb.n + 1 : 1;
-      if (n >= RULES.comboScaleFrom) dmg = Math.max(1, Math.round(dmg * Math.max(RULES.comboScaleMin, 1 - (n - RULES.comboScaleFrom + 1) * 0.07)));
+      if (n >= RULES.comboScaleFrom) dmg = Math.max(1, Math.round(dmg * Math.max(RULES.comboScaleMin, 1 - (n - RULES.comboScaleFrom + 1) * RULES.comboScaleStep)));
     }
     if (t.kind === 'human') {
       if (t.invuln > 0) return false;
-      // 소환 배리어: 모든 공격을 막는다
-      if (t.shieldT > 0) {
+      // 호출 배리어 / 도리 당근 배리어: 모든 공격을 막는다
+      if (t.shieldT > 0 || t.bubbleT > 0) {
         this.fx.guard(at, dir);
         this.fx.ring(tC.copy(t.pos).setY(t.pos.y + 1), null, 1.4, 3.2, 0.3, t.color, 0.9);
         this.sound('block', at, 1, 1.25);
@@ -263,8 +314,13 @@ export class Game {
         this.shieldHitFx(t);
         return false;
       }
+      // 타로 버티기 반격: 자세 중에 맞으면 피해 없이 되받아친다
+      const ca = t.act && t.act.def.counter;
+      if (ca && t.act.t >= ca[0] && t.act.t <= ca[1]) { this.counterStrike(t, att, dir, at); return false; }
       if (byRobot) dmg = Math.round(dmg * 0.85);
       dmg = Math.max(1, Math.round(dmg * (t.P.dmgTaken || 1)));
+      // 받는 피해 배율 뒤에 상한을 둔다: 어떤 파일럿도 로봇 한 방에 cap 이상 잃지 않는다
+      if (byRobot) dmg = Math.min(RULES.robotHitCap, dmg);
       const facing = this.facingHit(t, dir);
       // 저스트 가드 (준): 가드 시작 직후라면 어떤 공격이든 튕겨낸다
       if (t.state === 'guard' && facing && t.P.parry && this.time - t.guardStart < 0.22) {
@@ -277,19 +333,20 @@ export class Game {
         t.invuln = 0.25;
         t.addGauge(8);
         this.ui.callout(t.pos, 'PARRY!', 'sk', 2.4);
-        if (playerInvolved) { this.slow(0.25, 0.25); this.ui.flash(0.08); }
+        if (playerInvolved) { this.slow(0.25, 0.2); this.ui.flash(0.08); }
         return false;
       }
       if (t.state === 'guard' && facing && !h.guardBreak) {
-        const mult = byRobot ? 0.5 : 0.12;
+        const sk = t.P.skill2 || {};
+        const mult = byRobot ? (sk.robotGuard !== undefined ? sk.robotGuard : 0.5) : 0.12;
         dmg = Math.round(dmg * mult);
         t.hp -= dmg;
-        t.vel.x = dir.x * (byRobot ? h.kb * 0.6 : 5); t.vel.z = dir.z * (byRobot ? h.kb * 0.6 : 5);
-        if (att) att.hs = 0.08;
-        t.hs = 0.08;
+        t.vel.x = dir.x * (byRobot ? h.kb * 0.5 : 5); t.vel.z = dir.z * (byRobot ? h.kb * 0.5 : 5);
+        if (att) att.hs = 0.06;
+        t.hs = 0.06;
         this.fx.guard(at, dir);
         this.sound('block', at, 1);
-        this.shake(0.08, at);
+        this.shake(0.05, at);
         if (!byRobot) { if (t.hp <= 0) t.hp = 1; return true; }
         t.addGauge(dmg * RULES.gaugeTake);
         if (t.hp > 0) return true;
@@ -302,7 +359,7 @@ export class Game {
         if (src && src.isPlayer) this.ui.toast('탑승을 막았다!');
       }
       t.addGauge(dmg * RULES.gaugeTake);
-      // 슈퍼 아머 (리코 강공격): 약한 사람 공격에는 끊기지 않는다
+      // 슈퍼 아머 (리코/도리/타로 일부 기술): 약한 사람 공격에는 끊기지 않는다
       const armored = t.act && t.act.def.armor && !byRobot && power <= 1 && t.hp > 0 && !h.guardBreak;
       const scale = 1 + clamp((100 - t.hp) / 100, 0, 1) * 0.55;
       const air = !t.onGround && t.pos.y - t.gh > 0.6;
@@ -311,11 +368,18 @@ export class Game {
         this.fx.hit(at, dir, 0, 0xffe070);
         this.sound('block', at, 0.6, 0.8);
         this.ui.damage(at, dmg, '');
-        if (att) att.hs = Math.max(att.hs, 0.06);
+        if (att) att.hs = Math.max(att.hs, 0.05);
         this.comboHit(src, t, dmg);
         return true;
       }
       if (t.act) t.cancelAct();
+      // 연속 피격 수: 많이 맞을수록 경직/체공이 짧아지고, 일정 수를 넘으면 브레이크 버스트로 빠져나올 수 있다
+      t.hitsTaken++;
+      t.freeT = 0;
+      const decay = this.hitDecay(t.hitsTaken);
+      const capped = t.juggleCapped();
+      // 한계를 넘으면 거의 띄우지 못한다: 곧 떨어져 다운 → 기상 무적
+      const liftK = capped ? 0.3 : 0.6 + 0.4 * decay;
       if (t.hp <= 0) {
         t.hp = 0;
         t.setState('launched');
@@ -323,75 +387,98 @@ export class Game {
         t.vel.set(dir.x * Math.max(h.kb, 14) * 1.25, Math.max(h.lift, 10) + 5, dir.z * Math.max(h.kb, 14) * 1.25);
         t.koT = 0.85;
         power = Math.max(power, 2);
-        this.slow(0.22, 0.55);
+        this.slow(0.22, 0.45);
         if (playerInvolved) { this.fx.impactFrame(2.5); this.ui.banner('K.O.!', 'ko'); }
         this.sound('ko', at, 1.2);
+      } else if (h.grab) {
+        // 잡기: 공격자 뒤쪽으로 넘겨 던진다
+        t.setState('launched');
+        t.onGround = false;
+        t.vel.set(-dir.x * h.kb, h.lift * liftK, -dir.z * h.kb);
+        t.pos.y = Math.max(t.pos.y, t.gh + 0.3);
+        t.juggleT = capped ? 0 : 0.35 * decay;
+        this.fx.dust(t.pos, 8, 1);
       } else if (h.spike) {
         // 내리꽂기: 공중이면 바닥에 튕겨 오르게, 지상이면 띄운다
         t.setState('launched');
         t.onGround = false;
         if (air) { t.vel.set(dir.x * h.kb * 0.5, -24, dir.z * h.kb * 0.5); t.spiked = true; }
-        else { t.vel.set(dir.x * h.kb, 9, dir.z * h.kb); t.pos.y = Math.max(t.pos.y, t.gh + 0.05); }
+        else { t.vel.set(dir.x * h.kb, 9 * liftK, dir.z * h.kb); t.pos.y = Math.max(t.pos.y, t.gh + 0.05); }
         power = Math.max(power, 2);
       } else if (h.air) {
-        // 공중 콤보 타격: 위로 살짝 띄워 계속 이어지게
+        // 공중 콤보 타격: 위로 살짝 띄워 계속 이어지게. 오래 이어질수록 덜 뜬다
         t.setState('launched');
         t.onGround = false;
-        t.vel.set(dir.x * h.kb, h.lift, dir.z * h.kb);
-        t.juggleT = 0.45;
+        t.vel.set(dir.x * h.kb, h.lift * liftK, dir.z * h.kb);
+        t.juggleT = capped ? 0 : 0.45 * decay;
       } else if (h.launch) {
         t.setState('launched');
         t.onGround = false;
-        t.vel.set(dir.x * h.kb * scale, h.lift * (0.85 + scale * 0.15), dir.z * h.kb * scale);
+        t.vel.set(dir.x * h.kb * scale, h.lift * (0.85 + scale * 0.15) * liftK, dir.z * h.kb * scale);
         t.pos.y = Math.max(t.pos.y, t.gh + 0.05);
-        if (h.chase) t.juggleT = 0.35;
+        if (h.chase) t.juggleT = capped ? 0 : 0.35 * decay;
       } else {
         t.setState('hurt');
-        t.stun = h.stun || 0.35;
+        t.stun = (h.stun || 0.35) * decay;
         t.vel.x = dir.x * h.kb; t.vel.z = dir.z * h.kb;
-        if (!t.onGround || h.lift > 3) t.vel.y = Math.max(t.vel.y, h.lift);
-        if (air) t.juggleT = 0.3;
+        if (!t.onGround || h.lift > 3) t.vel.y = Math.max(t.vel.y, h.lift * liftK);
+        if (air) t.juggleT = capped ? 0 : 0.3 * decay;
       }
       t.facing = Math.atan2(-dir.x, -dir.z);
       t.lastHitBy = src; t.lastHitT = this.time;
-      // 띄우기 성공: 점프로 추격 가능
-      if (h.chase && att && att.kind === 'human' && t.state === 'launched' && t.hp > 0) {
+      // 띄우기 성공: 점프나 공격 버튼으로 추격 가능
+      if (h.chase && att && att.kind === 'human' && t.state === 'launched' && t.hp > 0 && !capped) {
         att.chaseT = 0.6; att.chaseTarget = t;
         if (att.isPlayer) this.ui.hint && this.ui.hint('jump');
       }
+      if (t.isPlayer && t.hitsTaken === RULES.burstHits && t.cd2 <= 0) this.ui.callout(t.pos, '스킬 2 로 탈출!', 'sk', 2.6);
     } else {
       // 로봇 피격
       if (t.state === 'active' && t.pilot && t.pilot.invuln > 0 && t.stateT < 1) return false;
-      const mult = byRobot ? 1 : 0.75;
-      dmg = Math.max(1, Math.round(dmg * mult));
-      t.armor -= dmg;
       if (byRobot) {
+        t.armor -= dmg;
         const k = power >= 3 ? 0.55 : 0.3;
         t.vel.x += dir.x * h.kb * k; t.vel.z += dir.z * h.kb * k;
         if (h.launch) t.vel.y = Math.max(t.vel.y, h.lift * 0.35);
         if (power >= 2) { t.stagger = power >= 3 ? 0.45 : 0.22; if (t.act && power >= 3 && t.act.name !== 'laser') { t.act = null; if (t.beam) { t.beam.stop(); t.beam = null; } } }
       } else {
+        // 사람의 반격: 뒤에서 치거나 약점이 드러났을 때 더 아프다. 누적되면 로봇이 휘청인다
+        const tf = t.fwd(tC);
+        const back = tf.x * dir.x + tf.z * dir.z > 0.35;
+        const exposed = t.exposedT > 0;
+        let mult = RULES.humanVsRobot * (back ? RULES.backstab : 1) * (exposed ? RULES.exposedMul : 1);
+        dmg = Math.max(1, Math.round(dmg * mult));
+        t.armor -= dmg;
+        t.humanDmg = (t.humanDmg || 0) + dmg;
         t.vel.x += dir.x * 0.6; t.vel.z += dir.z * 0.6;
-        power = Math.min(power, 1);
+        power = Math.min(power, exposed || back ? 2 : 1);
+        if (back && src && src.isPlayer && this.time - (t.backCallT || -9) > 1.2) { t.backCallT = this.time; this.ui.callout(t.pos, 'BACK ATTACK!', 'sk', t.height + 0.4); }
+        if (t.humanDmg >= RULES.robotBreak && t.state === 'active') {
+          t.humanDmg = 0;
+          t.stagger = Math.max(t.stagger, 0.7);
+          if (t.act && t.act.name !== 'laser') { t.act = null; if (t.beam) { t.beam.stop(); t.beam = null; } }
+          this.ui.callout(t.pos, '휘청!', 'sk', t.height + 1);
+          this.sound('boardCancel', t.pos, 0.8, 0.7);
+        }
       }
       if (t.pilot) { t.pilot.lastHitBy = src; t.pilot.lastHitT = this.time; }
       color = 0xbfe8ff;
     }
-    // 공통 연출
+    // 공통 연출: 작은 타격은 짧고 가볍게, 큰 타격만 묵직하게
     t.flash = 1;
     const hs = HS[clamp(power, 0, 3)];
     t.hs = Math.max(t.hs, hs * (t.hp <= 0 ? 1.8 : 1));
-    if (att) att.hs = Math.max(att.hs, hs * 0.85);
+    if (att) att.hs = Math.max(att.hs, hs * (power >= 2 ? 0.85 : 0.6));
     this.fx.hit(at, dir, power, color);
     if (opt.noSnd !== true) this.sound(h.snd || 'punch', at, 1 + power * 0.1, 0.95 + Math.random() * 0.1);
     if (t.kind === 'robot' && !byRobot) this.sound('block', at, 0.5, 1.3);
-    this.shake(SHAKE[clamp(power, 0, 3)] * (playerInvolved ? 1 : 0.55), at);
+    this.shake(SHAKE[clamp(power, 0, 3)] * (playerInvolved ? 1 : 0.5), at);
     if (playerInvolved && (power >= 2 || (power >= 1 && t.hp <= 0))) {
       const s = this.toScreen(at);
       this.fx.speedLines(power - 1, s.x, s.y);
     }
-    if (power >= 3 && playerInvolved) { this.fx.impactFrame(1); this.ui.flash(0.14); this.slow(0.12, 0.3); }
-    else if (power >= 2 && playerInvolved) this.ui.flash(0.05);
+    if (power >= 3 && playerInvolved) { this.fx.impactFrame(1); this.ui.flash(0.12); this.slow(0.15, 0.22); }
+    else if (power >= 2 && playerInvolved) this.ui.flash(0.04);
     this.ui.damage(at, dmg, t.kind === 'robot' ? 'robot' : power >= 2 ? 'big' : power >= 1 ? 'mid' : '');
     if (src) {
       src.dmgDealt += dmg;
@@ -400,6 +487,27 @@ export class Game {
     }
     if (t.kind === 'robot' && t.armor <= 0) this.destroyRobot(t, 'armor', src);
     return true;
+  }
+
+  // 타로 버티기 반격: 가까운 공격자에게 되받아치기. 로봇이면 약점 노출
+  counterStrike(t, att, dir, at) {
+    this.fx.hit(at, dir, 2, 0xffe070);
+    this.fx.ring(tC.copy(t.pos).setY(t.pos.y + 1), null, 0.6, 3, 0.25, 0xffe070, 1);
+    this.sound('block', at, 1.2, 0.9);
+    this.ui.callout(t.pos, 'COUNTER!', 'sk', 2.4);
+    t.cancelAct();
+    t.doAct('taroCounter');
+    t.invuln = Math.max(t.invuln, 0.3);
+    if (!att) return;
+    const d = this.dist2D(att.pos, t.pos);
+    if (att.kind === 'robot') {
+      this.repelAttacker(att, t, dir, at, 'counter');
+      if (d < att.radius + 4) this.applyHit(t, att, { dmg: 14, kb: 4, lift: 0, power: 2, snd: 'heavy' }, tD.set(-dir.x, 0, -dir.z), at);
+    } else if (!att.riding && d < 4) {
+      t.facing = Math.atan2(att.pos.x - t.pos.x, att.pos.z - t.pos.z);
+      this.applyHit(t, att, { dmg: 12, kb: 9, lift: 13, launch: true, chase: true, grab: true, guardBreak: true, power: 2, snd: 'heavy' }, tD.set(-dir.x, 0, -dir.z), at);
+    }
+    if (t.isPlayer) this.slow(0.3, 0.18);
   }
 
   // ---------------- 콤보 ----------------
@@ -473,19 +581,216 @@ export class Game {
 
   pilotLand(h, kind) {
     const p = tB.copy(h.pos).setY(h.pos.y + 0.2);
-    const big = kind === 'stampLand';
+    const big = kind === 'stampLand' || kind === 'pressLand';
     this.fx.shockwave(p, big ? 3.6 : 3, big ? 0xffe070 : h.color, 0.35);
     this.fx.dust(p, 14, 1.3);
     this.sound('shockwave', p, 0.7, 1.4);
-    this.shake(0.22, p);
-    this.areaHit(h, p, big ? 3.2 : 2.6, { dmg: big ? 9 : 8, kb: big ? 8 : 11, lift: big ? 13 : 9, launch: true, power: 2, snd: 'heavy', radial: 1 });
+    this.shake(0.16, p);
+    if (kind === 'pressLand') this.areaHit(h, p, 3, { dmg: 10, kb: 10, lift: 12, launch: true, power: 2, snd: 'heavy', radial: 1 });
+    else if (kind === 'doriLand') this.areaHit(h, p, 2.8, { dmg: 8, kb: 13, lift: 8, launch: true, power: 2, snd: 'heavy', radial: 1 });
+    else this.areaHit(h, p, big ? 3.2 : 2.6, { dmg: big ? 9 : 8, kb: big ? 8 : 11, lift: big ? 13 : 9, launch: true, power: 2, snd: 'heavy', radial: 1 });
+  }
+
+  // ---------------- 파일럿 스킬 보조 ----------------
+  // 하루 새총: 가까운 적을 자동 조준. 발사체는 'shot' 형식으로 보내 친구 대전 스냅샷과 호환된다
+  throwSling(h, ev) {
+    h.rig.handL.getWorldPosition(tB);
+    const f = h.fwd(tA);
+    const shots = ev === 'slingFan' ? [-0.28, 0, 0.28] : [0];
+    let aim = null;
+    const tg = this.nearestEnemy(h, h.pos, 18, f, 0.3);
+    if (tg) { h.facing = Math.atan2(tg.pos.x - h.pos.x, tg.pos.z - h.pos.z); h.fwd(f); }
+    for (const off of shots) {
+      const c = Math.cos(off), s = Math.sin(off);
+      const dx = f.x * c + f.z * s, dz = -f.x * s + f.z * c;
+      if (tg && off === 0) aim = tC.set(tg.pos.x - tB.x, tg.pos.y + tg.height * 0.45 - tB.y, tg.pos.z - tB.z).normalize();
+      else aim = tC.set(dx, ev === 'slingDown' ? -0.55 : 0, dz).normalize();
+      if (ev === 'slingDown' && !tg) aim.y = -0.55;
+      const mesh = this.takeCarrot(0.8);
+      mesh.position.copy(tB);
+      this.scene.add(mesh);
+      this.projectiles.push({ type: 'shot', kind: 'sling', mesh, pos: tB.clone(), vel: aim.clone().multiplyScalar(30), owner: h, life: 0.6, r: 0.55 });
+    }
+    this.sound('whiff', tB, 0.7, 1.7);
+  }
+
+  // 루나 끈끈이 덫: 최대 2개. 밟으면 사람은 경직, 로봇은 멈추고 약점 노출
+  placeTrap(h, drop) {
+    const f = h.fwd(tA);
+    const x = drop ? h.pos.x : h.pos.x + f.x * 2.2, z = drop ? h.pos.z : h.pos.z + f.z * 2.2;
+    const gy = this.groundY(x, z, h.pos.y + 1);
+    if (gy === null) { this.fx.sparkle(tB.set(x, h.pos.y, z), h.color); return; }
+    const mine = this.traps.filter((t) => t.owner === h);
+    if (mine.length >= 2) this.removeTrap(mine[0]);
+    const mesh = new THREE.Mesh(this.trapGeo, this.trapMat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, gy + 0.08, z);
+    this.scene.add(mesh);
+    this.traps.push({ owner: h, mesh, x, z, y: gy, t: 0, arm: 0.35, life: 9 });
+    this.fx.ring(tB.set(x, gy + 0.1, z), UP, 0.3, 1.4, 0.3, h.color, 0.9);
+    this.sound('grab', tB, 0.6, 1.5);
+  }
+
+  removeTrap(tr) {
+    const i = this.traps.indexOf(tr);
+    if (i >= 0) this.traps.splice(i, 1);
+    this.scene.remove(tr.mesh);
+  }
+
+  updateTraps(dt) {
+    for (let i = this.traps.length - 1; i >= 0; i--) {
+      const tr = this.traps[i];
+      tr.t += dt;
+      tr.mesh.rotation.z = tr.t * 1.5;
+      tr.mesh.scale.setScalar(1 + Math.sin(tr.t * 6) * 0.05);
+      if (tr.t > tr.life || tr.owner.dead || tr.owner.out) { this.removeTrap(tr); continue; }
+      if (tr.t < tr.arm) continue;
+      for (const t of this.targets(tr.owner)) {
+        if (t.kind === 'robot' && t.state !== 'active') continue;
+        if (t.kind === 'human' && (!t.onGround || t.invuln > 0)) continue;
+        if (Math.hypot(t.pos.x - tr.x, t.pos.z - tr.z) > 0.9 + t.radius * 0.8 || Math.abs(t.pos.y - tr.y) > 1.2) continue;
+        tB.set(tr.x, tr.y + 0.6, tr.z);
+        if (t.kind === 'human') {
+          if (t.state === 'boarding') t.cancelBoard('덫에 걸렸다!');
+          const ok = this.applyHit(tr.owner, t, { dmg: 5, kb: 0, lift: 0, stun: 1.0, power: 1, snd: 'grab' }, tDir.set(0, 0, 1), tB);
+          if (ok) { t.vel.set(0, 0, 0); t.stun = Math.max(t.stun, 1.0); }
+        } else {
+          this.applyHit(tr.owner, t, { dmg: 6, kb: 0, lift: 0, power: 1, snd: 'grab' }, tDir.set(0, 0, 1), tB);
+          t.stagger = Math.max(t.stagger, 0.9);
+          t.vel.x = 0; t.vel.z = 0;
+          this.exposeRobot(t, 2.5);
+        }
+        this.fx.ring(tB, UP, 0.4, 2.2, 0.35, 0xc58cff, 1);
+        this.ui.callout(t.pos, '끈끈이!', 'sk', (t.height || 2) + 0.3);
+        this.removeTrap(tr);
+        break;
+      }
+    }
+  }
+
+  // 하루 연막: 가까이 붙은 사람은 잠깐 멈추고 로봇은 조준을 놓친다
+  smokeBurst(h) {
+    const p = tB.copy(h.pos).setY(h.pos.y + 0.8);
+    this.fx.dust(p, 16, 1.4);
+    this.fx.ring(tC.copy(h.pos).setY(h.pos.y + 0.1), UP, 0.4, 2.8, 0.3, 0xdddddd, 0.8);
+    this.sound('dash', p, 0.8, 0.8);
+    for (const t of this.targets(h)) {
+      const d = this.dist2D(t.pos, h.pos);
+      if (d > 2.8 + t.radius) continue;
+      if (t.kind === 'human' && t.invuln <= 0 && !(t.shieldT > 0) && !(t.bubbleT > 0)) {
+        if (t.act) t.cancelAct();
+        if (t.state === 'boarding') t.cancelBoard('');
+        t.setState('hurt'); t.stun = 0.45;
+        t.vel.x *= 0.2; t.vel.z *= 0.2;
+      } else if (t.kind === 'robot' && t.state === 'active') t.stagger = Math.max(t.stagger, 0.35);
+    }
+  }
+
+  // 도리 당근 배리어: 짧은 시간 모든 방향 공격을 막는 방어막 (공격하면 해제)
+  startBubble(h) {
+    const sk = h.P.skill2;
+    h.bubbleT = sk.time || 1.5;
+    const mesh = new THREE.Mesh(this.shieldGeo, shieldMaterial(0xffa6d8));
+    mesh.renderOrder = 5;
+    mesh.scale.setScalar(0.3);
+    this.scene.add(mesh);
+    this.shields.push({ h, mesh, t: 0, bubble: true });
+    this.fx.ring(tB.copy(h.pos).setY(h.pos.y + 0.08), UP, 0.5, sk.radius || 2.8, 0.3, h.color, 1);
+    this.sound('charge', h.pos, 0.7, 1.8);
+    // 붙어 있던 적을 밀어낸다 (피해 없음)
+    for (const o of this.humans) {
+      if (o === h || o.dead || o.out || o.riding) continue;
+      const dx = o.pos.x - h.pos.x, dz = o.pos.z - h.pos.z, d = Math.hypot(dx, dz);
+      if (d > (sk.radius || 2.8) || Math.abs(o.pos.y - h.pos.y) > 2.5 || o.invuln > 0) continue;
+      if (o.state === 'boarding') o.cancelBoard('');
+      o.cancelAct();
+      o.setState('hurt'); o.stun = 0.3;
+      o.vel.x = (dx / (d || 1)) * 11; o.vel.z = (dz / (d || 1)) * 11;
+    }
+  }
+
+  endBubble(h) {
+    h.bubbleT = 0;
+    const s = this.shields.find((x) => x.h === h && x.bubble && x.fade === undefined);
+    if (s) s.fade = 0.2;
+  }
+
+  // 브레이크 버스트: 콤보에 갇힌 사람이 스킬 2 를 소모해 빠져나온다
+  breakBurst(h) {
+    h.cancelAct();
+    h.cd2 = h.cd2Max = RULES.burstCd;
+    h.hitsTaken = 0; h.stunChain = 0;
+    h.stun = 0;
+    h.juggleT = 0;
+    h.chaseT = 0;
+    h.invuln = Math.max(h.invuln, RULES.burstInvuln);
+    h.vel.x *= 0.2; h.vel.z *= 0.2;
+    if (!h.onGround) h.vel.y = Math.max(h.vel.y, 6);
+    h.setState('normal');
+    h.doAct('burst');
+    const p = tA.copy(h.pos).setY(h.pos.y + 1);
+    this.fx.shockwave(tB.copy(h.pos).setY(h.pos.y + 0.2), RULES.burstRadius, 0xffffff, 0.35);
+    this.fx.hit(p, UP, 2, h.color);
+    this.sound('block', p, 1.1, 0.7);
+    this.shake(0.2, h.pos);
+    this.ui.callout(h.pos, 'BREAK!', h.isPlayer ? 'sk' : 'warn', 2.6);
+    for (const o of this.humans) {
+      if (o === h || o.dead || o.out || o.riding) continue;
+      const dx = o.pos.x - h.pos.x, dz = o.pos.z - h.pos.z, d = Math.hypot(dx, dz);
+      if (d > RULES.burstRadius || Math.abs(o.pos.y - h.pos.y) > 3) continue;
+      if (o.state === 'boarding') o.cancelBoard('');
+      o.cancelAct();
+      o.setState('launched'); o.onGround = false;
+      o.vel.set((dx / (d || 1)) * 10, 6, (dz / (d || 1)) * 10);
+      if (o.combo && o.combo.n) this.comboEnd(o);
+    }
+    for (const r of this.robots) {
+      if (r.state !== 'active' || r.pilot === h) continue;
+      if (this.dist2D(r.pos, h.pos) < RULES.burstRadius + r.radius) { r.stagger = Math.max(r.stagger, 0.45); r.vel.x += (r.pos.x - h.pos.x) * 2; r.vel.z += (r.pos.z - h.pos.z) * 2; }
+    }
+    if (h.isPlayer) { this.ui.flash(0.08); this.slow(0.4, 0.15); }
+  }
+
+  // 역전 도움: 목숨과 체력으로 점수를 매겨 뒤처진 사람의 게이지가 빨리 찬다
+  updateComeback() {
+    let best = -Infinity;
+    for (const h of this.humans) if (!h.out) { h._score = h.stock + h.hp / (h.maxHp || 100); if (h._score > best) best = h._score; }
+    for (const h of this.humans) h.comeback = h.out ? 1 : Math.min(RULES.comebackMax, 1 + Math.max(0, best - h._score) * RULES.comebackPer);
+  }
+
+  // 호출 슬롯 계약 (UI 가 매 틱 읽음): { kind: 'call'|'board'|'exit'|null, progress 0..1, label, hint, near }
+  //   call: 게이지 MAX 이고 내 로봇이 없을 때. board: 탈 수 있는 로봇 옆 / 내 빈 로봇이 있을 때 (near: 지금 붙어 있음)
+  //   exit: 탑승 중 (progress 는 길게 누르기 진행도)
+  contextAction(h) {
+    const c = h._ctx || (h._ctx = { kind: null, progress: 0, label: '', hint: '', near: false });
+    c.kind = null; c.progress = 0; c.label = ''; c.hint = ''; c.near = false;
+    if (!h || h.dead || h.out) return c;
+    if (h.riding) {
+      c.kind = 'exit'; c.label = '하차'; c.hint = '길게';
+      c.progress = clamp(h.ejectHold / EJECT_HOLD, 0, 1);
+      return c;
+    }
+    if (h.state === 'boarding' && h.boardTarget) {
+      c.kind = 'board'; c.label = '탑승'; c.hint = '길게'; c.near = true;
+      c.progress = clamp(h.boardT / (h.boardNeed || 1), 0, 1);
+      return c;
+    }
+    const near = this.boardableNear(h);
+    const own = h.robot;
+    if (near || (own && own.state === 'idle')) {
+      c.kind = 'board'; c.label = '탑승'; c.near = !!near; c.hint = near ? '길게' : '가까이';
+      return c;
+    }
+    if (!own && h.gauge >= RULES.gaugeMax) {
+      c.kind = 'call'; c.label = '호출'; c.hint = '준비!'; c.progress = 1;
+    }
+    return c;
   }
 
   throwBoomerang(h) {
     h.rig.handR.getWorldPosition(tB);
     const f = h.fwd(tA);
-    const mesh = createCarrot();
-    mesh.scale.setScalar(1.25);
+    const mesh = this.takeCarrot(1.25);
     this.scene.add(mesh);
     this.projectiles.push({ type: 'boomer', mesh, pos: tB.clone(), vel: new THREE.Vector3(f.x * 21, 0, f.z * 21), owner: h, life: 1.8, r: 0.7, age: 0, hitSet: new Set(), back: false });
     this.sound('spin', tB, 0.5, 1.6);
@@ -519,15 +824,19 @@ export class Game {
     }
   }
 
-  // ---------------- 게이지/소환/탑승 ----------------
+  // ---------------- 게이지/호출/탑승 ----------------
   gaugeFull(h) {
-    if (h.isPlayer) { this.ui.toast('🥕 게이지 MAX! ' + keyName('act') + ' → 로봇 소환 (맞는 중에도 가능)'); this.sound('gaugeFull', h.pos, 1); }
+    if (h.isPlayer) {
+      const touch = typeof document !== 'undefined' && document.documentElement.classList.contains('touch-mode');
+      this.ui.toast(touch ? '🥕 게이지 MAX! 호출 버튼이 나타났어요 (맞는 중에도 가능)' : '🥕 게이지 MAX! ' + keyName('act') + ' → 로봇 호출 (맞는 중에도 가능)');
+      this.sound('gaugeFull', h.pos, 1);
+    }
     else this.ui.callout(h.pos, '🥕 MAX', 'warn');
   }
 
-  // ---------------- 소환 배리어 ----------------
-  // 리모컨을 누르는 순간 배리어가 펼쳐져 주변 적을 밀어내고, 로봇이 착지해 올라탈 때까지 소환자를 지킨다.
-  // 소환자가 공격하면 배리어는 사라진다. 배리어가 있는 동안 소환자의 로봇은 다른 사람이 탈 수 없다.
+  // ---------------- 호출 배리어 ----------------
+  // 리모컨을 누르는 순간 배리어가 펼쳐져 주변 적을 밀어내고, 로봇이 착지해 올라탈 때까지 호출자를 지킨다.
+  // 호출자가 공격하면 배리어는 사라진다. 배리어가 있는 동안 호출자의 로봇은 다른 사람이 탈 수 없다.
   startShield(h) {
     if (h.shieldT > 0) return;
     h.shieldT = RULES.shieldTime;
@@ -554,24 +863,25 @@ export class Game {
     if (h.isPlayer) this.ui.toast('🛡 배리어! 로봇에 탈 때까지 공격을 막아줍니다 (공격하면 해제)');
   }
 
-  // 긴급 소환: 맞는 중에 리모컨. 경직을 풀고 배리어를 터뜨린다
+  // 긴급 호출: 맞는 중에 리모컨. 경직을 풀고 배리어를 터뜨린다
   emergencySummon(h) {
     h.cancelAct();
     h.setState('normal');
     h.stun = 0;
+    h.hitsTaken = 0; h.stunChain = 0;
     h.vel.x *= 0.1; h.vel.z *= 0.1;
     if (!h.onGround) h.vel.y = Math.max(h.vel.y, 5);
     this.fx.shockwave(tA.copy(h.pos).setY(h.pos.y + 0.2), RULES.shieldRadius, h.color, 0.4);
     this.fx.hit(tA.copy(h.pos).setY(h.pos.y + 1), UP, 2, h.color);
     this.shake(0.3, h.pos);
-    this.ui.callout(h.pos, '긴급 소환!', h.isPlayer ? 'sk' : 'warn', 2.6);
+    this.ui.callout(h.pos, '긴급 호출!', h.isPlayer ? 'sk' : 'warn', 2.6);
     if (h.isPlayer) { this.ui.flash(0.12); this.slow(0.35, 0.25); }
   }
 
   endShield(h, broke) {
     if (!(h.shieldT > 0)) return;
     h.shieldT = 0;
-    const s = this.shields.find((x) => x.h === h);
+    const s = this.shields.find((x) => x.h === h && !x.bubble && x.fade === undefined);
     if (s) s.fade = 0.25;
     if (broke) {
       this.sound('boardCancel', h.pos, 0.5, 1.4);
@@ -580,7 +890,7 @@ export class Game {
   }
 
   shieldHitFx(h) {
-    const s = this.shields.find((x) => x.h === h);
+    const s = this.shields.find((x) => x.h === h && x.fade === undefined);
     if (s) s.hitT = 0.2;
   }
 
@@ -589,7 +899,8 @@ export class Game {
       const s = this.shields[i];
       const h = s.h;
       s.t += dt;
-      if (h.shieldT > 0) {
+      if (s.bubble) { if (!(h.bubbleT > 0) && s.fade === undefined) s.fade = 0.2; }
+      else if (h.shieldT > 0) {
         // 로봇이 아직 떨어지는 중이면 배리어가 먼저 꺼지지 않는다
         const r = h.robot;
         if (r && r.state === 'falling') h.shieldT = Math.max(h.shieldT, 0.6);
@@ -599,22 +910,23 @@ export class Game {
       }
       if (s.fade !== undefined) {
         s.fade -= dt;
-        if (s.fade <= 0) { this.scene.remove(s.mesh); s.mesh.material.dispose(); this.shields.splice(i, 1); continue; }
+        if (s.fade <= 0) { this.scene.remove(s.mesh); releaseShieldMaterial(s.mesh.material); this.shields.splice(i, 1); continue; }
       }
       const e = h.riding || h;
       const grow = Math.min(1, s.t / 0.18);
       s.hitT = Math.max(0, (s.hitT || 0) - dt);
       const pulse = 1 + Math.sin(s.t * 9) * 0.03 + s.hitT * 0.6;
-      s.mesh.scale.setScalar(1.55 * grow * pulse);
+      s.mesh.scale.setScalar((s.bubble ? 1.35 : 1.55) * grow * pulse);
       s.mesh.position.set(e.pos.x, e.pos.y + 1.0, e.pos.z);
       s.mesh.rotation.y += dt * 0.8;
       let al = 1;
       if (s.fade !== undefined) al = Math.max(0, s.fade / 0.3);
-      else if (h.shieldT < 1.2) al = 0.45 + 0.55 * (Math.floor(h.shieldT * 8) % 2);
+      else if (!s.bubble && h.shieldT < 1.2) al = 0.45 + 0.55 * (Math.floor(h.shieldT * 8) % 2);
+      else if (s.bubble && h.bubbleT < 0.5) al = 0.45 + 0.55 * (Math.floor(h.bubbleT * 10) % 2);
       s.mesh.material.uniforms.alpha.value = al * (1 + s.hitT * 3);
       s.mesh.material.uniforms.time.value = s.t;
-      if (!(h.shieldT > 0)) continue;
-      // 가까이 붙은 적은 계속 밀어낸다: 소환자를 둘러싸고 때리는 걸 막는다
+      if (s.fade !== undefined || !(s.bubble ? h.bubbleT > 0 : h.shieldT > 0)) continue;
+      // 가까이 붙은 적은 계속 밀어낸다: 호출자를 둘러싸고 때리는 걸 막는다
       for (const o of this.humans) {
         if (o === h || o.dead || o.out || o.riding) continue;
         const dx = o.pos.x - h.pos.x, dz = o.pos.z - h.pos.z, d = Math.hypot(dx, dz);
@@ -668,7 +980,7 @@ export class Game {
     this.sound('incoming', mark, 1.1);
     const nm = ROBOT_STATS[h.robotType] ? this.robotName(h.robotType) : '';
     if (h.isPlayer) this.ui.banner('ROBOT CALL!', 'summon');
-    this.ui.callout(h.pos, nm + ' 소환!', 'warn');
+    this.ui.callout(h.pos, nm + ' 호출!', 'warn');
     this.ui.addRobot(r);
   }
 
@@ -682,7 +994,7 @@ export class Game {
     this.shake(0.75, r.pos);
     if (this.dist2D(r.pos, this.player.pos) < 18) { this.fx.impactFrame(1.2); this.ui.flash(0.15); }
     this.areaHit(r, tA.copy(r.pos).setY(r.pos.y + 0.5), 3.8, { dmg: 18, kb: 18, lift: 14, launch: true, power: 2, snd: 'heavy' }, [r.owner]);
-    // 착지 후에도 소환자가 걸어가 탈 시간만큼 배리어 유지
+    // 착지 후에도 호출자가 걸어가 탈 시간만큼 배리어 유지
     const o = r.owner;
     if (o && o.shieldT > 0) {
       const walk = this.dist2D(o.pos, r.pos) / ((o.P && o.P.speed) || 7.4);
@@ -879,6 +1191,7 @@ export class Game {
     h.pos.set(best.x, (best.y || 0) + 9, best.z);
     h.gh = best.y || 0;
     h.shieldT = 0; h.chaseT = 0; h.floatT = 0; h.juggleT = 0;
+    h.hitsTaken = 0; h.stunChain = 0; h.cd1 = 0; h.cd2 = 0; h.bubbleT = 0;
     h.vel.set(0, 0, 0);
     h.onGround = false;
     h.setState('normal');
@@ -967,8 +1280,7 @@ export class Game {
         const ms = r.rig.muzzles.filter((m) => m !== r.rig.laserOrigin);
         const m = ms.length ? ms[r.missileIdx++ % ms.length] : r.rig.head;
         m.getWorldPosition(tB);
-        const mesh = createCarrot();
-        mesh.scale.setScalar(1.3);
+        const mesh = this.takeCarrot(1.3);
         this.scene.add(mesh);
         const side = r.missileIdx % 2 ? 1 : -1;
         const rx = Math.cos(r.facing) * side, rz = -Math.sin(r.facing) * side;
@@ -1039,7 +1351,7 @@ export class Game {
     tB.y = 0.05;
     this.fx.dust(tB, 3, 1.1);
     this.sound('robotStep', tB, 0.7, 0.9 + Math.random() * 0.2);
-    if (r.pilot && r.pilot.isPlayer) this.shake(0.06); else this.shake(0.05, tB);
+    if (r.pilot && r.pilot.isPlayer) this.shake(0.035); else this.shake(0.03, tB);
   }
 
   stompSlam(r) {
@@ -1151,6 +1463,9 @@ export class Game {
       } else if (p.type === 'fist') {
         this.fx.thruster(p.pos, tB.copy(p.vel).normalize().negate(), 1.3);
         p.mesh.quaternion.setFromUnitVectors(tB.set(0, 0, 1), tC.copy(p.vel).normalize());
+      } else if (p.kind === 'sling') {
+        p.mesh.quaternion.setFromUnitVectors(DOWN, tB.copy(p.vel).normalize());
+        if (Math.random() < 0.5) this.fx.trailPuff(p.pos, 0xffa040, 0.3);
       } else {
         if (Math.random() < 0.7) this.fx.trailPuff(p.pos, 0xff66dd, 0.5);
       }
@@ -1172,6 +1487,10 @@ export class Game {
           } else if (p.type === 'boomer') {
             p.hitSet.add(t);
             this.applyHit(p.owner, t, p.back ? { dmg: 6, kb: 4, lift: 7, launch: true, power: 1, snd: 'kick', chase: true } : { dmg: 7, kb: 3, lift: 2, stun: 0.55, power: 1, snd: 'punch' }, tDir, p.pos.clone());
+          } else if (p.type === 'shot' && p.kind === 'sling') {
+            // 하루 새총: 가벼운 견제. 로봇에게도 조금은 아프다
+            this.applyHit(p.owner, t, { dmg: 6, kb: 6, lift: 3, stun: 0.32, power: 1, snd: 'punch' }, tDir, p.pos.clone());
+            dead = true; break;
           } else if (p.type === 'shot') {
             if (p.owner.act && p.owner.act.name === 'blaster') p.owner.act.flags.shotHit = true;
             this.applyHit(p.owner, t, { dmg: 5, kb: 9, lift: 4, stun: 0.3, power: 2, snd: 'robotPunch' }, tDir, p.pos.clone());
@@ -1199,7 +1518,25 @@ export class Game {
   }
 
   removeProj(p) {
-    this.scene.remove(p.mesh);
+    if (p.mesh.userData.pooledCarrot) this.releaseCarrot(p.mesh);
+    else this.scene.remove(p.mesh);
+  }
+
+  // 당근 메시 풀: 부메랑·새총·미사일·아이템이 발사마다 새 메시를 만들지 않게 한다
+  takeCarrot(scale) {
+    const pool = this.carrotPool || (this.carrotPool = []);
+    const mesh = pool.pop() || createCarrot();
+    mesh.userData.pooledCarrot = true;
+    mesh.visible = true;
+    mesh.quaternion.identity();
+    mesh.scale.setScalar(scale);
+    return mesh;
+  }
+
+  releaseCarrot(mesh) {
+    this.scene.remove(mesh);
+    const pool = this.carrotPool || (this.carrotPool = []);
+    if (mesh.userData.pooledCarrot && pool.length < 24) pool.push(mesh);
   }
 
   // ---------------- 당근 아이템 ----------------
@@ -1211,8 +1548,7 @@ export class Game {
         let pt;
         if (this.arena.randomPoint) pt = this.arena.randomPoint(2.5);
         else { const a = Math.random() * Math.PI * 2, d = 4 + Math.random() * (this.arena.radius - 7); pt = { x: Math.cos(a) * d, y: 0, z: Math.sin(a) * d }; }
-        const mesh = createCarrot();
-        mesh.scale.setScalar(1.5);
+        const mesh = this.takeCarrot(1.5);
         this.scene.add(mesh);
         const c = { mesh, pos: new THREE.Vector3(pt.x, (pt.y || 0) + 26, pt.z), gy: pt.y || 0, landed: false, t: 0 };
         if (!this.arena.randomPoint) for (const o of this.arena.obstacles) if (Math.hypot(c.pos.x - o.x, c.pos.z - o.z) < o.r + 1) { c.pos.x += (o.r + 1.5) * Math.sign(c.pos.x - o.x || 1); }
@@ -1237,7 +1573,7 @@ export class Game {
           this.fx.sparkle(c.pos, 0xffb040);
           this.sound('gaugeFull', c.pos, 0.5, 1.5);
           this.ui.callout(h.pos, '🥕 +32', 'good');
-          this.scene.remove(c.mesh);
+          this.releaseCarrot(c.mesh);
           this.carrots.splice(i, 1);
           break;
         }
@@ -1352,10 +1688,10 @@ export class Game {
     // Preserve useful horizontal field of view on narrow phone screens.
     // Presentation only: this does not affect movement or combat distances.
     dist *= Math.max(1, Math.min(1.8, 1.05 / cam.aspect));
-    this.camDist += (dist - this.camDist) * (1 - Math.exp(-realDt * 2.2));
+    this.camDist += (dist - this.camDist) * (1 - Math.exp(-realDt * 3));
     const pitch = 0.8;
     const want = tC.set(focus.x, focus.y + Math.sin(pitch) * this.camDist, focus.z + Math.cos(pitch) * this.camDist);
-    const k = 1 - Math.exp(-realDt * (this.phase === 'intro' ? 1.8 : 4.5));
+    const k = 1 - Math.exp(-realDt * (this.phase === 'intro' ? 1.8 : 6.5));
     this.camPos.lerp(want, k);
     this.camLook.lerp(focus, k);
     cam.position.copy(this.camPos);
@@ -1368,6 +1704,6 @@ export class Game {
       cam.position.z += Math.sin(t * 2.1 + 2) * s * 0.4;
     }
     cam.lookAt(tD.set(this.camLook.x, this.camLook.y + 1.2, this.camLook.z));
-    if (s > 0) cam.rotateZ(Math.sin(this.time * 90) * s * 0.035);
+    if (s > 0) cam.rotateZ(Math.sin(this.time * 90) * s * 0.02);
   }
 }

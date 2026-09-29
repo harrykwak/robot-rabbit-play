@@ -340,6 +340,36 @@ export function createHuman(o = {}) {
     const tail = K.add(head, caps(0.1, 0.34), hair, 0, 0.3, -0.42, 0.5);
     tail.scale.set(1, 1, 0.8);
     K.add(head, torus(0.08, 0.025), body, 0, 0.47, -0.36, 0.9, 0, 0, false);
+  } else if (style === 4) {
+    // 도리: 둥근 방패 헬멧 + 앞 가리개
+    K.add(head, sph(0.345, 18, 12), hair, 0, 0.33, -0.05);
+    const helm = K.add(head, sph(0.375, 18, 10), accent, 0, 0.37, -0.02);
+    helm.scale.set(1.05, 0.78, 1.05);
+    K.add(head, rbox(0.5, 0.06, 0.12, 0.03), 0xffd84a, 0, 0.5, 0.28, -0.2, 0, 0, false);
+    K.add(head, rbox(0.08, 0.2, 0.44, 0.03), body, 0, 0.62, -0.02, 0, 0, 0, false);
+  } else if (style === 5) {
+    // 하루: 뒤로 뻗친 머리 + 이마 고글
+    K.add(head, sph(0.345, 18, 12), hair, 0, 0.35, -0.05);
+    for (const [x, y, z, rx, rz] of [[0.12, 0.5, -0.3, 1.2, -0.3], [-0.12, 0.5, -0.3, 1.2, 0.3], [0, 0.58, -0.22, 0.9, 0]]) K.add(head, cone(0.09, 0.28, 6), hair, x, y, z, rx, 0, rz);
+    K.add(head, torus(0.33, 0.035), 0x2b2b35, 0, 0.44, 0.02, Math.PI / 2 - 0.25, 0, 0, false);
+    for (const s of [1, -1]) {
+      K.add(head, cyl(0.09, 0.09, 0.07, 10), 0x2b2b35, 0.12 * s, 0.5, 0.3, 1.3, 0, 0, false);
+      K.add(head, cyl(0.065, 0.065, 0.02, 10), 0x7fe0ff, 0.12 * s, 0.515, 0.335, 1.3, 0, 0, false);
+    }
+  } else if (style === 6) {
+    // 타로: 짧은 머리 + 상투 + 두건
+    K.add(head, sph(0.34, 18, 12), hair, 0, 0.33, -0.06);
+    K.add(head, sph(0.12, 10, 8), hair, 0, 0.72, -0.12);
+    K.add(head, torus(0.335, 0.05), body, 0, 0.42, -0.02, Math.PI / 2 - 0.12, 0, 0, false);
+    K.add(head, caps(0.04, 0.2), body, 0.05, 0.36, -0.4, 0.9, 0, 0.4, false);
+  } else if (style === 7) {
+    // 루나: 긴 머리 + 뾰족 모자
+    K.add(head, sph(0.35, 18, 12), hair, 0, 0.34, -0.06);
+    const back = K.add(head, caps(0.2, 0.3), hair, 0, 0.12, -0.2, 0.15);
+    back.scale.set(1.3, 1, 0.7);
+    K.add(head, cyl(0.52, 0.52, 0.04, 16), accent, 0, 0.56, -0.02, -0.08, 0, 0);
+    K.add(head, cone(0.3, 0.62, 12), accent, 0, 0.88, -0.1, -0.35, 0, 0);
+    K.add(head, sph(0.06, 8, 6), 0xffe070, 0, 1.12, -0.28, 0, 0, 0, false);
   } else {
     K.add(head, sph(0.345, 18, 12), hair, 0, 0.35, -0.05);
     const spikes = [[0, 0.62, 0.02, -0.4, 0], [0.16, 0.58, -0.04, -0.2, -0.6], [-0.16, 0.58, -0.04, -0.2, 0.6], [0.08, 0.58, -0.24, 0.5, -0.3], [-0.1, 0.56, -0.26, 0.6, 0.35], [0, 0.46, -0.36, 1.1, 0]];

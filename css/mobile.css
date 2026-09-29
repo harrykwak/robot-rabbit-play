@@ -3,8 +3,9 @@
    - 메뉴: 320~430 세로 가로넘침 없음, 낮은 가로 화면 스크롤, safe-area/dvh
    - 터치: (pointer: coarse) 또는 html.touch-mode 에서 HUD 재배치
    - 터치 컨트롤 DOM 계약: #touch-controls.touch-controls
-     .touch-stick > .touch-knob / .touch-actions > .touch-btn[data-touch-action]
-     (.touch-label .touch-sub) / .touch-menu / .touch-status / .is-down
+     .touch-swipe / .touch-stick > .touch-knob / .touch-actions > .touch-btn[data-touch-action]
+     (atk 큰 버튼, hvy·grd 작은 스킬 --cd, act 특수 칸 .touch-special[data-kind] --hold)
+     (.touch-label .touch-sub) / .touch-menu / .touch-status / .is-down .is-cooling .is-ready
      root.left-handed / root --touch-scale (0.85~1.15)
    ========================================================= */
 
@@ -119,21 +120,17 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 }
 .touch-controls { --m-k: clamp(.85, var(--touch-scale, 1), 1.15); }
 
+/* 큰 공격(--ta) 1개 + 작은 스킬(--tb) 2개 + 특수 칸(--tb, 필요할 때만): 2x2 무리 */
 @media (orientation: portrait) {
-  :root { --tb0: min(56px, 15.5vw); --ta0: min(76px, 21vw); --stick0: min(128px, 35vw); }
-  :root,
-  .touch-controls {
-    --m-cluster-w: calc(var(--tb) + var(--tg) + var(--ta));
-    --m-cluster-h: calc(var(--tb) * 2 + var(--ta) + var(--tg) * 2);
-  }
+  :root { --tb0: min(52px, 14vw); --ta0: min(92px, 25vw); --stick0: min(128px, 35vw); }
 }
 @media (orientation: landscape) {
-  :root { --tb0: min(56px, 14vh); --ta0: min(78px, 20vh); --stick0: min(136px, 36vh); --m-cards-h: 54px; }
-  :root,
-  .touch-controls {
-    --m-cluster-w: calc(var(--tb) * 2 + var(--ta) + var(--tg) * 2);
-    --m-cluster-h: calc(var(--tb) + var(--ta) + var(--tg));
-  }
+  :root { --tb0: min(52px, 13vh); --ta0: min(96px, 25vh); --stick0: min(136px, 36vh); --m-cards-h: 54px; }
+}
+:root,
+.touch-controls {
+  --m-cluster-w: calc(var(--tb) + var(--tg) + var(--ta));
+  --m-cluster-h: calc(var(--tb) + var(--tg) + var(--ta));
 }
 
 /* ---------------- 메뉴: 좁은 폭 · 낮은 높이 · 터치 기기 ---------------- */
@@ -569,7 +566,7 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 .touch-stick.is-down { border-color: var(--cyan); box-shadow: inset 0 0 0 2px rgba(47, 230, 255, .35), 0 0 14px rgba(47, 230, 255, .45); }
 .touch-stick.is-down .touch-knob { background: radial-gradient(circle at 35% 30%, #ffffff, var(--cyan) 60%, #1b8fb0); }
 
-/* 버튼 무리: 공격은 항상 바깥 아래 모서리, 점프는 공격 옆 */
+/* 버튼 무리: 큰 공격은 바깥 아래 모서리, 작은 스킬 둘은 공격 옆, 특수 칸은 대각선 위 (필요할 때만) */
 .touch-actions {
   position: absolute;
   right: calc(var(--m-sar) + var(--m-edge));
@@ -577,21 +574,23 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
   display: grid;
   gap: var(--tg);
   grid-template-columns: var(--tb) var(--ta);
-  grid-template-rows: var(--tb) var(--tb) var(--ta);
+  grid-template-rows: var(--tb) var(--ta);
   grid-template-areas:
-    "grd  hvy"
-    "dash jump"
-    "act  atk";
+    "act grd"
+    "hvy atk";
 }
-@media (orientation: landscape) {
-  .touch-actions {
-    grid-template-columns: var(--tb) var(--tb) var(--ta);
-    grid-template-rows: var(--tb) var(--ta);
-    grid-template-areas:
-      "grd dash hvy"
-      "act jump atk";
-  }
+
+/* 버튼 바깥 오른쪽 절반: 위로 튕기면 점프, 옆·아래로 밀면 대시 (보이지 않는 영역) */
+.touch-controls .touch-swipe {
+  position: absolute;
+  left: 50%;
+  right: 0;
+  top: calc(var(--m-sat) + var(--m-cards-h) + 60px);
+  bottom: 0;
+  pointer-events: auto;
+  touch-action: none;
 }
+.touch-controls.left-handed .touch-swipe { left: 0; right: 50%; }
 
 .touch-btn {
   --tc: #3a4f96;
@@ -616,14 +615,80 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
   box-shadow: 0 4px 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, .2);
   opacity: .92;
   cursor: pointer;
+  isolation: isolate;
   transition: transform .06s, box-shadow .06s, filter .06s;
 }
-.touch-btn[data-touch-action="atk"]  { --tc: var(--carrot); --sz: var(--ta); grid-area: atk; }
-.touch-btn[data-touch-action="hvy"]  { --tc: var(--pink); grid-area: hvy; }
-.touch-btn[data-touch-action="grd"]  { --tc: #1f9fc0; grid-area: grd; }
-.touch-btn[data-touch-action="jump"] { --tc: #4a63c0; grid-area: jump; }
-.touch-btn[data-touch-action="dash"] { --tc: #7a4fd0; grid-area: dash; }
-.touch-btn[data-touch-action="act"]  { --tc: #2fa865; grid-area: act; }
+.touch-btn[hidden] { display: none !important; }
+.touch-btn > span { position: relative; z-index: 2; }
+.touch-btn[data-touch-action="atk"] { --tc: var(--carrot); --sz: var(--ta); grid-area: atk; }
+.touch-btn[data-touch-action="hvy"] { --tc: var(--pink); grid-area: hvy; place-self: end end; margin-bottom: 4px; }
+.touch-btn[data-touch-action="grd"] { --tc: #1f9fc0; grid-area: grd; place-self: end end; margin-right: 4px; }
+.touch-btn[data-touch-action="act"] { --tc: #e0a800; grid-area: act; place-self: end end; }
+.touch-controls.is-riding .touch-btn[data-touch-action="hvy"] { --tc: #c0457a; }
+.touch-controls.is-riding .touch-btn[data-touch-action="grd"] { --tc: #2a7fb8; }
+
+/* 스킬 쿨다운: 남은 비율만큼 어두운 부채꼴 (JS 는 --cd 한 값만 단계적으로 쓴다) */
+.touch-btn[data-touch-action="hvy"]::after,
+.touch-btn[data-touch-action="grd"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 50%;
+  background: conic-gradient(rgba(5, 7, 15, .66) calc(var(--cd, 0) * 360deg), transparent 0);
+  pointer-events: none;
+}
+.touch-btn.is-cooling { filter: saturate(.55); }
+.touch-btn.is-active { filter: brightness(1.25); box-shadow: 0 4px 0 var(--ink), 0 0 0 3px var(--white), inset 0 0 0 2px rgba(255, 255, 255, .45); }
+/* 브레이크 버스트 가능: 흰-노랑 링이 맥동. 쿨다운 부채꼴은 숨긴다 */
+.touch-btn.is-burst { --tc: #ff3b6b; filter: none; opacity: 1; }
+.touch-btn.is-burst::after { background: none; }
+.touch-btn.is-burst::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 4px solid var(--yellow);
+  box-shadow: 0 0 14px rgba(255, 230, 90, .9);
+  animation: touch-burst .5s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.touch-btn.is-burst .touch-sub { color: var(--yellow); font-size: calc(10px * var(--m-k)); letter-spacing: .04em; }
+@keyframes touch-burst {
+  from { transform: scale(.94); opacity: .65; }
+  to { transform: scale(1.12); opacity: 1; }
+}
+.touch-btn.is-ready { animation: touch-ready .32s ease-out; }
+@keyframes touch-ready {
+  0% { transform: scale(1); box-shadow: 0 4px 0 var(--ink), 0 0 0 0 rgba(255, 244, 180, .9); }
+  45% { transform: scale(1.1); box-shadow: 0 4px 0 var(--ink), 0 0 0 6px rgba(255, 244, 180, .55); }
+  100% { transform: scale(1); box-shadow: 0 4px 0 var(--ink), 0 0 0 10px rgba(255, 244, 180, 0); }
+}
+
+/* 특수 칸 (호출 → 나중에 다른 필살기로 교체 가능): 조건이 되면 톡 튀어나온다 */
+.touch-special { animation: touch-pop .26s cubic-bezier(.3, 1.6, .55, 1); }
+.touch-special[data-kind="call"] { --tc: #f0b400; box-shadow: 0 4px 0 var(--ink), 0 0 12px rgba(255, 210, 60, .75), inset 0 0 0 2px rgba(255, 255, 255, .35); }
+.touch-special[data-kind="board"] { --tc: #2fa865; }
+.touch-special[data-kind="exit"] { --tc: #6a7896; }
+.touch-special.is-far { filter: saturate(.5) brightness(.85); opacity: .75; }
+.touch-special[data-kind="board"]::after,
+.touch-special[data-kind="exit"]::after {
+  /* 길게 누르기 진행 링 */
+  content: "";
+  position: absolute;
+  inset: -7px;
+  z-index: 1;
+  border-radius: 50%;
+  background: conic-gradient(var(--yellow) calc(var(--hold, 0) * 360deg), rgba(255, 255, 255, .18) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  pointer-events: none;
+}
+@keyframes touch-pop {
+  0% { transform: scale(.35); opacity: 0; }
+  100% { transform: scale(1); opacity: .92; }
+}
 
 .touch-label {
   max-width: 92%;
@@ -635,7 +700,9 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
   text-overflow: ellipsis;
   text-shadow: var(--ts-2);
 }
-.touch-btn[data-touch-action="atk"] .touch-label { font-size: calc(17px * var(--m-k)); }
+.touch-btn[data-touch-action="atk"] .touch-label { font-size: calc(21px * var(--m-k)); }
+.touch-btn[data-touch-action="hvy"] .touch-label,
+.touch-btn[data-touch-action="grd"] .touch-label { font-size: calc(10.5px * var(--m-k)); white-space: normal; text-align: center; word-break: keep-all; }
 .touch-sub {
   max-width: 88%;
   font-size: calc(9.5px * var(--m-k));
@@ -724,30 +791,145 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
   left: calc(var(--m-sal) + var(--m-edge));
   grid-template-columns: var(--ta) var(--tb);
   grid-template-areas:
-    "hvy  grd"
-    "jump dash"
-    "atk  act";
+    "grd act"
+    "atk hvy";
 }
-@media (orientation: landscape) {
-  .touch-controls.left-handed .touch-actions {
-    grid-template-columns: var(--ta) var(--tb) var(--tb);
-    grid-template-areas:
-      "hvy dash grd"
-      "atk jump act";
-  }
-}
+.touch-controls.left-handed .touch-btn[data-touch-action="hvy"] { place-self: end start; }
+.touch-controls.left-handed .touch-btn[data-touch-action="grd"] { place-self: end start; margin-right: 0; margin-left: 4px; }
+.touch-controls.left-handed .touch-btn[data-touch-action="act"] { place-self: end start; }
 
 @media (prefers-reduced-motion: reduce) {
   .touch-btn,
   .touch-menu { transition: none; }
+  .touch-btn.is-ready,
+  .touch-special,
+  .touch-btn.is-burst::before { animation: none; }
 }
 
-/* Combat touch buttons already carry the hold/cooldown cues. */
+/* 터치 버튼이 스킬 이름·쿨다운·길게 누르기 진행을 직접 보여 주므로 HUD 중복 표시는 숨긴다. */
 html.touch-mode #hud .ctx-hint { display: none; }
-html.touch-mode #hud .skills .skill:first-child,
-html.touch-mode #hud .skills .skill:last-child { display: none; }
+html.touch-mode #hud .skills { display: none; }
 @media (orientation: portrait) {
   :root { --m-cards-h: 76px; }
   html.touch-mode #hud .toast { top: calc(var(--m-sat) + var(--m-cards-h) + 62px); }
   html.touch-mode #hud .killfeed { display: none; }
+}
+
+/* ---------------- 선택 화면: 파일럿 카드 v2 (8명 · 클래스·역할 · 스킬 1/2) ----------------
+   카드 = 얼굴 | 이름 + 역할 칩 / 스킬 1·2 이름. 한 줄 소개(desc)는 오른쪽 상세 패널에만 둔다. */
+.pilot-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+button.pilot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "face name role" "face skills skills";
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  min-width: 0;
+  padding: 5px 8px 5px 6px;
+  border-radius: 14px;
+  text-align: left;
+}
+button.pilot .pilot-txt { display: contents; }
+button.pilot .pilot-face { grid-area: face; }
+button.pilot .pilot-name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+button.pilot .pilot-desc { display: none; }
+button.pilot .pilot-role { grid-area: role; justify-self: end; padding: 0 5px; font-size: 10.5px; line-height: 1.35; white-space: nowrap; }
+.pilot-skills { grid-area: skills; display: flex; flex-wrap: wrap; gap: 1px 8px; min-width: 0; font-size: 11px; font-weight: 800; line-height: 1.2; }
+.pilot-skills .ps { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .9; }
+.pilot-skills .ps::before {
+  content: "1";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--ink);
+  background: #ffd9ec;
+  border-radius: 3px;
+}
+.pilot-skills .ps + .ps::before { content: "2"; background: #bfefff; }
+button.pilot.on .pilot-skills .ps { opacity: 1; }
+/* 상세 패널의 스킬 1/2 줄 */
+.pilot-detail .pilot-skill-rows { margin: 0; }
+.pilot-detail .pilot-skill-rows li { font-size: 12.5px; }
+
+/* 낮은 가로 화면(폰 가로): 로봇 4칸 한 줄, 선택지 한 줄로 압축, 상세의 중복 스킬 줄 숨김 */
+@media (max-height: 520px) and (orientation: landscape) {
+  .select-panel { gap: 4px; }
+  .select-panel h2 { font-size: 14px !important; margin: 0 !important; }
+  button.pilot { padding: 3px 7px 3px 4px !important; min-height: 40px; row-gap: 1px; }
+  button.pilot .pilot-face { width: 20px; height: 20px; }
+  button.pilot .pilot-name { font-size: 12.5px; }
+  button.pilot .pilot-role { font-size: 9.5px; }
+  .pilot-skills { flex-wrap: nowrap; gap: 0 6px; font-size: 10px; }
+  .pilot-skills .ps { flex: 0 1 auto; }
+  .robot-list { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px !important; }
+  button.robot-card { min-height: 40px; padding: 4px 6px 4px 14px !important; gap: 2px; }
+  button.robot-card::before { width: 6px; border-right-width: 2px; }
+  button.robot-card.on::after { font-size: 12px; right: 4px; top: 2px; }
+  .rc-name { font-size: 12px; }
+  .opt-row { gap: 4px 10px; }
+  .opt-stage { flex-basis: auto; }
+  .stage-desc { display: none; }
+  .select-actions { margin-top: 2px !important; }
+  .pilot-detail .pilot-skill-rows { display: none; }
+  /* 제목은 화면에서만 숨기고 읽기 순서는 유지 (카드 자체가 파일럿/로봇임을 보여준다) */
+  .select-panel h2 { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .opt > span { font-size: 11px; }
+  .seg button { padding: 4px 9px; font-size: 12px; }
+  .pilot-detail .move-list .mv-desc { display: none; }
+}
+/* 상세 칸이 같이 보이는 가로 폭에서만 선택 패널을 절반으로 줄인다 (700px 이하는 상세 숨김 → 전체 폭) */
+@media (max-height: 520px) and (min-width: 701px) and (orientation: landscape) {
+  .select-panel { width: min(56vw, 520px); }
+}
+@media (max-height: 520px) and (max-width: 700px) and (orientation: landscape) {
+  .select-panel { width: 100%; }
+}
+/* 폰 가로(넓은 쪽): 선택지 두 줄 + 오른쪽에 뒤로/시작 세로 배치로 한 화면에 담는다 */
+@media (max-height: 520px) and (min-width: 600px) and (orientation: landscape) {
+  .select-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 8px; }
+  .select-panel > h2, .select-panel > .pilot-list, .select-panel > .robot-list { grid-column: 1 / -1; }
+  .select-panel > .opt-row { grid-column: 1; margin-top: 0; }
+  .select-panel > .select-actions {
+    grid-column: 2; grid-row: span 2; position: static; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-end;
+    gap: 6px; padding: 0 !important; margin: 0 !important; background: none;
+  }
+  .select-panel > .select-actions .btn { min-height: 42px; padding: 4px 14px; font-size: 14px; }
+  .select-panel > .select-actions .btn.big { font-size: 17px; }
+  .opt { gap: 5px; }
+  html.touch-mode .seg button, html .seg button { min-height: 36px; padding: 2px 8px; }
+  .select-panel { padding-top: 8px; padding-bottom: 8px; }
+  html.touch-mode button.robot-card, html button.robot-card, button.robot-card { min-height: 42px; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  #select { padding-top: max(6px, var(--m-sat)); padding-bottom: max(6px, var(--m-sab)); }
+  .select-wrap { padding: 0; }
+  .select-panel { gap: 3px 8px; }
+}
+/* 세로 폰: 로봇 카드는 한 줄, 난이도·목숨은 한 줄에 */
+@media (max-width: 430px) and (orientation: portrait) {
+  button.robot-card { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; min-height: 44px; padding: 4px 8px 4px 14px; }
+  button.robot-card.on::after { display: none; }
+  .rc-name { font-size: 13px; }
+  .opt-row { gap: 6px 8px; margin-top: 0; }
+  .opt { flex-wrap: nowrap; gap: 5px; }
+  .opt > span { font-size: 12px; }
+  .seg button { padding: 4px 9px; font-size: 13px; }
+  .stage-desc { display: none; }
+}
+/* 세로 폰: 역할 칩은 이름 아래, 스킬 1·2 는 한 줄씩 */
+@media (max-width: 430px) {
+  button.pilot {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "face name" "face role" "face skills";
+    padding: 5px 6px 6px 5px;
+    border-radius: 12px;
+  }
+  button.pilot .pilot-role { grid-column: auto; justify-self: start; font-size: 9.5px; }
+  .pilot-skills { flex-direction: column; gap: 1px; font-size: 10.5px; }
+  .robot-list { gap: 6px; }
+  button.robot-card { padding: 6px 8px 6px 16px; gap: 2px; }
+  .opt-row { gap: 6px 10px; }
 }

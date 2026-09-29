@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>로봇 래빗 ROBOT RABBIT</title>
-  <meta name="description" content="당근 리모컨으로 토끼 로봇을 소환해 탑승하는 3D 난투 액션" />
+  <meta name="description" content="당근 리모컨으로 토끼 로봇을 호출해 탑승하는 3D 난투 액션" />
   <link rel="icon" href="icons/rabbit.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/extra.css" />
@@ -50,7 +50,7 @@
       <p class="campaign-eyebrow">NEARBY RABBIT / 2 PLAYERS</p>
       <h2 id="peers-h">친구와 연결하기</h2>
       <p class="peer-intro">Apple은 Safari 웹, Android는 앱에서. 같은 Wi-Fi에서 둘이 연결해 CPU 둘과 난투하세요.</p>
-      <p class="peer-note"><strong>추천: Android에서 초대 → Apple에서 참가.</strong> Apple 쪽의 게임 계산을 줄여 줍니다. 두 기기 모두 최신 버전으로 맞춰 주세요. <span data-build-version>v1.3.0</span></p>
+      <p class="peer-note"><strong>추천: Android에서 초대 → Apple에서 참가.</strong> Apple 쪽의 게임 계산을 줄여 줍니다. 두 기기 모두 최신 버전으로 맞춰 주세요. <span data-build-version>v1.4.0</span></p>
       <details class="peer-guide"><summary>두 기기 연결 순서 · 연결이 안 될 때</summary>
         <ol><li>둘 다 같은 일반 Wi-Fi에 연결하세요. Apple은 Safari에서 게임을 열고 「초대 받았어요」를 선택합니다.</li><li>Apple의 「내 ID 복사」 → 메시지로 Android 친구에게 전달합니다.</li><li>Android에서 친구 ID로 초대를 만들어 Apple에 보냅니다.</li><li>Apple에서 초대를 붙여 넣고 답장을 만들어 Android에 보냅니다.</li><li>Android에서 답장으로 연결한 뒤, 둘 다 준비 완료 → 초대한 사람이 난투 시작.</li></ol>
         <p>Safari는 공유 메뉴 → 홈 화면에 추가로 더 넓게 즐길 수 있어요. 연결 도중에는 두 기기 모두 게임 화면으로 돌아와 주세요.</p>
@@ -170,7 +170,7 @@
         <input id="opt-reduce-motion" type="checkbox" />
         <span class="opt-note">카메라 흔들림과 화면 플래시 완화</span>
       </div>
-      <p class="help-note">게임패드는 고정 배치입니다: 왼쪽 스틱 이동, A 점프, X 공격, Y 강공격, B 가드, RB 대시, LB 리모컨/탑승, Start 일시정지</p>
+      <p class="help-note">게임패드는 고정 배치입니다: 왼쪽 스틱 이동, A 점프, X 공격, Y 스킬 1, B 스킬 2, RB 대시, LB 호출/탑승/하차, Start 일시정지</p>
       <div class="panel-actions">
         <button class="btn" id="keys-reset">키보드 기본값</button>
         <button class="btn big" data-action="back">확인</button>
@@ -249,12 +249,13 @@
   <section id="mobile-help" class="screen dim hidden" aria-labelledby="mobile-help-title">
     <div class="panel mobile-guide">
       <h2 id="mobile-help-title">두 엄지로, 토끼 난투!</h2>
-      <p>화면 스틱으로 이동하고 행동 버튼을 눌러 싸워요. 가로 화면을 권장하며, 세로로도 플레이할 수 있어요.</p>
+      <p>왼쪽 스틱으로 이동하고, 오른쪽 큰 버튼으로 공격해요. 가로 화면을 권장하며, 세로로도 플레이할 수 있어요.</p>
       <ol>
-        <li><strong>공격</strong>을 여러 번 눌러 콤보! 리코는 <strong>강공격</strong>을 길게 눌러 모을 수 있어요.</li>
-        <li>당근 게이지가 가득 차면 <strong>소환</strong>을 눌러 로봇을 불러요.</li>
+        <li>큰 <strong>공격</strong> 버튼을 여러 번 눌러 콤보! 옆의 작은 두 버튼은 <strong>스킬 1</strong>(공격 기술)과 <strong>스킬 2</strong>(방어 기술)예요.</li>
+        <li>오른쪽 화면이나 공격 버튼을 <strong>위로 튕기면 점프</strong>, 옆·아래로 밀면 <strong>대시</strong>예요. 띄운 직후 공격을 누르면 저절로 따라 뛰어요.</li>
+        <li>당근 게이지가 가득 차면 <strong>호출</strong> 버튼이 나타나요. 눌러서 로봇을 불러요.</li>
         <li>로봇 옆에서 멈추고 <strong>탑승</strong>을 길게 눌러요. 맞거나 움직이면 취소돼요.</li>
-        <li>로봇을 타면 버튼이 기술로 바뀌어요. <strong>하차</strong>를 길게 눌러 내릴 수 있어요.</li>
+        <li>로봇을 타면 스킬 버튼이 로봇 기술로 바뀌어요. <strong>하차</strong>를 길게 눌러 내릴 수 있어요.</li>
       </ol>
       <p>앱을 바꾸면 자동으로 일시정지됩니다. 버튼 크기와 왼손잡이 배치는 설정에서 바꿀 수 있어요.</p>
       <div class="panel-actions"><button class="btn" data-action="cancelTouchStart">돌아가기</button><button class="btn big" data-action="beginTouchMatch">알겠어요, 시작!</button></div>

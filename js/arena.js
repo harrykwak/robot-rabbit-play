@@ -415,7 +415,8 @@ export function createArena(scene) {
       dot: M(toon(0xffffff)),
       holeWall: M(new THREE.MeshBasicMaterial({ color: 0x160f1c, side: THREE.BackSide })),
       stripe: M(new THREE.MeshToonMaterial({ map: stripeTexture(), gradientMap: grad })),
-      glow: M(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.2, 2.6), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })),
+      // forceSinglePass: 가산 합성이라 앞/뒷면 순서가 결과에 영향이 없다. 두 번 그리며 매 프레임 재질을 갱신하는 비용을 없앤다.
+      glow: M(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.2, 2.6), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true })),
     };
   }
 

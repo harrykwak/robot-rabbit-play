@@ -188,6 +188,11 @@ class Particles {
       P[i3] += Vv[i3] * d; P[i3 + 1] += Vv[i3 + 1] * d; P[i3 + 2] += Vv[i3 + 2] * d;
       if (f & 2 && P[i3 + 1] < 0.05 && P[i3] * P[i3] + P[i3 + 2] * P[i3 + 2] < 576) { P[i3 + 1] = 0.05; Vv[i3 + 1] = Math.abs(Vv[i3 + 1]) * 0.35; Vv[i3] *= 0.6; Vv[i3 + 2] *= 0.6; }
     }
+  }
+  // 인스턴스 버퍼 채우기는 렌더 직전에 한 번만 한다
+  write() {
+    const P = this.p, Vv = this.v;
+    if (this.n === 0 && this.geo.instanceCount === 0) return;
     const aP = this.aPos.array, aV = this.aVel.array, aC = this.aCol.array, aD = this.aData.array;
     for (let i = 0; i < this.n; i++) {
       const i3 = i * 3, i4 = i * 4;
@@ -226,7 +231,9 @@ export class FX {
     this.rings = [];
     const plane = new THREE.PlaneGeometry(2, 2);
     for (let i = 0; i < 40; i++) {
-      const m = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: this.tex.ring, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+      // forceSinglePass: 투명 양면 재질을 three.js 가 앞/뒷면 두 번 그리며 매 드로우마다
+      // 재질을 needsUpdate 로 만드는 것(셰이더 프로그램 재조회)을 막는다. 평면 링은 한 번이면 충분하다.
+      const m = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: this.tex.ring, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide, forceSinglePass: true }));
       m.visible = false;
       m.renderOrder = 6;
       m.frustumCulled = false;
@@ -238,7 +245,7 @@ export class FX {
     this.debris = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), this.debrisMax);
     this.debris.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.debris.count = 0;
-    this.debris.castShadow = true;
+    this.debris.castShadow = false; // 작은 파편 그림자는 거의 보이지 않고 그림자 패스 비용만 든다
     this.debris.frustumCulled = false;
     this.debris.setColorAt(0, new THREE.Color());
     scene.add(this.debris);
@@ -280,6 +287,36 @@ export class FX {
     this.beamGeo = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true);
     this.beamGeo.translate(0, 0.5, 0);
     this.tmpC = new THREE.Color();
+    // 빔/기둥 메시와 재질은 재사용한다 (발사마다 새 재질 → 셰이더 파라미터 계산/프로그램 조회를 없앤다)
+    this.beamPool = [];
+    this.pillarPool = [];
+    this.dirty = true;
+    this.overlayDt = 0;
+  }
+
+  takeBeam() {
+    const b = this.beamPool.pop();
+    if (b) return b;
+    const mk = () => {
+      const m = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+      m.frustumCulled = false;
+      m.renderOrder = 7;
+      return m;
+    };
+    return { core: mk(), glow: mk() };
+  }
+
+  takePillar() {
+    const p = this.pillarPool.pop();
+    if (p) return p;
+    const m = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({ map: this.tex.pillar, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide, forceSinglePass: true }));
+    m.frustumCulled = false;
+    m.renderOrder = 6;
+    const inner = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 3, 3), map: this.tex.pillar, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    inner.frustumCulled = false;
+    inner.scale.set(0.35, 1, 0.35);
+    m.add(inner);
+    return { m, inner };
   }
 
   setQuality(low) {
@@ -478,25 +515,22 @@ export class FX {
 
   beam(from, to, width = 0.8, color = 0xff66cc, duration = 1.2) {
     const col = new THREE.Color(color);
-    const mk = (c, op) => {
-      const m = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
-      m.frustumCulled = false;
-      m.renderOrder = 7;
-      this.scene.add(m);
-      return m;
-    };
-    const core = mk(new THREE.Color(4, 3.6, 3.8), 1);
-    const glow = mk(new THREE.Color(col.r * 3, col.g * 3, col.b * 3), 0.45);
+    const pooled = this.takeBeam();
+    const { core, glow } = pooled;
+    core.material.color.setRGB(4, 3.6, 3.8); core.material.opacity = 1;
+    glow.material.color.setRGB(col.r * 3, col.g * 3, col.b * 3); glow.material.opacity = 0.45;
+    this.scene.add(core, glow);
     const A = this.add;
     const st = { from: from.clone(), to: to.clone(), t: 0, alive: true };
     const self = this;
+    const parts = [[core, width * 0.35], [glow, width]];
     const place = () => {
       const d = tV.subVectors(st.to, st.from);
       const len = d.length() || 0.01;
       tQ.setFromUnitVectors(Y, d.divideScalar(len));
       const flick = 1 + Math.sin(st.t * 70) * 0.12 + Math.random() * 0.1;
       const grow = Math.min(1, st.t * 8);
-      for (const [m, w] of [[core, width * 0.35], [glow, width]]) {
+      for (const [m, w] of parts) {
         m.position.copy(st.from); m.quaternion.copy(tQ);
         m.scale.set(w * flick * grow, len, w * flick * grow);
       }
@@ -504,7 +538,7 @@ export class FX {
     const eff = {
       update(dt, real) {
         st.t += real;
-        if (!st.alive || st.t > duration) { self.scene.remove(core, glow); core.material.dispose(); glow.material.dispose(); return false; }
+        if (!st.alive || st.t > duration) { self.scene.remove(core, glow); self.beamPool.push(pooled); return false; }
         place();
         const e = st.to, o = st.from;
         A.spawn(e.x, e.y, e.z, 0, 0, 0, 0.06, width * 3.2, width * 4, 4, 3, 3.6, 0.9, col.r * 2, col.g * 2, col.b * 2, 0, 0, 0, 1, 1);
@@ -522,14 +556,13 @@ export class FX {
 
   pillar(pos, color = 0xffa040, duration = 1.8) {
     const col = new THREE.Color(color);
-    const m = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(col.r * 2.4, col.g * 2.4, col.b * 2.4), map: this.tex.pillar, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+    const pooled = this.takePillar();
+    const { m, inner } = pooled;
+    m.material.color.setRGB(col.r * 2.4, col.g * 2.4, col.b * 2.4);
+    m.material.opacity = 1; inner.material.opacity = 1;
+    m.scale.set(0.01, 70, 0.01);
     m.position.set(pos.x, pos.y, pos.z);
-    m.frustumCulled = false;
-    m.renderOrder = 6;
     this.scene.add(m);
-    const inner = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 3, 3), map: this.tex.pillar, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
-    m.add(inner);
-    inner.scale.set(0.35, 1, 0.35);
     const base = pos.clone();
     let t = 0;
     const self = this;
@@ -537,7 +570,7 @@ export class FX {
     this.active.push({
       update(dt, real) {
         t += real;
-        if (t > duration) { self.scene.remove(m); m.material.dispose(); inner.material.dispose(); return false; }
+        if (t > duration) { self.scene.remove(m); self.pillarPool.push(pooled); return false; }
         const u = t / duration;
         const w = (u < 0.1 ? u / 0.1 : 1) * (1.6 - u * 0.9) * (1 + Math.sin(t * 40) * 0.06);
         m.scale.set(w, 70, w);
@@ -632,6 +665,18 @@ export class FX {
       if (d.p.y < d.s * 0.5 && d.p.x * d.p.x + d.p.z * d.p.z < 576) { d.p.y = d.s * 0.5; d.v.y = Math.abs(d.v.y) * 0.3; d.v.x *= 0.6; d.v.z *= 0.6; d.w.multiplyScalar(0.6); }
       d.r.x += d.w.x * dt; d.r.y += d.w.y * dt; d.r.z += d.w.z * dt;
     }
+    // GPU 버퍼/오버레이 쓰기는 렌더 직전에 한 번만 (렌더 30fps 에서 시뮬 60Hz 마다 두 번 쓰지 않는다)
+    this.dirty = true;
+    this.overlayDt += realDt;
+  }
+
+  // 렌더 직전에 호출. 여러 시뮬 틱이 지나도 버퍼 업로드와 오버레이 그리기는 한 번이다.
+  beforeRender() {
+    if (this.overlayDt > 0 || this.ovDirty || this.lines || this.impact > 0) { this.drawOverlay(this.overlayDt); this.overlayDt = 0; }
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.add.write(); this.smoke.write();
+    const D = this.dList, o = this.dObj;
     for (let i = 0; i < D.length; i++) {
       const d = D[i];
       o.position.copy(d.p); o.rotation.copy(d.r);
@@ -640,10 +685,13 @@ export class FX {
       this.debris.setMatrixAt(i, o.matrix);
       this.debris.setColorAt(i, d.c);
     }
+    const had = this.debris.count;
     this.debris.count = D.length;
-    this.debris.instanceMatrix.needsUpdate = true;
-    if (this.debris.instanceColor) this.debris.instanceColor.needsUpdate = true;
-    this.drawOverlay(realDt);
+    if (D.length || had) {
+      this.debris.instanceMatrix.clearUpdateRanges(); this.debris.instanceMatrix.addUpdateRange(0, D.length * 16);
+      this.debris.instanceMatrix.needsUpdate = true;
+      if (this.debris.instanceColor) { this.debris.instanceColor.clearUpdateRanges(); this.debris.instanceColor.addUpdateRange(0, D.length * 3); this.debris.instanceColor.needsUpdate = true; }
+    }
   }
 
   drawOverlay(dt) {
@@ -656,27 +704,33 @@ export class FX {
       const s = this.impactS || 1;
       const k = Math.min(1, this.impact / 0.12);
       if (this.impact > 0.07) {
-        c.fillStyle = 'rgba(255,255,255,' + Math.min(0.18, 0.1 * s).toFixed(3) + ')';
+        c.fillStyle = 'rgba(255,255,255,' + Math.min(0.1, 0.06 * s).toFixed(3) + ')';
         c.fillRect(0, 0, W, H);
       }
-      const g = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
-      g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, 'rgba(10,6,20,' + (0.7 * k).toFixed(3) + ')');
-      c.fillStyle = g;
+      // 비네트 그라디언트는 크기별로 한 번만 만들고 세기는 globalAlpha 로 조절한다
+      if (!this.vignette || this.vignetteW !== W || this.vignetteH !== H) {
+        const g = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+        g.addColorStop(0, 'rgba(10,6,20,0)');
+        g.addColorStop(1, 'rgba(10,6,20,1)');
+        this.vignette = g; this.vignetteW = W; this.vignetteH = H;
+      }
+      c.globalAlpha = 0.5 * k;
+      c.fillStyle = this.vignette;
       c.fillRect(0, 0, W, H);
+      c.globalAlpha = 1;
       this.impact -= dt;
     }
     const L = this.lines;
     if (L) {
       L.t += dt;
-      const life = 0.35 + L.s * 0.05;
+      const life = 0.26 + L.s * 0.04;
       if (L.t > life) { this.lines = null; return; }
       const u = L.t / life;
       const cx = L.cx * W, cy = L.cy * H;
       const R = Math.hypot(W, H);
       const inner = Math.min(W, H) * (0.16 + u * 0.12);
-      const n = Math.round(26 + L.s * 16);
-      c.fillStyle = 'rgba(255,255,255,' + (0.6 * (1 - u)).toFixed(3) + ')';
+      const n = Math.round((this.low ? 14 : 20) + L.s * 10);
+      c.fillStyle = 'rgba(255,255,255,' + (0.45 * (1 - u)).toFixed(3) + ')';
       c.beginPath();
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;

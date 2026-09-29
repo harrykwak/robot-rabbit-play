@@ -13,6 +13,9 @@ export const NAV = {
   settle: 0.35,    // 이보다 가까운 경유점은 목표로 직진
 };
 
+// 협공 판단용: 로봇이면 탑승자, 사람이면 그 사람
+const focusKey = (t) => (t && t.kind === 'robot' ? t.pilot : t) || null;
+
 export class AICtrl {
   constructor(game, me, diff) {
     this.g = game;
@@ -77,6 +80,39 @@ export class AICtrl {
       out.push(h.riding || h);
     }
     return out;
+  }
+
+  // 협공 제한: 이미 다른 CPU 가 여럿 달려든 상대는 피한다 (플레이어는 1명까지, 다른 CPU 는 2명까지)
+  focusCount(t) {
+    let n = 0;
+    for (const h of this.g.humans) {
+      if (h === this.me || h.dead || h.out || h.isPlayer && !h.autoplay || h.remote) continue;
+      const c = h.ctrl;
+      if (!c || c === this || !(c instanceof AICtrl)) continue;
+      const cur = h.riding ? c.robotFoe : c.mode === 'fight' ? c.target : null;
+      if (focusKey(cur) === t) n++;
+    }
+    return n;
+  }
+
+  focusLimit(t) {
+    return t && t.isPlayer && !t.autoplay ? RULES.focusPlayer : RULES.focusOther;
+  }
+
+  // 가까운 상대를 고르되, 협공 한도를 넘은 상대는 바로 붙어 있을 때만 고른다
+  pickFoe(list, from) {
+    let best = null, bd = Infinity, any = null, ad = Infinity;
+    for (const a of list) {
+      const d = Math.hypot(a.pos.x - from.x, a.pos.z - from.z);
+      if (d < ad) { ad = d; any = a; }
+      const k = focusKey(a);
+      if (d > 2.2 && k && this.focusCount(k) >= this.focusLimit(k)) continue;
+      if (d < bd) { bd = d; best = a; }
+    }
+    if (best) return [best, bd];
+    // 모두 한도가 찼다: 거리를 두고 기회를 본다
+    if (any) { this.waiting = true; return [any, ad]; }
+    return [null, Infinity];
   }
 
   nearest(list, from) {
@@ -210,8 +246,8 @@ export class AICtrl {
       const dd = Math.hypot(r.pos.x - p.x, r.pos.z - p.z);
       if (dd < tdist) { tdist = dd; threat = r; }
     }
-    const humans = g.humans.filter((h) => h !== me && !h.dead && !h.riding && !(h.shieldT > 0));
-    const [foe, fdist] = this.nearest(humans, p);
+    const humans = g.humans.filter((h) => h !== me && !h.dead && !h.out && !h.riding && !(h.shieldT > 0));
+    const [foe, fdist] = this.pickFoe(humans, p);
     // 내 로봇이 떨어지는 중이면 착지 지점 근처에서 기다린다
     const falling = me.robot && me.robot.state === 'falling' ? me.robot : null;
     if (falling) { this.mode = 'board'; this.target = falling; return; }
@@ -227,6 +263,8 @@ export class AICtrl {
     if (me.gauge >= RULES.gaugeMax && !me.robot && me.state !== 'act') {
       if (fdist > 2.6 || Math.random() < 0.3) { this.mode = 'summon'; return; }
     }
+    // 휘청이거나 약점이 드러난 로봇은 사람도 반격한다
+    if (threat && tdist < 8 && (threat.exposedT > 0 || threat.stagger > 0) && Math.random() < d.aggro) { this.mode = 'fight'; this.target = threat; return; }
     if (threat && tdist < 10) { this.mode = 'flee'; this.target = threat; return; }
     let carrot = null, cd = Infinity;
     for (const c of g.carrots) {
@@ -242,13 +280,15 @@ export class AICtrl {
 
   humanBrain(dt) {
     const g = this.g, me = this.me, d = this.d, i = this.in;
-    if (this.thinkT <= 0) { this.thinkT = d.react * (0.7 + Math.random() * 0.9); this.decide(); }
+    if (this.thinkT <= 0) { this.thinkT = d.react * (0.7 + Math.random() * 0.9); this.waiting = false; this.decide(); }
     i.act = false;
-    i.grd = this.guardT > 0;
+    const sk2 = me.P.skill2;
+    i.grd = this.guardT > 0 && (!sk2 || sk2.kind === 'guard' || sk2.kind === 'parry');
     const t = this.target;
     const p = me.pos;
-    // 맞는 중 긴급 소환
+    // 맞는 중 긴급 호출, 콤보에 갇히면 브레이크 버스트
     if (me.gauge >= RULES.gaugeMax && !me.robot && (me.state === 'hurt' || me.state === 'launched') && Math.random() < d.skill * 0.08) i.actP = true;
+    else if (me.canBurst && me.canBurst() && Math.random() < d.skill * 0.06) i.grdP = true;
     // 띄운 뒤 추격 점프, 공중에서는 연타
     if (me.chaseT > 0 && me.chaseTarget && Math.random() < d.aggro * 0.25) { i.jump = true; this.atkT = 0.12; }
     if (!me.onGround && me.state !== 'act' && me.airTarget && me.airTarget() && this.atkT <= 0) {
@@ -285,17 +325,40 @@ export class AICtrl {
       return;
     }
     if (this.mode !== 'fight') { i.mx = i.mz = 0; return; }
-    // 가드 판단: 상대가 공격을 시작한 순간 한 번만
-    if (t.kind === 'human' && t.act && t.act !== this.seenAct && dist < 2.6) {
-      this.seenAct = t.act;
-      if (Math.random() < d.guard && t.act.name !== 'heavy') this.guardT = 0.4 + Math.random() * 0.2;
-      else if (Math.random() < d.guard * 0.4) i.dash = true;
+    // 가드/회피 판단: 상대가 공격을 시작한 순간 한 번만. 스킬 2 는 파일럿마다 다르다
+    const sk2k = (sk2 && sk2.kind) || 'guard';
+    const holdGuard = sk2k === 'guard' || sk2k === 'parry';
+    const tAct = t.kind === 'human' ? t.act : t.act && t.state === 'active' ? t.act : null;
+    if (tAct && tAct !== this.seenAct && dist < (t.kind === 'robot' ? 7 : 2.8)) {
+      this.seenAct = tAct;
+      const r = Math.random();
+      if (me.cd2 <= 0 && r < d.guard) {
+        if (holdGuard) { if (t.kind === 'robot' || tAct.name !== me.P.acts.heavy) this.guardT = 0.35 + Math.random() * 0.2; }
+        else { this.pending = 'grdP'; this.pendingT = sk2k === 'brace' ? 0.02 : 0.05 + d.react * 0.2; }
+      } else if (r < d.guard * 1.4) i.dash = true;
     }
-    if (this.guardT > 0) { i.mx = i.mz = 0; this.steer(dx, dz, 0.01); return; }
-    if (t.shieldT > 0) { this.steer(-dx, -dz, 0.6); return; }
-    if (dist > 1.35) {
+    if (this.guardT > 0 && holdGuard) { i.mx = i.mz = 0; this.steer(dx, dz, 0.01); return; }
+    if (t.shieldT > 0 || t.bubbleT > 0) { this.steer(-dx, -dz, 0.6); return; }
+    // 협공 한도가 찬 상대: 거리를 두고 빈틈을 기다린다
+    if (this.waiting && dist > 2.2) {
+      const k = dist < 4.5 ? -1 : 0.3;
+      this.steer(dx * k - dz * 0.7 * this.strafe, dz * k + dx * 0.7 * this.strafe, 0.7);
+      return;
+    }
+    const reachD = 1.7 * (me.P.reach || 1) + (t.kind === 'robot' ? t.radius : 0);
+    const close = t.kind === 'robot' ? t.radius + 1.1 : 1.35;
+    // 로봇 상대: 뒤로 돌아가 약점을 노린다
+    if (t.kind === 'robot' && dist < 7) {
+      const bx = t.pos.x - Math.sin(t.facing) * (t.radius + 1), bz = t.pos.z - Math.cos(t.facing) * (t.radius + 1);
+      if (!(t.exposedT > 0) && t.stagger <= 0) { this.goTo(bx, bz, 1, t.pos.y); }
+    }
+    // 원거리/설치형 스킬 1: 조금 떨어진 거리에서 쓴다
+    const ranged = { haru: [3, 13], mimi: [3, 9], luna: [1.8, 5] }[me.P.id];
+    if (ranged && me.cd1 <= 0 && me.state === 'normal' && dist > ranged[0] && dist < ranged[1] && Math.random() < d.skill * 0.05) i.hvy = true;
+    if (dist > close) {
       const s = dist > 4 ? 1 : 0.85;
-      if (dist > 5 || Math.abs(t.pos.y - p.y) > 1) this.goTo(t.pos.x, t.pos.z, s, t.pos.y);
+      if (t.kind === 'robot' && dist < 7) { /* 위에서 뒤로 돌아가는 중 */ }
+      else if (dist > 5 || Math.abs(t.pos.y - p.y) > 1) this.goTo(t.pos.x, t.pos.z, s, t.pos.y);
       else this.steer(dx + (dist < 5 ? -dz * 0.25 * this.strafe : 0), dz + (dist < 5 ? dx * 0.25 * this.strafe : 0), s);
       if (dist > 3.8 && dist < 6.5 && Math.random() < 0.012 * d.aggro && me.state !== 'act') {
         i.dash = true; this.pending = 'atk'; this.pendingT = 0.07;
@@ -305,16 +368,16 @@ export class AICtrl {
     } else {
       i.mx = dx * 0.02; i.mz = dz * 0.02;
     }
-    if (dist < 1.7 * (me.P.reach || 1) && this.atkT <= 0) {
+    if (dist < reachD && this.atkT <= 0) {
       if (Math.random() < d.aggro) {
         const a = me.act && me.act.name;
-        // 콤보 루트: 잽 2타 뒤 띄우기, 가끔 파일럿 강공격
+        // 콤보 루트: 잽 2타 뒤 띄우기, 가끔 파일럿 스킬 1
         if ((a === 'jab1' || a === 'jab2') && Math.random() < 0.35 + d.aggro * 0.3) i.hvy = true;
-        else if (!a && Math.random() < 0.14) { i.hvy = true; if (me.P.id === 'rico') this.holdT = 0.2 + Math.random() * 0.7; }
+        else if (!a && me.cd1 <= 0 && !ranged && Math.random() < 0.16 * (0.5 + d.skill)) { i.hvy = true; if (me.P.id === 'rico') this.holdT = 0.2 + Math.random() * 0.7; }
         else i.atk = true;
       }
       this.atkT = 0.12 + Math.random() * 0.1 + d.react * 0.25;
-      if (me.act && me.act.name === 'kick3') this.atkT = 0.55 + d.react;
+      if (me.act && me.act.name === 'kick3') this.atkT = 0.5 + d.react;
     }
   }
 
@@ -323,8 +386,12 @@ export class AICtrl {
     const r = me.riding;
     i.act = false;
     i.grd = false;
-    const [t, dist] = this.nearest(this.enemies(), r.pos);
+    this.waiting = false;
+    const [t, dist] = this.pickFoe(this.enemies(), r.pos);
+    this.robotFoe = t;
     if (!t) { i.mx = i.mz = 0; return; }
+    // 협공 한도가 찬 상대라면 거리를 두고 원거리 스킬만 쓴다
+    const hold = this.waiting && dist > 2.2;
     const dx = t.pos.x - r.pos.x, dz = t.pos.z - r.pos.z;
     const want = RANGE[r.type];
     // 기본 콤보가 맞았으면 스킬 캔슬
@@ -345,6 +412,11 @@ export class AICtrl {
       if (dist < 8) this.steer(-dx + dz * 0.6 * this.strafe, -dz - dx * 0.6 * this.strafe);
       else if (dist > 16) this.steer(dx, dz);
       else this.steer(dx * 0.1 + dz * 0.3 * this.strafe, dz * 0.1 - dx * 0.3 * this.strafe, 0.5);
+    } else if (hold) {
+      // 다른 CPU 가 이미 붙어 있다: 주위를 돌며 기다린다
+      const k = dist < want + 5 ? -0.6 : 0.2;
+      this.steer(dx * k - dz * 0.8 * this.strafe, dz * k + dx * 0.8 * this.strafe, 0.6);
+      return;
     } else if (dist > want) this.goTo(t.pos.x, t.pos.z, 1, t.pos.y);
     else this.steer(dx, dz, 0.05);
     if (this.thinkT > 0) return;

@@ -8,6 +8,19 @@ const keyOf = controlLabel;
 const $ = (s) => document.querySelector(s);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 const tV = new THREE.Vector3();
+// DOM writes are the most expensive part of the HUD on phones: every write below is
+// cached and only issued when the rounded value changes.
+const FLOAT_MAX = 14;      // 떠다니는 숫자 상한 (화면이 어지럽지 않게)
+const MERGE_T = 0.32;      // 같은 자리 연타 피해는 한 숫자로 합친다
+const MERGE_D2 = 1.6 * 1.6;
+function setShown(el, cache, on) { if (cache.shown !== on) { cache.shown = on; el.style.display = on ? '' : 'none'; } }
+function setClass(el, cache, key, cls, on) { if (cache[key] !== on) { cache[key] = on; el.classList.toggle(cls, on); } }
+function place(el, cache, x, y, suffix = '') {
+  const px = Math.round(x), py = Math.round(y);
+  if (cache.x === px && cache.y === py) return;
+  cache.x = px; cache.y = py;
+  el.style.transform = 'translate3d(' + px + 'px,' + py + 'px,0)' + suffix;
+}
 
 export class UI {
   constructor(camera) {
@@ -40,7 +53,22 @@ export class UI {
     this.hud.appendChild(this.hintEl);
     this.hintT = 0;
     this.hintSeen = new Set();
+    this.dom = { arrowOn: false, arrowX: null, arrowY: null, arrowR: null, timerLow: null, flash: '0' };
+    // CSS 애니메이션 재시작 대기열. offsetWidth 로 강제 레이아웃을 하지 않고 한 렌더 뒤에 클래스를 다시 붙인다.
+    this.restarts = new Map();
     addEventListener('rr-keys-changed', () => { this.skillKey = '#'; });
+  }
+
+  restart(el, cls) {
+    el.classList.remove(cls);
+    this.restarts.set(el, { cls, armed: false });
+  }
+  flushRestarts() {
+    for (const [el, r] of this.restarts) {
+      if (!r.armed) { r.armed = true; continue; } // 이번 렌더에서 클래스가 빠진 상태로 스타일이 계산된다
+      el.classList.add(r.cls);
+      this.restarts.delete(el);
+    }
   }
 
   reset() {
@@ -54,9 +82,12 @@ export class UI {
     this.cards.clear(); this.tags.clear(); this.floats = [];
     this.comboEl.classList.remove('show', 'ended', 'pop');
     this.comboEl.replaceChildren();
+    this.comboParts = null;
+    this.restarts.clear();
     this.comboEndT = this.toastT = this.bannerT = this.hintT = 0;
     this.flashV = 0;
     this.flashEl.style.opacity = '0';
+    this.dom = { arrowOn: false, arrowX: null, arrowY: null, arrowR: null, timerLow: null, flash: '0' };
     this.hud.classList.remove('riding');
     this.hintEl.classList.remove('show');
     this.hintEl.textContent = '';
@@ -87,7 +118,11 @@ export class UI {
     tag.innerHTML = '<span class="tag-name"></span><div class="tag-hp"><i></i></div><div class="board"><i></i><span></span></div>';
     tag.querySelector('.tag-name').textContent = h.isPlayer ? '▼ 1P' : h.name;
     this.world.appendChild(tag);
-    this.tags.set(h, { el: tag, hp: tag.querySelector('.tag-hp > i'), board: tag.querySelector('.board'), bfill: tag.querySelector('.board > i'), blabel: tag.querySelector('.board > span') });
+    const thp = tag.querySelector('.tag-hp > i');
+    // 이름표 체력바는 width 대신 scaleX 로 줄인다 (레이아웃 없이 합성만)
+    thp.style.transformOrigin = '0 50%';
+    thp.style.transition = 'transform .1s linear';
+    this.tags.set(h, { el: tag, hp: thp, board: tag.querySelector('.board'), bfill: tag.querySelector('.board > i'), blabel: tag.querySelector('.board > span'), c: { shown: true, x: null, y: null, bf: -1 } });
   }
 
   addRobot() {}
@@ -102,15 +137,18 @@ export class UI {
   }
 
   update(g, dt) {
+    this.flushRestarts();
     // 플래시
-    if (this.flashV > 0) { this.flashV = Math.max(0, this.flashV - dt * 3.5); this.flashEl.style.opacity = this.flashV.toFixed(3); }
+    if (this.flashV > 0) { this.flashV = Math.max(0, this.flashV - dt * 5); this.writeFlash(); }
     if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) this.toastEl.classList.remove('show'); }
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT <= 0) this.bannerEl.classList.remove('show'); }
     // 타이머
     const tl = Math.ceil(g.timeLeft || 0);
-    const ts = Math.floor(tl / 60) + ':' + String(tl % 60).padStart(2, '0');
-    if (this.timerEl.textContent !== ts) this.timerEl.textContent = ts;
-    this.timerEl.classList.toggle('low', tl <= 30);
+    if (this.timerV !== tl) {
+      this.timerV = tl;
+      this.timerEl.textContent = Math.floor(tl / 60) + ':' + String(tl % 60).padStart(2, '0');
+    }
+    setClass(this.timerEl, this.dom, 'timerLow', 'low', tl <= 30);
     const W = innerWidth, H = innerHeight;
     for (const [h, c] of this.cards) {
       const L = c.last;
@@ -132,30 +170,33 @@ export class UI {
       else if (h.riding) st = '탑승 중';
       else if (h.state === 'boarding') st = '탑승 시도!';
       else if (h.shieldT > 0) st = '🛡 배리어';
-      else if (h.gauge >= RULES.gaugeMax && !h.robot) st = '소환 가능';
+      else if (h.gauge >= RULES.gaugeMax && !h.robot) st = '호출 가능';
       this.set(null, L, 'st', st, (v) => { c.state.textContent = v; });
       this.set(null, L, 'out', h.out, (v) => c.el.classList.toggle('out', v));
       const sh = h.shieldT > 0 ? Math.min(100, Math.round(h.shieldT / RULES.shieldTime * 100)) : 0;
       this.set(null, L, 'sh', sh, (v) => { c.shield.style.width = v + '%'; c.el.classList.toggle('shielded', v > 0); });
       // 이름표
-      const tag = this.tags.get(h);
+      const tag = this.tags.get(h), tc = tag.c;
       const e = h.riding || h;
       const show = !h.dead && !h.out;
       if (show) {
-        tV.set(e.pos.x, e.pos.y + (h.riding ? e.height + 0.9 : e.height + 0.55), e.pos.z).project(this.camera);
+        // 렌더 보간된 루트 위치를 따라가야 이름표가 몸과 따로 흔들리지 않는다
+        const at = e.rig && e.rig.root.parent ? e.rig.root.position : e.pos;
+        tV.set(at.x, at.y + (h.riding ? e.height + 0.9 : e.height + 0.55), at.z).project(this.camera);
         const x = (tV.x + 1) / 2 * W, y = (1 - tV.y) / 2 * H;
         const vis = tV.z < 1 && x > -60 && x < W + 60 && y > -60 && y < H + 60;
-        tag.el.style.display = vis ? '' : 'none';
-        if (vis) tag.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) translateY(-100%)';
-        this.set(null, L, 'thp', h.riding ? Math.round(Math.max(0, h.riding.armor) / h.riding.maxArmor * 100) : Math.round(hp), (v) => { tag.hp.style.width = v + '%'; });
+        setShown(tag.el, tc, vis);
+        if (vis) place(tag.el, tc, x, y, ' translateY(-100%)');
+        this.set(null, L, 'thp', h.riding ? Math.round(Math.max(0, h.riding.armor) / h.riding.maxArmor * 100) : Math.round(hp), (v) => { tag.hp.style.transform = 'scaleX(' + v / 100 + ')'; });
         const boarding = h.state === 'boarding' && h.boardTarget;
         this.set(null, L, 'bd', !!boarding, (v) => tag.board.classList.toggle('show', v));
         if (boarding) {
-          const enemy = !h.isPlayer && (h.boardTarget.owner === g.player || true);
+          const enemy = !h.isPlayer;
           this.set(null, L, 'be', enemy, (v) => { tag.board.classList.toggle('enemy', v); tag.blabel.textContent = v ? '탑승 중… 방해하세요!' : '탑승 중…'; });
-          tag.bfill.style.width = Math.min(100, h.boardT / h.boardNeed * 100).toFixed(1) + '%';
+          const bf = Math.round(Math.min(100, h.boardT / h.boardNeed * 100));
+          if (tc.bf !== bf) { tc.bf = bf; tag.bfill.style.width = bf + '%'; }
         }
-      } else tag.el.style.display = 'none';
+      } else setShown(tag.el, tc, false);
     }
     // 스킬 패널
     const pl = g.player;
@@ -204,16 +245,19 @@ export class UI {
       const behind = tV.z > 1;
       const m = 56;
       const off = behind || x < m || x > W - m || y < m || y > H - m;
+      const d = this.dom;
       if (off) {
         let dx = x - W / 2, dy = y - H / 2;
         if (behind) { dx = -dx; dy = -dy; }
         const s = Math.min((W / 2 - m) / Math.abs(dx || 1), (H / 2 - m) / Math.abs(dy || 1));
-        x = W / 2 + dx * s; y = H / 2 + dy * s;
-        this.arrow.style.left = x + 'px'; this.arrow.style.top = y + 'px';
-        this.arrow.style.setProperty('--rot', (Math.atan2(dy, dx) * 180 / Math.PI + 90).toFixed(0) + 'deg');
+        const ax = Math.round(W / 2 + dx * s), ay = Math.round(H / 2 + dy * s);
+        const rot = Math.round(Math.atan2(dy, dx) * 180 / Math.PI + 90);
+        if (d.arrowX !== ax) { d.arrowX = ax; this.arrow.style.left = ax + 'px'; }
+        if (d.arrowY !== ay) { d.arrowY = ay; this.arrow.style.top = ay + 'px'; }
+        if (d.arrowR !== rot) { d.arrowR = rot; this.arrow.style.setProperty('--rot', rot + 'deg'); }
       }
-      this.arrow.classList.toggle('show', off);
-    } else this.arrow.classList.remove('show');
+      setClass(this.arrow, d, 'arrowOn', 'show', off);
+    } else setClass(this.arrow, this.dom, 'arrowOn', 'show', false);
     if (this.hintT > 0) { this.hintT -= dt; if (this.hintT <= 0) this.hintEl.classList.remove('show'); }
     if (this.comboEndT > 0) { this.comboEndT -= dt; if (this.comboEndT <= 0) this.comboEl.classList.remove('show', 'ended'); }
     // 떠다니는 숫자
@@ -222,31 +266,50 @@ export class UI {
       f.t += dt;
       if (f.t > f.life) { f.el.remove(); this.floats.splice(i, 1); continue; }
       tV.copy(f.pos).project(this.camera);
-      const x = (tV.x + 1) / 2 * W + f.ox, y = (1 - tV.y) / 2 * H;
-      f.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
-      f.el.style.display = tV.z < 1 ? '' : 'none';
+      const vis = tV.z < 1;
+      setShown(f.el, f, vis);
+      if (vis) place(f.el, f, (tV.x + 1) / 2 * W + f.ox, (1 - tV.y) / 2 * H);
     }
   }
 
-  float(pos, text, cls, life, rise) {
-    if (this.floats.length > 40) { const f = this.floats.shift(); f.el.remove(); }
+  float(pos, text, cls, life, rise, n = 0) {
+    if (this.floats.length >= FLOAT_MAX) { const f = this.floats.shift(); f.el.remove(); }
     const el = document.createElement('div');
     el.className = cls;
     const s = document.createElement('span');
     s.textContent = text;
     el.appendChild(s);
+    const f = { el, span: s, cls, n, pos: pos.clone().setY(pos.y + rise), t: 0, life, ox: Math.round((Math.random() - 0.5) * 24), shown: true, x: null, y: null };
+    // 첫 위치를 붙이기 전에 정해 두어야 (0,0)에서 한 프레임 번쩍이지 않는다
+    tV.copy(f.pos).project(this.camera);
+    place(el, f, (tV.x + 1) / 2 * innerWidth + f.ox, (1 - tV.y) / 2 * innerHeight);
     this.world.appendChild(el);
-    this.floats.push({ el, pos: pos.clone().setY(pos.y + rise), t: 0, life, ox: (Math.random() - 0.5) * 30 });
+    this.floats.push(f);
+    return f;
   }
 
   damage(pos, n, kind) {
     if (n <= 0) return;
     const cls = 'dmg' + (kind === 'robot' ? ' robot' : kind === 'big' ? ' big crit' : kind === 'mid' ? ' big' : '');
-    this.float(pos, String(n), cls, 0.9, 0.3);
+    // 같은 자리에 연달아 들어온 피해는 새 숫자를 띄우지 않고 합계를 올린다
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i];
+      if (!f.n || f.t > MERGE_T) continue;
+      const dx = f.pos.x - pos.x, dz = f.pos.z - pos.z;
+      if (dx * dx + dz * dz > MERGE_D2) continue;
+      f.n += n;
+      f.span.textContent = String(f.n);
+      // 더 센 등급으로만 바꾼다 (애니메이션은 다시 시작하지 않는다)
+      if (cls.length > f.cls.length) { f.cls = cls; f.el.className = cls; }
+      return;
+    }
+    this.float(pos, String(n), cls, 0.9, 0.3, n);
   }
 
   callout(pos, text, kind = '', h = 2.6) {
-    this.float(pos, text, 'callout ' + kind, 1.4, h);
+    // 같은 문구가 겹쳐 뜨지 않게 한다
+    for (const f of this.floats) if (!f.n && f.text === text && f.t < 0.5) return;
+    this.float(pos, text, 'callout ' + kind, 1.4, h).text = text;
   }
 
   banner(text, kind) {
@@ -260,9 +323,7 @@ export class UI {
 
   toast(text) {
     this.toastEl.textContent = text;
-    this.toastEl.classList.remove('show');
-    void this.toastEl.offsetWidth;
-    this.toastEl.classList.add('show');
+    this.restart(this.toastEl, 'show');
     this.toastT = 2.6;
   }
 
@@ -272,17 +333,22 @@ export class UI {
     if (n < 2) { if (!c.classList.contains('ended')) c.classList.remove('show'); return; }
     this.comboEndT = 0;
     c.classList.remove('ended');
-    if (!c.firstChild || !c.querySelector('.n')) c.innerHTML = '<span class="n"></span><span class="t"></span><span class="cd-dmg"></span><span class="rate"></span>';
-    c.querySelector('.n').textContent = n;
-    c.querySelector('.t').textContent = 'HIT';
-    c.querySelector('.cd-dmg').textContent = dmg ? dmg + ' DMG' : '';
-    const re = c.querySelector('.rate');
-    re.textContent = rating;
-    re.dataset.lv = rating ? String(['GOOD', 'NICE!', 'GREAT!', 'AMAZING!', 'CARROT CRAZY!!'].indexOf(rating)) : '';
+    if (!this.comboParts || !c.contains(this.comboParts.n)) {
+      c.innerHTML = '<span class="n"></span><span class="t"></span><span class="cd-dmg"></span><span class="rate"></span>';
+      this.comboParts = { n: c.querySelector('.n'), t: c.querySelector('.t'), dmg: c.querySelector('.cd-dmg'), rate: c.querySelector('.rate'), v: {} };
+    }
+    const P = this.comboParts, V = P.v;
+    const dt = dmg ? dmg + ' DMG' : '';
+    if (V.n !== n) { V.n = n; P.n.textContent = n; }
+    if (V.t !== 'HIT') { V.t = 'HIT'; P.t.textContent = 'HIT'; }
+    if (V.dmg !== dt) { V.dmg = dt; P.dmg.textContent = dt; }
+    if (V.rate !== rating) {
+      V.rate = rating;
+      P.rate.textContent = rating;
+      P.rate.dataset.lv = rating ? String(['GOOD', 'NICE!', 'GREAT!', 'AMAZING!', 'CARROT CRAZY!!'].indexOf(rating)) : '';
+    }
     c.classList.add('show');
-    c.classList.remove('pop');
-    void c.offsetWidth;
-    c.classList.add('pop');
+    this.restart(c, 'pop');
   }
 
   // 콤보가 끝나면 결과를 잠깐 보여준다
@@ -290,7 +356,7 @@ export class UI {
     const c = this.comboEl;
     if (n < 2) { c.classList.remove('show'); return; }
     this.combo(n, dmg, rating);
-    c.querySelector('.t').textContent = 'HIT COMBO';
+    this.comboParts.t.textContent = 'HIT COMBO'; this.comboParts.v.t = 'HIT COMBO';
     c.classList.add('ended');
     this.comboEndT = 1.3;
   }
@@ -307,13 +373,16 @@ export class UI {
     if (!msg) return;
     this.hintSeen.add(kind);
     this.hintEl.textContent = f(msg);
-    this.hintEl.classList.remove('show');
-    void this.hintEl.offsetWidth;
-    this.hintEl.classList.add('show');
+    this.restart(this.hintEl, 'show');
     this.hintT = 3.2;
   }
 
-  flash(v) { this.flashV = this.reducedMotion ? 0 : Math.max(this.flashV, v); this.flashEl.style.opacity = this.flashV.toFixed(3); }
+  // 화면 전체 번쩍임은 눈이 피로하므로 약하게, 짧게
+  flash(v) { this.flashV = this.reducedMotion ? 0 : Math.max(this.flashV, v * 0.6); this.writeFlash(); }
+  writeFlash() {
+    const o = this.flashV.toFixed(2);
+    if (this.dom.flash !== o) { this.dom.flash = o; this.flashEl.style.opacity = o; }
+  }
 
   killFeed(msg, color) {
     const d = document.createElement('div');
