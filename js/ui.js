@@ -2,8 +2,13 @@
 import * as THREE from 'three';
 import { RULES, ROBOT_STATS } from './data.js';
 import { controlLabel, formatControls } from './control-labels.js';
+import { PARTS, PART_BIT, PART_NAME, skillJuice } from './robot-systems.js';
 
 const keyOf = controlLabel;
+// 부서진 부위 표시 (카드 쥬스 줄 오른쪽)
+const PART_ICON = { armL: '🦾L', armR: '🦾R', head: '👂', legs: '🦿' };
+const partIcons = (mask) => PARTS.filter((k) => mask & PART_BIT[k]).map((k) => PART_ICON[k]).join(' ');
+const partNames = (mask) => { const s = PARTS.filter((k) => mask & PART_BIT[k]).map((k) => PART_NAME[k]).join(', '); return s ? '파괴: ' + s : ''; };
 
 const $ = (s) => document.querySelector(s);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -107,11 +112,12 @@ export class UI {
       '<div class="card-hp"><div class="bar"><div class="lag"></div><div class="fill"></div></div></div>' +
       '<div class="card-gauge"><div class="gfill"></div></div>' +
       '<div class="card-robot"><span class="rlabel"></span><div class="bar rbar"><div class="fill"></div></div></div>' +
+      '<div class="card-juice" role="meter" aria-label="당근쥬스" aria-valuemin="0" aria-valuemax="100"><span class="jlabel">🥕</span><div class="bar jbar"><div class="fill"></div></div><span class="jparts"></span></div>' +
       '<div class="card-state"></div><div class="card-shield"></div>';
     c.querySelector('.card-name').textContent = document.documentElement.classList.contains('touch-mode') ? h.name : (h.isPlayer ? '나 ' : h.remote ? '친구 ' : 'CPU ') + h.name;
     this.cardsEl.appendChild(c);
     const q = (s) => c.querySelector(s);
-    this.cards.set(h, { el: c, stock: q('.card-stock'), lag: q('.card-hp .lag'), fill: q('.card-hp .fill'), gauge: q('.card-gauge'), gfill: q('.gfill'), robot: q('.card-robot'), rlabel: q('.rlabel'), rfill: q('.rbar .fill'), state: q('.card-state'), shield: q('.card-shield'), last: {} });
+    this.cards.set(h, { el: c, stock: q('.card-stock'), lag: q('.card-hp .lag'), fill: q('.card-hp .fill'), gauge: q('.card-gauge'), gfill: q('.gfill'), robot: q('.card-robot'), rlabel: q('.rlabel'), rfill: q('.rbar .fill'), juice: q('.card-juice'), jfill: q('.jbar .fill'), jparts: q('.jparts'), state: q('.card-state'), shield: q('.card-shield'), last: {} });
     const tag = document.createElement('div');
     tag.className = 'tag';
     tag.style.setProperty('--c', hex(h.color));
@@ -160,9 +166,13 @@ export class UI {
       this.set(null, L, 'gf', gv >= 100, (v) => c.gauge.classList.toggle('full', v));
       const r = h.riding || (h.robot && h.robot.state !== 'dead' ? h.robot : null);
       this.set(null, L, 'rs', !!r, (v) => c.robot.classList.toggle('show', v));
+      this.set(null, L, 'js', !!r, (v) => c.juice.classList.toggle('show', v));
       if (r) {
         this.set(null, L, 'rn', r.type + (h.riding ? '1' : '0'), () => { c.rlabel.textContent = (this.robotInfo[r.type] ? this.robotInfo[r.type].name : r.type) + (h.riding ? '' : ' (빈 로봇)'); });
         this.set(null, L, 'ra', Math.round(Math.max(0, r.armor) / r.maxArmor * 100), (v) => { c.rfill.style.width = v + '%'; });
+        const jv = Math.round(Math.max(0, r.juice || 0) / (r.maxJuice || 100) * 100);
+        this.set(null, L, 'jv', jv, (v) => { c.jfill.style.width = v + '%'; c.juice.setAttribute('aria-valuenow', v); c.juice.classList.toggle('low', v < RULES.juiceLow); c.juice.classList.toggle('empty', v <= 0); });
+        this.set(null, L, 'jb', r.broken || 0, (v) => { c.jparts.textContent = partIcons(v); c.jparts.title = partNames(v); });
       }
       let st = '';
       if (h.out) st = '탈락';
@@ -212,12 +222,19 @@ export class UI {
         this.skillEls = r.stats.skills.map((s) => {
           const d = document.createElement('div');
           d.className = 'skill ready';
-          d.innerHTML = '<span class="key"></span><span class="name"></span><div class="cd"></div>';
+          d.innerHTML = '<span class="key"></span><span class="name"></span><span class="jcost"></span><div class="cd"></div>';
           d.querySelector('.key').textContent = keyOf({ J: 'atk', K: 'hvy', L: 'grd' }[s.key] || 'atk');
           d.querySelector('.name').textContent = s.name;
+          if (s.juice) d.querySelector('.jcost').textContent = '🥕' + s.juice;
           this.skillsEl.appendChild(d);
-          return { d, cd: d.querySelector('.cd'), last: -1 };
+          return { d, cd: d.querySelector('.cd'), name: d.querySelector('.name'), jcost: d.querySelector('.jcost'), last: -1, why: null, cost: s.juice || 0 };
         });
+        const jm = document.createElement('div');
+        jm.className = 'skill-juice';
+        jm.setAttribute('role', 'meter'); jm.setAttribute('aria-label', '당근쥬스'); jm.setAttribute('aria-valuemin', '0'); jm.setAttribute('aria-valuemax', '100');
+        jm.innerHTML = '<span class="jlabel">🥕 쥬스</span><div class="bar jbar"><div class="fill"></div></div><span class="jnum"></span>';
+        this.skillsEl.appendChild(jm);
+        this.juiceEl = { el: jm, fill: jm.querySelector('.fill'), num: jm.querySelector('.jnum'), last: -1 };
         const ej = document.createElement('div');
         ej.className = 'skill ready';
         ej.innerHTML = '<span class="key"></span><span class="name">길게: 하차</span><div class="cd"></div>';
@@ -230,8 +247,26 @@ export class UI {
       r.stats.skills.forEach((s, i) => {
         const pct = s.cd ? Math.round(cds[i] / s.cd * 100) : 0;
         const se = this.skillEls[i];
-        if (se.last !== pct) { se.last = pct; se.cd.style.height = pct + '%'; se.d.classList.toggle('ready', pct === 0); }
+        // 스킬 1/2 는 쥬스와 부위 상태도 본다. 기본 콤보(0)는 쥬스가 없어도 쓸 수 있다
+        const why = i === 0 ? '' : r.skillBlock(i);
+        if (se.last !== pct || se.why !== why) {
+          se.last = pct; se.cd.style.height = pct + '%';
+          se.d.classList.toggle('ready', why === '');
+          se.d.classList.toggle('locked', why === 'part' || why === 'juice');
+          se.d.classList.toggle('broken', why === 'part');
+        }
+        if (se.why !== why) { se.why = why; se.d.title = why === 'part' ? '부위 파손으로 사용 불가' : why === 'juice' ? '당근쥬스 부족' : ''; }
+        if (i > 0 && s.juice) {
+          const cost = Math.round(skillJuice(r.type, i, r.broken));
+          if (se.cost !== cost) { se.cost = cost; se.jcost.textContent = '🥕' + cost; }
+        }
       });
+      const je = this.juiceEl, jv = Math.round(Math.max(0, r.juice) / r.maxJuice * 100);
+      if (je && je.last !== jv) {
+        je.last = jv; je.fill.style.width = jv + '%'; je.num.textContent = jv;
+        je.el.setAttribute('aria-valuenow', jv);
+        je.el.classList.toggle('low', jv < RULES.juiceLow); je.el.classList.toggle('empty', jv <= 0);
+      }
     }
     // 내 로봇 방향 화살표
     let target = null;

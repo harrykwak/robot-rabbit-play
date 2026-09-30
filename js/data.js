@@ -24,6 +24,7 @@ export const COMMON_MOVES = [
 export const PILOTS = [
   {
     id: 'rico', name: '리코', body: 0xff4d4d, accent: 0x2b3a67, skin: 0xffd3ae, hair: 0x3a2418, style: 0, color: 0xff4d5e,
+    look: { outfit: 'bomber', legs: 'cargo', pants: 0x2d3142, inner: 0x1b1b24, sole: 0xff4d4d, hands: 'boxing', eyes: 'fierce', eye: 0xb3342f, mouth: 'grin' },
     desc: '돌격형 복서', cls: '브루저', sub: '파워', role: '브루저 · 파워',
     hp: 115, speed: 7.3, jump: 11.5, reach: 1, dmgTaken: 0.9, gaugeMul: 1, airJumps: 0, airChain: 3,
     robot: { armor: 1.12, speed: 1, cd: 1, board: 1 },
@@ -42,6 +43,7 @@ export const PILOTS = [
   },
   {
     id: 'mimi', name: '미미', body: 0xffc21f, accent: 0x5b3cc4, skin: 0xffe0c4, hair: 0xff8fb8, style: 2, color: 0xffc21f,
+    look: { outfit: 'hoodie', legs: 'shorts', pants: 0x5b3cc4, inner: 0xfff3d6, socks: 0xffffff, shoe: 0xffb3c8, sole: 0x5b3cc4, eyes: 'round', eye: 0xd2477f, mouth: 'cat', blush: true },
     desc: '토끼 후드 말괄량이', cls: '어쌔신', sub: '기동', role: '어쌔신 · 기동',
     hp: 88, speed: 8.7, jump: 12.5, reach: 0.95, dmgTaken: 1.05, gaugeMul: 1.25, airJumps: 1, airChain: 3,
     robot: { armor: 1, speed: 1, cd: 1, board: 0.55 },
@@ -60,6 +62,7 @@ export const PILOTS = [
   },
   {
     id: 'jun', name: '준', body: 0x2fb8ff, accent: 0x1d2340, skin: 0xf0c49c, hair: 0x1b1b24, style: 1, color: 0x2fb8ff,
+    look: { outfit: 'track', legs: 'slim', pants: 0x1d2340, shoe: 0xf4f4f4, sole: 0x2fb8ff, hands: 'fingerless', eyes: 'cool', eye: 0x2c4d8a, mouth: 'smirk' },
     desc: '캡모자 스트리트 파이터', cls: '파이터', sub: '카운터', role: '파이터 · 카운터',
     hp: 100, speed: 7.8, jump: 11.5, reach: 1, dmgTaken: 1, gaugeMul: 1, airJumps: 0, airChain: 3, parry: true,
     robot: { armor: 1, speed: 1, cd: 0.82, board: 1 },
@@ -78,6 +81,7 @@ export const PILOTS = [
   },
   {
     id: 'sora', name: '소라', body: 0x39d98a, accent: 0x6b2d5c, skin: 0xffd9bf, hair: 0xe8e8f0, style: 3, color: 0x39d98a,
+    look: { outfit: 'tech', legs: 'shorts', pants: 0x2a2233, socks: 0x1b1b24, shoe: 0xffffff, sole: 0x39d98a, trim: 0x39d98a, eyes: 'sharp', eye: 0x1f8c63, mouth: 'smile' },
     desc: '포니테일 킥복서', cls: '파이터', sub: '공중전', role: '파이터 · 공중전',
     hp: 95, speed: 8.0, jump: 12.5, reach: 1.22, dmgTaken: 1, gaugeMul: 1, airJumps: 0, airChain: 5,
     robot: { armor: 1, speed: 1.12, cd: 1, board: 1 },
@@ -96,6 +100,7 @@ export const PILOTS = [
   },
   {
     id: 'dori', name: '도리', body: 0xff8fc8, accent: 0x3b4a78, skin: 0xf6cfae, hair: 0x6b4430, style: 4, color: 0xff7ac0,
+    look: { outfit: 'blazer', legs: 'skirt', pants: 0x3b4a78, inner: 0xffffff, tie: 0xff4d8d, socks: 0xffffff, shoe: 0x5a3a2e, sole: 0x2a1c14, eyes: 'round', eye: 0x8a4a2a, mouth: 'smile', blush: true },
     desc: '방패 헬멧 수호자', cls: '탱커', sub: '가디언', role: '탱커 · 가디언',
     hp: 135, speed: 6.7, jump: 11, reach: 1, dmgTaken: 0.85, gaugeMul: 0.95, airJumps: 0, airChain: 3,
     robot: { armor: 1.2, speed: 0.96, cd: 1, board: 1 },
@@ -113,6 +118,7 @@ export const PILOTS = [
   },
   {
     id: 'haru', name: '하루', body: 0xff9a2e, accent: 0x274b3f, skin: 0xffd9b8, hair: 0x2a1c14, style: 5, color: 0xff9a2e,
+    look: { outfit: 'utility', legs: 'cargo', pants: 0x3f4a3a, inner: 0xf2efe6, shoe: 0x2a2a30, sole: 0xff9a2e, hands: 'fingerless', eyes: 'cool', eye: 0x3a6b4f, mouth: 'smirk' },
     desc: '고글 새총 명사수', cls: '슈터', sub: '견제', role: '슈터 · 견제',
     hp: 90, speed: 7.9, jump: 12, reach: 0.95, dmgTaken: 1.05, gaugeMul: 1.05, airJumps: 0, airChain: 3,
     robot: { armor: 1, speed: 1.04, cd: 0.88, board: 1 },
@@ -131,6 +137,7 @@ export const PILOTS = [
   },
   {
     id: 'taro', name: '타로', body: 0xc98a4b, accent: 0x3a2a24, skin: 0xe8b98f, hair: 0x1f1a17, style: 6, color: 0xd0904e,
+    look: { outfit: 'vest', legs: 'cargo', pants: 0x3a2a24, inner: 0xf5efe2, belt: 0xd0904e, shoe: 0x222222, sole: 0xd0904e, eyes: 'fierce', eye: 0x3a2418, mouth: 'flat' },
     desc: '두건 쓴 씨름꾼', cls: '그래플러', sub: '잡기', role: '그래플러 · 잡기',
     hp: 122, speed: 6.9, jump: 11, reach: 1.05, dmgTaken: 0.92, gaugeMul: 1, airJumps: 0, airChain: 3,
     robot: { armor: 1.1, speed: 1, cd: 1, board: 0.8 },
@@ -149,6 +156,7 @@ export const PILOTS = [
   },
   {
     id: 'luna', name: '루나', body: 0xa46bff, accent: 0x2a2150, skin: 0xffe2cf, hair: 0xd9e4ff, style: 7, color: 0xb07cff,
+    look: { outfit: 'coat', legs: 'skirt', pants: 0x2a2150, inner: 0xf6f0ff, socks: 0x2a2150, shoe: 0x1b1630, sole: 0xffd84a, eyes: 'sly', eye: 0x8a5cff, mouth: 'smirk' },
     desc: '뾰족 모자 트릭스터', cls: '컨트롤러', sub: '함정', role: '컨트롤러 · 함정',
     hp: 92, speed: 7.6, jump: 12, reach: 1, dmgTaken: 1.03, gaugeMul: 1.15, airJumps: 0, airChain: 3,
     robot: { armor: 1, speed: 1, cd: 0.9, board: 1 },
@@ -176,41 +184,43 @@ export const STAGES = [
 export const ROBOT_ORDER = ['titan', 'bolt', 'cannon', 'hammer'];
 
 // speed: 이동속도, armor: 내구도, power/speed/range 는 선택 화면 표시용 (0~5)
+// skills[0].parts: 기본 콤보에 쓰는 부위 (부서질 때마다 콤보 피해 감소)
+// skills[1|2].juice: 당근쥬스 소모량, part: 이 부위가 부서지면 스킬 봉인 (robot-systems.js)
 export const ROBOT_STATS = {
   titan: {
     tag: '파워', speed: 9.2, armor: 380, jump: 15,
     bars: { power: 5, speed: 2, range: 3, armor: 4 },
     skills: [
-      { key: 'J', name: '타이탄 펀치', desc: '묵직한 2연타 스트레이트' },
-      { key: 'K', name: '로켓 펀치', desc: '주먹을 발사해 일직선으로 날려버림', cd: 3.6 },
-      { key: 'L', name: '캐럿 스톰프', desc: '뛰어올라 내려찍는 광역 충격파', cd: 7 },
+      { key: 'J', name: '타이탄 펀치', desc: '묵직한 2연타 스트레이트', parts: ['armL', 'armR'] },
+      { key: 'K', name: '로켓 펀치', desc: '주먹을 발사해 일직선으로 날려버림', cd: 3.6, juice: 18, part: 'armR' },
+      { key: 'L', name: '캐럿 스톰프', desc: '뛰어올라 내려찍는 광역 충격파', cd: 7, juice: 28, part: 'legs' },
     ],
   },
   bolt: {
     tag: '스피드', speed: 13.5, armor: 270, jump: 17,
     bars: { power: 3, speed: 5, range: 2, armor: 2 },
     skills: [
-      { key: 'J', name: '볼트 킥', desc: '빠른 3연속 킥' },
-      { key: 'K', name: '드릴 이어 대시', desc: '귀를 드릴로 바꿔 돌진', cd: 3 },
-      { key: 'L', name: '토네이도 킥', desc: '회전하며 주변을 휩쓸기', cd: 6 },
+      { key: 'J', name: '볼트 킥', desc: '빠른 3연속 킥', parts: ['legs'] },
+      { key: 'K', name: '드릴 이어 대시', desc: '귀를 드릴로 바꿔 돌진', cd: 3, juice: 15, part: 'head' },
+      { key: 'L', name: '토네이도 킥', desc: '회전하며 주변을 휩쓸기', cd: 6, juice: 25, part: 'legs' },
     ],
   },
   cannon: {
     tag: '원거리', speed: 9.4, armor: 310, jump: 14,
     bars: { power: 3, speed: 3, range: 5, armor: 3 },
     skills: [
-      { key: 'J', name: '캐럿 블래스터', desc: '양손 연사 에너지탄' },
-      { key: 'K', name: '당근 미사일', desc: '유도 당근 미사일 6발', cd: 5 },
-      { key: 'L', name: '문 레이저', desc: '충전 후 눈에서 거대한 레이저', cd: 9 },
+      { key: 'J', name: '캐럿 블래스터', desc: '양손 연사 에너지탄', parts: ['armL', 'armR'] },
+      { key: 'K', name: '당근 미사일', desc: '유도 당근 미사일 6발', cd: 5, juice: 22 },
+      { key: 'L', name: '문 레이저', desc: '충전 후 눈에서 거대한 레이저', cd: 9, juice: 35, part: 'head' },
     ],
   },
   hammer: {
     tag: '광역', speed: 8.6, armor: 420, jump: 13.5,
     bars: { power: 5, speed: 2, range: 4, armor: 5 },
     skills: [
-      { key: 'J', name: '해머 스윙', desc: '거대한 당근 해머 2연타' },
-      { key: 'K', name: '해머 스핀', desc: '해머를 휘두르며 회전 돌진', cd: 6 },
-      { key: 'L', name: '메가 슬램', desc: '대지를 가르는 초대형 내려찍기', cd: 8 },
+      { key: 'J', name: '해머 스윙', desc: '거대한 당근 해머 2연타', parts: ['armR'] },
+      { key: 'K', name: '해머 스핀', desc: '해머를 휘두르며 회전 돌진', cd: 6, juice: 22, part: 'armR' },
+      { key: 'L', name: '메가 슬램', desc: '대지를 가르는 초대형 내려찍기', cd: 8, juice: 30, part: 'armL' },
     ],
   },
 };
@@ -274,6 +284,27 @@ export const RULES = {
   backstab: 1.6,          // 로봇 뒤에서 때리면
   exposedMul: 1.5,        // 약점 노출 (패리/반격/덫/버스트) 중 추가 배율
   robotBreak: 45,         // 사람에게 이만큼 맞으면 로봇이 휘청인다
+  // ---- 로봇 에너지: 당근쥬스 ----
+  juiceMax: 100,
+  juiceDrain: 1.2,        // 탑승 중(전투) 초당 감소
+  juiceIdleRegen: 5,      // 빈 로봇일 때 초당 회복
+  juiceDash: 8,           // 대시 1회
+  juiceBoost: 3,          // 공중 추진 초당
+  juiceHit: 0.2,          // 로봇이 준 피해당 회복
+  juiceCarrot: 40,        // 탑승 중 당근 아이템
+  juiceLow: 25,           // 이하이면 경고 (CPU 는 당근을 찾으러 간다)
+  juiceEmptySpeed: 0.65,  // 바닥나면: 이동 배율, 스킬/대시 불가
+  juiceEmptyDmg: 0.75,    //            공격 피해 배율
+  juiceHeadMul: 1.4,      // 머리 파손 시 쥬스 소모 배율
+  // ---- 부위 파괴 ----
+  partHp: { armL: 0.28, armR: 0.28, head: 0.22, legs: 0.34 }, // 로봇 최대 내구도 대비
+  partHumanMul: 1.4,      // 사람 공격은 부위를 더 잘 부순다 (틈을 노리는 반격)
+  partLegsBelow: 0.3,     // 타격 높이 비율이 이보다 낮으면 (70% 확률) 다리
+  partHeadAbove: 0.74,    // 이보다 높으면 머리
+  partLegsSpeed: 0.72,    // 다리 파손: 이동/점프 배율, 대시 불가
+  partLegsJump: 0.7,
+  partHeadAim: 0.6,       // 머리 파손: 자동 조준 원뿔을 이만큼 좁히고
+  partHeadRange: 0.6,     //            조준 거리 배율
+  partComboLoss: 0.25,    // 콤보에 쓰는 부위 하나가 부서질 때마다 콤보 피해 감소
+  partComboMin: 0.5,
 };
-
-

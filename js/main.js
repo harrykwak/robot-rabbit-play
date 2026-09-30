@@ -469,7 +469,7 @@ function renderHelp() {
     ]));
     body.appendChild(note('브레이크 버스트 — 연속으로 맞아 콤보에 갇히면 스킬 2 버튼이 BREAK 로 반짝입니다. {grd} 를 누르면 스킬 2 쿨다운을 쓰고 주변을 밀어내며 빠져나옵니다.'.replace(/\{grd\}/g, controlLabel('grd')), 'help-note hl'));
     body.appendChild(note('쓰러졌을 때는 아무 버튼이나 누르거나 스틱을 밀면 바로 일어납니다. 일어난 직후 잠깐 무적이에요.'));
-    if (mobileControls) body.appendChild(note('터치: 큰 버튼은 공격, 옆의 작은 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 나타나고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 오른쪽 화면(또는 공격 버튼)을 위로 튕기면 점프, 옆·아래로 밀면 대시예요.', 'help-note hl'));
+    if (mobileControls) body.appendChild(note('터치: 흰색 큰 버튼은 공격, 옆의 아이콘 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 나타나고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 스틱 옆 버튼은 점프, 스틱을 같은 방향으로 두 번 튕기면 대시예요. 로봇은 당근쥬스로 움직이고, 팔·머리·다리가 따로 부서질 수 있어요.', 'help-note hl'));
     body.appendChild(note('호출 배리어 — ' + BARRIER_TEXT, 'help-note hl'));
     body.appendChild(note('당근 게이지는 시간이 지나거나, 때리거나, 맞거나, 콤보를 이어가면 찹니다. 적이 로봇에 타고 있으면 더 빨리 찹니다.'));
     body.appendChild(note('빈 로봇은 누구나 탈 수 있습니다. 주인은 0.8초, 다른 사람은 2.2초가 걸리니 적 로봇이 떨어지면 달려가서 방해하거나 빼앗으세요. 탑승하려는 사람을 때리면 탑승이 취소됩니다.'));

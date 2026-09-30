@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { KEYS, applyRig } from './poses.js';
 import { ROBOT_ORDER } from './data.js';
+import { PART_ALL } from './robot-systems.js';
 import * as audio from './audio.js';
 
 const EDGES = ['jump','atk','hvy','dash','actP','grdP'];
@@ -39,7 +40,8 @@ export class RemoteCtrl {
 
 // v1.4: cd1/cd2/cd2Max (skill HUD), hitsTaken (break burst), bubbleT (Dori barrier), exposedT (robot weak point)
 const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT'];
-const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT'];
+// v1.5: juice/maxJuice (carrot juice energy), broken (destroyed parts bitmask, robot-systems.js PART_BIT)
+const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT','juice','maxJuice','broken'];
 const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaternion.toArray().map(round),s:mesh.scale.toArray().map(round),visible:mesh.visible});
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
   parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
@@ -70,6 +72,7 @@ export function validateSnapshot(s,matchId) {
     if(!s.humans.every((h,i)=>h.id===i&&validFighter(h)&&HNUM.every(k=>num(h[k],-1000,1000000))&&integer(h.stock,0,3)&&num(h.hp,0,h.maxHp)&&num(h.maxHp,1,1000)
       && bool(h.dead)&&bool(h.out)&&rid(h.riding)&&rid(h.boardTarget)&&h.combo&&['n','dmg','best'].every(k=>num(h.combo[k],0,1000000)))) return false;
     if(!s.robots.every(r=>integer(r.id,100,1000000)&&ROBOT_ORDER.includes(r.type)&&validFighter(r)&&RNUM.every(k=>num(r[k],-1000,10000))&&num(r.armor,0,r.maxArmor)&&num(r.maxArmor,1,10000)
+      && num(r.maxJuice,1,1000)&&num(r.juice,0,r.maxJuice)&&integer(r.broken,0,PART_ALL)
       && hid(r.owner)&&hid(r.pilot)&&r.cds&&['k','l','dash'].every(k=>num(r.cds[k],-7200,1000))&&validRoot(r.ring))) return false;
     if(!s.humans.every(h=>h.riding===null||s.robots.find(r=>r.id===h.riding)?.pilot===h.id) || !s.robots.every(r=>r.pilot===null||s.humans[r.pilot].riding===r.id)) return false;
     if(!Array.isArray(s.projectiles)||s.projectiles.length>64||!s.projectiles.every(p=>validRoot(p)&&['shot','boomer','fist','missile'].includes(p.type)))return false;
@@ -98,9 +101,11 @@ export class PeerReplica {
     for(const h of g.humans) if(h.rig.root.parent!==g.scene && (s.humans[h.id].riding!==h.riding?.id || !s.robots.some(r=>r.id===h.riding?.id&&r.type===h.riding.type))) g.scene.attach(h.rig.root);
     for(const r of [...g.robots]) if(!s.robots.some(x=>x.id===r.id&&x.type===r.type)) { this.targets.delete(r); r.dispose(); g.robots.splice(g.robots.indexOf(r),1); }
     for(const x of s.robots) {
-      let r=g.robots.find(r=>r.id===x.id);
-      if(!r){r=g.createPeerRobot(x.type,g.humans[x.owner??0],x.pos[0],x.pos[2]);r.id=x.id;g.robots.push(r);}
+      let r=g.robots.find(r=>r.id===x.id), fresh=false;
+      if(!r){r=g.createPeerRobot(x.type,g.humans[x.owner??0],x.pos[0],x.pos[2]);r.id=x.id;g.robots.push(r);fresh=true;}
+      const prevBroken=r.broken;
       Object.assign(r,Object.fromEntries(RNUM.map(k=>[k,x[k]])),{state:x.state,owner:x.owner===null?null:g.humans[x.owner],pilot:x.pilot===null?null:g.humans[x.pilot],cds:{...x.cds}});
+      if(fresh||prevBroken!==r.broken)r.syncBroken(prevBroken,!first&&!fresh);
       this.fighter(r,x,first); setRoot(r.ring,x.ring); r.setEyes(x.eyeLevel);
     }
     for(const x of s.humans) {
@@ -155,6 +160,7 @@ export class PeerReplica {
   update(dt) {
     const a=1-Math.exp(-dt*30);
     for(const [f,t]of this.targets){f.rig.root.position.lerp(t.p,a);f.rig.root.quaternion.slerp(t.q,a);}
+    for(const r of this.game.robots)if(r.debris?.length)r.updateDebris(dt);
     const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.updateCamera(dt);
   }
   dispose() {

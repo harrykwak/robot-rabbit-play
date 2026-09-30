@@ -1,5 +1,6 @@
 // 컴퓨터 상대 AI. 사람일 때와 로봇 탑승 중일 때 두의 두뇌로 나뉜다
 import { ROBOT_STATS, RULES } from './data.js';
+import { skillJuice } from './robot-systems.js';
 
 const RANGE = { titan: 4.2, bolt: 3.8, cannon: 12, hammer: 4.6 };
 // 길찾기 캐시: 경과 시뮬레이션 시간 기준으로 재계산 빈도를 제한한다
@@ -394,9 +395,11 @@ export class AICtrl {
     const hold = this.waiting && dist > 2.2;
     const dx = t.pos.x - r.pos.x, dz = t.pos.z - r.pos.z;
     const want = RANGE[r.type];
+    // CPU 는 쥬스를 바닥까지 쓰지 않는다: 스킬 뒤에도 대시 한 번 분량은 남긴다
+    const ready = (k) => { const s = k === 'k' ? 1 : 2; return !r.skillBlock(s) && r.juice - skillJuice(r.type, s, r.broken) >= RULES.juiceDash; };
     // 기본 콤보가 맞았으면 스킬 캔슬
     if (r.act && r.act.hits && r.act.hits.size > 0 && Math.random() < d.skill * 0.3) {
-      if (r.cds.k <= 0 && r.type !== 'cannon') i.hvy = true; else if (r.cds.l <= 0 && r.type === 'titan') i.grdP = true;
+      if (ready('k') && r.type !== 'cannon') i.hvy = true; else if (ready('l') && r.type === 'titan') i.grdP = true;
     }
     // 스킬 중에는 목표 방향으로 조향 (회전기/레이저)
     if (r.act) {
@@ -405,6 +408,16 @@ export class AICtrl {
       else { i.mx = i.mz = 0; }
       if (this.atkT <= 0 && r.act.def.next && dist < want + 2.5 && Math.random() < d.aggro) { i.atk = true; this.atkT = 0.15 + d.react * 0.3; }
       return;
+    }
+    // 당근쥬스가 모자라면 가까운 당근을 먹으러 간다 (적이 바로 앞이면 싸운다)
+    if (r.juice < RULES.juiceLow && dist > 4) {
+      let carrot = null, cd = 26;
+      for (const c of g.carrots) {
+        if (!c.landed) continue;
+        const dd = Math.hypot(c.pos.x - r.pos.x, c.pos.z - r.pos.z);
+        if (dd < cd) { cd = dd; carrot = c; }
+      }
+      if (carrot) { this.goTo(carrot.pos.x, carrot.pos.z, 1, carrot.gy); return; }
     }
     const fx = Math.sin(r.facing), fz = Math.cos(r.facing);
     const align = (fx * dx + fz * dz) / (dist || 1);
@@ -421,7 +434,6 @@ export class AICtrl {
     else this.steer(dx, dz, 0.05);
     if (this.thinkT > 0) return;
     this.thinkT = d.react * (0.5 + Math.random() * 0.6);
-    const ready = (k) => r.cds[k] <= 0;
     const roll = Math.random() < d.skill;
     const ty = r.type;
     if (roll) {
@@ -442,6 +454,6 @@ export class AICtrl {
     const atkRange = ty === 'cannon' ? 22 : want + 1.3;
     if (dist < atkRange && (ty !== 'cannon' || align > 0.8) && Math.random() < 0.5 + d.aggro * 0.5) i.atk = true;
     if (t.pos.y > 3 && dist < 6 && Math.random() < 0.3) i.jump = true;
-    if (dist > 14 && ty !== 'cannon' && Math.random() < 0.2) i.dash = true;
+    if (dist > 14 && ty !== 'cannon' && r.mods.dash && r.juice > RULES.juiceLow && Math.random() < 0.2) i.dash = true;
   }
 }

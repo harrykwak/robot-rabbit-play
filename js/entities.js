@@ -6,10 +6,13 @@ import { makePose, blendInto, sample, applyRig, P } from './poses.js';
 import { ROBOT_STATS, RULES, DIFFICULTY } from './data.js';
 import { AICtrl } from './ai.js';
 import { PlayerCtrl } from './input.js';
+import { PARTS, PART_BIT, PART_NAME, PART_EFFECT, partMaxHp, robotMods, stepJuice, juiceCost, skillJuice, skillPart, skillBlock as blockOf } from './robot-systems.js';
 
 const tF = new THREE.Vector3();
 const tA = new THREE.Vector3();
 const tB = new THREE.Vector3();
+const tM = new THREE.Matrix4();
+const tM2 = new THREE.Matrix4();
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const angLerp = (a, b, k) => {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -34,6 +37,24 @@ const SKILL2_ACT = { roll: 'rollDodge', flip: 'backFlip', smoke: 'smokeStep', ba
 const GUARD_KINDS = new Set(['guard', 'parry']);
 // 공격으로 치지 않는 기술: 배리어를 깨지 않는다
 const NON_ATTACK = new Set(['barrierCast', 'rollDodge', 'backFlip', 'smokeStep', 'blinkStep', 'brace', 'burst', 'summon']);
+// 부위가 부서지면 숨기는 리그 그룹 (models.js createRobot 가 이미 노출한다). 팔은 팔뚝부터, 다리는 왼쪽 정강이부터 떨어진다
+const PART_NODES = { armL: ['foreL'], armR: ['foreR'], head: ['earL', 'earR'], legs: ['shinL'] };
+
+// 떨어져 나가는 부위: 보이는 메시만 같은 지오메트리/재질로 복사한다 (userData 복사 없이)
+function snapshotPiece(node) {
+  const g = new THREE.Group();
+  node.updateWorldMatrix(true, true);
+  const inv = tM.copy(node.matrixWorld).invert();
+  node.traverseVisible((o) => {
+    if (!o.isMesh) return;
+    const m = new THREE.Mesh(o.geometry, o.material);
+    tM2.multiplyMatrices(inv, o.matrixWorld).decompose(m.position, m.quaternion, m.scale);
+    m.castShadow = true;
+    g.add(m);
+  });
+  node.matrixWorld.decompose(g.position, g.quaternion, g.scale);
+  return g;
+}
 
 class Fighter {
   constructor(game, rig, kind) {
@@ -228,8 +249,8 @@ export class Human extends Fighter {
     this.comeback = 1;     // 뒤처진 만큼 게이지 충전 배율 (game.update 가 매 틱 계산)
     // UI 가 매 틱 읽는 값: 객체를 재사용해 할당을 만들지 않는다
     this._hud = [
-      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false },
-      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false },
+      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false, why: '', juice: 0 },
+      { name: '', cd: 0, cdMax: 1, ready: true, hold: false, burst: false, active: false, why: '', juice: 0 },
     ];
     this._ctx = { kind: null, progress: 0, label: '', hint: '', near: false };
     g.scene.add(rig.root);
@@ -252,20 +273,21 @@ export class Human extends Fighter {
   // ---------- 스킬 (UI 계약) ----------
   // skillHud(): [스킬 1, 스킬 2]. 매 틱 읽어도 되도록 캐시 객체를 갱신해 돌려준다
   //   { name, cd, cdMax, ready, hold(누르고 있는 기술), burst(지금 스킬 2 로 브레이크 버스트 가능), active(발동 중) }
+  //   why: 못 쓰는 이유 ('' | 'cd' | 'juice' 당근쥬스 부족 | 'part' 필요한 부위 파괴), juice: 당근쥬스 소모량 (사람 상태는 0)
   //   탑승 중에는 로봇 스킬 1/2 (cds.k / cds.l) 를 같은 모양으로 돌려준다
   skillHud() {
     const h = this._hud, a = h[0], b = h[1];
     const r = this.riding;
     if (r) {
       const st = r.stats.skills, mul = (this.P.robot && this.P.robot.cd) || 1;
-      a.name = st[1].name; a.cdMax = st[1].cd * mul; a.cd = r.cds.k; a.ready = r.cds.k <= 0; a.hold = false; a.burst = false; a.active = !!(r.act && r.act.name === r.moves.k);
-      b.name = st[2].name; b.cdMax = st[2].cd * mul; b.cd = r.cds.l; b.ready = r.cds.l <= 0; b.hold = false; b.burst = false; b.active = !!(r.act && r.act.name === r.moves.l);
+      a.name = st[1].name; a.cdMax = st[1].cd * mul; a.cd = r.cds.k; a.why = r.skillBlock(1); a.ready = a.why === ''; a.juice = skillJuice(r.type, 1, r.broken); a.hold = false; a.burst = false; a.active = !!(r.act && r.act.name === r.moves.k);
+      b.name = st[2].name; b.cdMax = st[2].cd * mul; b.cd = r.cds.l; b.why = r.skillBlock(2); b.ready = b.why === ''; b.juice = skillJuice(r.type, 2, r.broken); b.hold = false; b.burst = false; b.active = !!(r.act && r.act.name === r.moves.l);
       return h;
     }
     const s1 = this.P.skill1, s2 = this.P.skill2;
-    a.name = s1.name; a.cdMax = s1.cd; a.cd = this.cd1; a.ready = this.cd1 <= 0; a.hold = false; a.burst = false;
+    a.name = s1.name; a.cdMax = s1.cd; a.cd = this.cd1; a.ready = this.cd1 <= 0; a.why = a.ready ? '' : 'cd'; a.juice = 0; a.hold = false; a.burst = false;
     a.active = !!(this.act && this.act.name === this.P.acts.heavy);
-    b.name = s2.name; b.cdMax = this.cd2Max; b.cd = this.cd2; b.ready = this.cd2 <= 0; b.hold = GUARD_KINDS.has(s2.kind);
+    b.name = s2.name; b.cdMax = this.cd2Max; b.cd = this.cd2; b.ready = this.cd2 <= 0; b.why = b.ready ? '' : 'cd'; b.juice = 0; b.hold = GUARD_KINDS.has(s2.kind);
     b.burst = this.canBurst();
     b.active = this.state === 'guard' || this.bubbleT > 0 || !!(this.act && this.act.def.counter);
     return h;
@@ -464,7 +486,7 @@ export class Human extends Fighter {
         const d = a.def;
         // 띄운 직후: 기술을 캔슬하고 추격 점프 (점프, 또는 땅에서 공격 버튼)
         if (canCtl && chaseOK && a.hits.size > 0 && !d.air && (i.jump || (i.atk && this.onGround && !d.hop))) { this.act = null; this.superJump(); break; }
-        // 잽 시작 직후(판정 전)에는 점프/대시로 캔슬된다: 위로 튕기는 터치 입력과 키보드 모두 부드럽게
+        // 잽 시작 직후(판정 전)에는 점프/대시로 캔슬된다: 터치 점프 버튼과 키보드 모두 부드럽게
         if (canCtl && (a.name === 'jab1' || a.name === 'jab2') && a.t < 0.1 && a.hits.size === 0 && this.onGround) {
           if (i.jump) { this.act = null; this.setState('normal'); this.jumpUp(); break; }
           if (i.dash && this.dashCd <= 0) { this.act = null; this.startDash(i, inMag, speed); break; }
@@ -890,6 +912,15 @@ export class Robot extends Fighter {
     this.pilot = null;
     this.maxArmor = this.stats.armor;
     this.armor = this.maxArmor;
+    // 당근쥬스 에너지 (0..maxJuice). 스킬/대시/공중 추진에 쓰고, 바닥나면 느려지고 스킬을 못 쓴다
+    this.maxJuice = RULES.juiceMax;
+    this.juice = this.maxJuice;
+    this.mods = robotMods(0, this.juice);
+    this.juiceEmpty = false;
+    this.juiceWarned = false;
+    this.denyT = -99;
+    this.debris = [];
+    this.resetParts();
     this.state = 'falling';
     this.stateT = 0;
     this.idleT = RULES.robotIdleLife;
@@ -925,6 +956,143 @@ export class Robot extends Fighter {
   get team() { return this.pilot ? this.pilot.id : this.owner ? this.owner.id : -1; }
   get name() { return this.stats ? this.type : ''; }
 
+  // ---------- 부위 파괴 ----------
+  // parts: 부위별 남은 내구도, partMax: 최대치, broken: 부서진 부위 비트마스크 (robot-systems.js PART_BIT)
+  resetParts() {
+    this.partMax = partMaxHp(this.maxArmor);
+    this.parts = { ...this.partMax };
+    this.broken = 0;
+    for (const k of PARTS) for (const n of PART_NODES[k]) if (this.rig[n]) this.rig[n].visible = true;
+    this.mods = robotMods(0, this.juice, this.mods);
+  }
+
+  breakPart(part) {
+    const bit = PART_BIT[part];
+    if (!bit || this.broken & bit) return false;
+    this.broken |= bit;
+    this.parts[part] = 0;
+    this.detachPart(part, true);
+    this.mods = robotMods(this.broken, this.juice, this.mods);
+    const g = this.g;
+    g.ui.callout(this.pos, PART_NAME[part] + ' 파괴!', this.pilot && this.pilot.isPlayer ? 'bad' : 'sk', this.height + 1.2);
+    g.sound('explosion', this.pos, 0.7, 1.5);
+    g.shake(0.25, this.pos);
+    if (this.pilot && this.pilot.isPlayer) g.ui.toast('⚠ ' + PART_NAME[part] + ' 파괴: ' + PART_EFFECT[part]);
+    return true;
+  }
+
+  // 부서진 부위 숨기기. fly: 조각이 튀어 나가는 연출
+  detachPart(part, fly) {
+    for (const k of PART_NODES[part]) {
+      const node = this.rig[k];
+      if (!node || !node.visible) continue;
+      if (fly) this.flyOff(node);
+      node.visible = false;
+    }
+  }
+
+  // 네트워크 스냅샷으로 받은 broken 반영: fly 면 새로 부서진 부위를 날려 보내고, 없어진 비트는 다시 보인다
+  syncBroken(prev, fly = true) {
+    for (const k of PARTS) {
+      const on = (this.broken & PART_BIT[k]) !== 0;
+      if (on) this.detachPart(k, fly && !(prev & PART_BIT[k]));
+      else for (const n of PART_NODES[k]) if (this.rig[n]) this.rig[n].visible = true;
+    }
+    this.mods = robotMods(this.broken, this.juice, this.mods);
+  }
+
+  flyOff(node) {
+    const g = this.g;
+    const piece = snapshotPiece(node);
+    if (!piece.children.length) return;
+    g.scene.add(piece);
+    const p = piece.position;
+    const ox = p.x - this.pos.x, oz = p.z - this.pos.z, l = Math.hypot(ox, oz) || 1;
+    const vel = new THREE.Vector3(ox / l * (5 + Math.random() * 4), 9 + Math.random() * 4, oz / l * (5 + Math.random() * 4));
+    const spin = new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14);
+    this.debris.push({ obj: piece, vel, spin, t: 0, bounced: 0 });
+    tA.copy(p);
+    g.fx.explosion(tA, 0.45);
+    g.fx.hit(tA, tB.set(ox / l, 0.6, oz / l), 2, 0xffc070);
+    g.fx.sparkle(tA, 0xff9a3c);
+  }
+
+  updateDebris(dt) {
+    const g = this.g;
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i], o = d.obj;
+      d.t += dt;
+      d.vel.y -= 30 * dt;
+      o.position.addScaledVector(d.vel, dt);
+      o.rotateX(d.spin.x * dt); o.rotateY(d.spin.y * dt); o.rotateZ(d.spin.z * dt);
+      const gy = g.groundY ? g.groundY(o.position.x, o.position.z, o.position.y + 1) : null;
+      if (gy !== null && o.position.y < gy + 0.25 && d.vel.y < 0) {
+        o.position.y = gy + 0.25;
+        d.vel.y *= -0.35; d.vel.x *= 0.55; d.vel.z *= 0.55; d.spin.multiplyScalar(0.5);
+        if (d.bounced++ === 0) { g.fx.dust(o.position, 4, 0.8); g.sound('land', o.position, 0.5, 1.3); }
+      }
+      if (d.t < 1 && Math.random() < 0.35) g.fx.trailPuff(tA.copy(o.position), 0x666666, 0.5);
+      if (d.t > 1.8) o.scale.multiplyScalar(Math.max(0, 1 - dt * 5));
+      if (d.t > 2.4) { g.scene.remove(o); this.debris.splice(i, 1); }
+    }
+  }
+
+  clearDebris() {
+    for (const d of this.debris) this.g.scene.remove(d.obj);
+    this.debris.length = 0;
+  }
+
+  // ---------- 당근쥬스 ----------
+  useJuice(n) { if (n > 0) this.juice = Math.max(0, this.juice - n); }
+  addJuice(n) {
+    const prev = this.juice;
+    if (n > 0) this.juice = Math.min(this.maxJuice, this.juice + n);
+    return this.juice - prev;
+  }
+
+  // 스킬 슬롯(1|2)을 못 쓰는 이유: '' | 'cd' | 'juice' | 'part'
+  skillBlock(slot) { return blockOf(this.type, slot, slot === 1 ? this.cds.k : this.cds.l, this.juice, this.broken); }
+
+  spendSkill(slot, cdMul) {
+    this.cds[slot === 1 ? 'k' : 'l'] = this.stats.skills[slot].cd * cdMul;
+    this.useJuice(skillJuice(this.type, slot, this.broken));
+  }
+
+  trySkill(slot, cdMul) {
+    const why = this.skillBlock(slot);
+    if (why) { if (why !== 'cd') this.denySkill(why, slot); return false; }
+    this.spendSkill(slot, cdMul);
+    this.doAct(slot === 1 ? this.moves.k : this.moves.l);
+    return true;
+  }
+
+  // 막힌 입력 알림 (연타해도 0.8초에 한 번)
+  denySkill(why, slot) {
+    const g = this.g;
+    if (g.time < this.denyT) return;
+    this.denyT = g.time + 0.8;
+    const part = why === 'legs' ? 'legs' : why === 'part' ? skillPart(this.type, slot) : null;
+    const msg = part ? PART_NAME[part] + ' 파손!' : '쥬스 부족!';
+    if (this.pilot && this.pilot.isPlayer) g.ui.callout(this.pos, msg, 'bad', this.height + 1);
+    g.sound('boardCancel', this.pos, 0.4, 1.5);
+  }
+
+  // 쥬스가 바닥나거나 다시 찼을 때 한 번씩 알린다
+  juiceNotice(mods) {
+    const g = this.g, me = this.pilot && this.pilot.isPlayer;
+    if (mods.empty !== this.juiceEmpty) {
+      this.juiceEmpty = mods.empty;
+      if (mods.empty) {
+        g.ui.callout(this.pos, '쥬스 바닥!', me ? 'bad' : 'sk', this.height + 1);
+        if (me) g.ui.toast('🥕 당근쥬스가 바닥났어요! 당근을 먹거나 공격을 맞히면 다시 차요');
+      } else g.ui.callout(this.pos, '쥬스 충전!', 'good', this.height + 1);
+    }
+    if (this.juice < RULES.juiceLow && !this.juiceWarned) {
+      this.juiceWarned = true;
+      if (me && !mods.empty) g.ui.toast('🥕 당근쥬스 부족: 스킬을 아끼거나 당근을 먹어요');
+    } else if (this.juice > RULES.juiceLow + 10) this.juiceWarned = false;
+  }
+
   setEyes(v) {
     this.eyeLevel += (v - this.eyeLevel) * 0.2;
     for (const e of this.rig.eyes) e.material.emissiveIntensity = this.eyeLevel;
@@ -940,6 +1108,7 @@ export class Robot extends Fighter {
   update(dt, realDt) {
     this.updateFlash(realDt);
     const g = this.g;
+    if (this.debris.length) this.updateDebris(dt);
     this.stateT += dt;
     if (this.state === 'dead') return;
     if (this.state === 'falling') {
@@ -961,6 +1130,7 @@ export class Robot extends Fighter {
 
     if (this.state === 'idle') {
       this.idleT -= dt;
+      this.juice = stepJuice(this.juice, this.maxJuice, dt, false, g.phase === 'fight', this.broken);
       this.ring.visible = true;
       this.ring.position.set(this.pos.x, this.pos.y + 0.06, this.pos.z);
       const pu = 1 + Math.sin(g.time * 5) * 0.06;
@@ -992,6 +1162,9 @@ export class Robot extends Fighter {
     if (this.humanDmg > 0) this.humanDmg = Math.max(0, this.humanDmg - dt * 8);
     if (fighting) this.armor -= RULES.robotDrain * dt;
     if (this.armor <= 0) { g.destroyRobot(this, 'armor'); return; }
+    this.juice = stepJuice(this.juice, this.maxJuice, dt, true, fighting, this.broken);
+    const mods = robotMods(this.broken, this.juice, this.mods);
+    if (fighting) this.juiceNotice(mods);
 
     // 하차: E 길게
     if (!i.act) pilot.needRelease = false;
@@ -1000,7 +1173,7 @@ export class Robot extends Fighter {
       if (pilot.ejectHold > EJECT_HOLD) { g.eject(pilot, false); return; }
     } else pilot.ejectHold = 0;
 
-    const sp = this.stats.speed * (bonus.speed || 1);
+    const sp = this.stats.speed * (bonus.speed || 1) * mods.speed;
     let wx = 0, wz = 0;
     const inMag = Math.hypot(i.mx, i.mz);
     this.spinYaw *= 0.8;
@@ -1013,12 +1186,15 @@ export class Robot extends Fighter {
       if (fighting && i.atk && d.next) a.buf = true;
       // 스킬 캔슬: 기본 콤보가 적중한 뒤라면 K/L 로 바로 스킬을 이어 콤보를 잇는다
       if (fighting && ROBOT_COMBO.has(a.name)) {
-        if (i.hvy && this.cds.k <= 0) a.sk = 'k';
-        else if (i.grdP && this.cds.l <= 0) a.sk = 'l';
+        if (i.hvy || i.grdP) {
+          const slot = i.hvy ? 1 : 2, why = this.skillBlock(slot);
+          if (!why) a.sk = slot === 1 ? 'k' : 'l';
+          else if (why !== 'cd') this.denySkill(why, slot);
+        }
         const hit = a.hits.size > 0 || a.flags.shotHit;
-        if (a.sk && hit && a.t >= Math.min(d.chain, 0.2) * 0.7) {
+        if (a.sk && hit && a.t >= Math.min(d.chain, 0.2) * 0.7 && !this.skillBlock(a.sk === 'k' ? 1 : 2)) {
           const sk = a.sk;
-          this.cds[sk] = this.stats.skills[sk === 'k' ? 1 : 2].cd * cdMul;
+          this.spendSkill(sk === 'k' ? 1 : 2, cdMul);
           this.act = null; this.doAct(this.moves[sk]); g.onSkillCancel(this);
         }
       }
@@ -1070,9 +1246,11 @@ export class Robot extends Fighter {
         this.vel.z += clamp(wz * sp - this.vel.z, -accel * dt, accel * dt);
         if (inMag > 0.15) this.facing = angLerp(this.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 13));
         if (i.jump && this.onGround) {
-          this.vel.y = this.stats.jump; this.onGround = false;
+          this.vel.y = this.stats.jump * mods.jump; this.onGround = false;
           g.sound('dash', this.pos, 1, 0.6);
           g.fx.dust(this.pos, 10, 1.6);
+        } else if (i.dash && this.cds.dash <= 0 && !mods.dash) {
+          this.denySkill(this.broken & PART_BIT.legs ? 'legs' : 'juice', 0);
         } else if (i.dash && this.cds.dash <= 0) {
           const dx = inMag > 0.2 ? i.mx / inMag : Math.sin(this.facing);
           const dz = inMag > 0.2 ? i.mz / inMag : Math.cos(this.facing);
@@ -1080,12 +1258,13 @@ export class Robot extends Fighter {
           const ds = this.type === 'bolt' ? 34 : 26;
           this.vel.x = dx * ds; this.vel.z = dz * ds;
           this.dashT = 0.3; this.cds.dash = this.type === 'bolt' ? 0.7 : 1.1;
+          this.useJuice(juiceCost(RULES.juiceDash, this.broken));
           g.sound('dash', this.pos, 1.1, 0.7);
           g.fx.dust(this.pos, 8, 1.4);
         } else if (i.atk) this.doAct(this.moves.combo);
-        else if (i.hvy && this.cds.k <= 0) { this.cds.k = this.stats.skills[1].cd * cdMul; this.doAct(this.moves.k); }
-        else if (i.grdP && this.cds.l <= 0) { this.cds.l = this.stats.skills[2].cd * cdMul; this.doAct(this.moves.l); }
-        if (!this.onGround) this.thrust(0.9);
+        else if (i.hvy) this.trySkill(1, cdMul);
+        else if (i.grdP) this.trySkill(2, cdMul);
+        if (!this.onGround) { this.thrust(0.9); if (fighting) this.useJuice(juiceCost(RULES.juiceBoost, this.broken) * dt); }
       }
     } else {
       this.vel.x *= 0.85; this.vel.z *= 0.85;
@@ -1172,9 +1351,9 @@ export class Robot extends Fighter {
   dispose() {
     this.g.scene.remove(this.rig.root);
     this.g.scene.remove(this.ring);
+    this.clearDebris();
     this.ringMat.dispose();
     this.rig.dispose();
     if (this.beam) { this.beam.stop(); this.beam = null; }
   }
 }
-

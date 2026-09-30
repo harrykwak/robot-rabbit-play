@@ -3,9 +3,9 @@
    - 메뉴: 320~430 세로 가로넘침 없음, 낮은 가로 화면 스크롤, safe-area/dvh
    - 터치: (pointer: coarse) 또는 html.touch-mode 에서 HUD 재배치
    - 터치 컨트롤 DOM 계약: #touch-controls.touch-controls
-     .touch-swipe / .touch-stick > .touch-knob / .touch-actions > .touch-btn[data-touch-action]
-     (atk 큰 버튼, hvy·grd 작은 스킬 --cd, act 특수 칸 .touch-special[data-kind] --hold)
-     (.touch-label .touch-sub) / .touch-menu / .touch-status / .is-down .is-cooling .is-ready
+     .touch-stick > .touch-knob (같은 방향 두 번 튕기면 대시) / .touch-btn.touch-jump[data-touch-action=jump] (스틱 옆)
+     .touch-actions > .touch-btn[data-touch-action] (atk 큰 흰 버튼, hvy·grd 아이콘 스킬 --cd, act 특수 칸 .touch-special[data-kind] --hold)
+     (.touch-label | .touch-icon > svg) + .touch-sub / .touch-menu / .touch-status / .is-down .is-cooling .is-ready
      root.left-handed / root --touch-scale (0.85~1.15)
    ========================================================= */
 
@@ -122,15 +122,29 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 
 /* 큰 공격(--ta) 1개 + 작은 스킬(--tb) 2개 + 특수 칸(--tb, 필요할 때만): 2x2 무리 */
 @media (orientation: portrait) {
-  :root { --tb0: min(52px, 14vw); --ta0: min(92px, 25vw); --stick0: min(128px, 35vw); }
+  :root { --tb0: min(52px, 14vw); --ta0: min(92px, 25vw); --stick0: min(128px, 35vw); --tj0: min(58px, 16vw); }
 }
 @media (orientation: landscape) {
-  :root { --tb0: min(52px, 13vh); --ta0: min(96px, 25vh); --stick0: min(136px, 36vh); --m-cards-h: 54px; }
+  :root { --tb0: min(56px, 14vh); --ta0: min(96px, 25vh); --stick0: min(136px, 36vh); --tj0: min(66px, 17vh); --m-cards-h: 54px; }
 }
 :root,
 .touch-controls {
   --m-cluster-w: calc(var(--tb) + var(--tg) + var(--ta));
   --m-cluster-h: calc(var(--tb) + var(--tg) + var(--ta));
+  /* 점프 버튼(--tj)은 스틱 옆: 세로는 스틱의 오른쪽 위 대각선, 가로는 바로 오른쪽 */
+  --tj: max(52px, calc(var(--tj0) * var(--m-k)));
+  --m-stick-lift: max(0px, (var(--m-cluster-h) - var(--stick)) / 2);
+  --m-jd: calc(((var(--stick) + var(--tj)) / 2 + 6px) * .7071);
+  --m-left-w: calc(4px + var(--stick) / 2 + var(--m-jd) + var(--tj) / 2);
+  --m-left-h: calc(var(--m-stick-lift) + var(--stick) / 2 + var(--m-jd) + var(--tj) / 2);
+  --m-zone: calc(var(--m-sab) + var(--m-edge) + max(var(--m-cluster-h), var(--m-left-h)));
+}
+@media (orientation: landscape) {
+  :root,
+  .touch-controls {
+    --m-left-w: calc(4px + var(--stick) + 1.5 * var(--tg) + var(--tj));
+    --m-left-h: calc(var(--m-stick-lift) + var(--stick));
+  }
 }
 
 /* ---------------- 메뉴: 좁은 폭 · 낮은 높이 · 터치 기기 ---------------- */
@@ -580,18 +594,6 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
     "hvy atk";
 }
 
-/* 버튼 바깥 오른쪽 절반: 위로 튕기면 점프, 옆·아래로 밀면 대시 (보이지 않는 영역) */
-.touch-controls .touch-swipe {
-  position: absolute;
-  left: 50%;
-  right: 0;
-  top: calc(var(--m-sat) + var(--m-cards-h) + 60px);
-  bottom: 0;
-  pointer-events: auto;
-  touch-action: none;
-}
-.touch-controls.left-handed .touch-swipe { left: 0; right: 50%; }
-
 .touch-btn {
   --tc: #3a4f96;
   --sz: var(--tb);
@@ -620,12 +622,72 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 }
 .touch-btn[hidden] { display: none !important; }
 .touch-btn > span { position: relative; z-index: 2; }
-.touch-btn[data-touch-action="atk"] { --tc: var(--carrot); --sz: var(--ta); grid-area: atk; }
+/* 공격: 크고 흰 버튼, 잉크 외곽선·글씨 (만화풍) */
+.touch-btn[data-touch-action="atk"] {
+  --sz: var(--ta);
+  grid-area: atk;
+  color: var(--ink);
+  background: radial-gradient(circle at 34% 26%, #ffffff, var(--white) 52%, #d6dae6);
+  border-width: 4px;
+  box-shadow: 0 5px 0 var(--ink), inset 0 -5px 0 rgba(5, 7, 15, .12);
+  opacity: .96;
+}
+.touch-btn[data-touch-action="atk"] .touch-label { text-shadow: none; letter-spacing: .02em; }
+.touch-btn[data-touch-action="atk"].is-down { filter: none; background: radial-gradient(circle at 34% 26%, #ffffff, #eef0f6 52%, #c4c9d8); box-shadow: 0 1px 0 var(--ink), inset 0 0 0 3px var(--yellow); }
 .touch-btn[data-touch-action="hvy"] { --tc: var(--pink); grid-area: hvy; place-self: end end; margin-bottom: 4px; }
 .touch-btn[data-touch-action="grd"] { --tc: #1f9fc0; grid-area: grd; place-self: end end; margin-right: 4px; }
 .touch-btn[data-touch-action="act"] { --tc: #e0a800; grid-area: act; place-self: end end; }
 .touch-controls.is-riding .touch-btn[data-touch-action="hvy"] { --tc: #c0457a; }
 .touch-controls.is-riding .touch-btn[data-touch-action="grd"] { --tc: #2a7fb8; }
+
+/* 점프: 스틱 옆 둥근 아이콘 버튼. 세로는 스틱 오른쪽 위 대각선, 가로는 스틱 바로 오른쪽 */
+.touch-btn.touch-jump {
+  --tc: #3b7bff;
+  --sz: var(--tj);
+  position: absolute;
+  left: calc(var(--m-sal) + var(--m-edge) + 4px + var(--stick) / 2 + var(--m-jd) - var(--tj) / 2);
+  bottom: calc(var(--m-sab) + var(--m-edge) + var(--m-stick-lift) + var(--stick) / 2 + var(--m-jd) - var(--tj) / 2);
+}
+@media (orientation: landscape) {
+  .touch-btn.touch-jump {
+    left: calc(var(--m-sal) + var(--m-edge) + 4px + var(--stick) + 1.5 * var(--tg));
+    bottom: calc(var(--m-sab) + var(--m-edge) + var(--m-stick-lift) + (var(--stick) - var(--tj)) / 2);
+  }
+}
+
+/* 아이콘 (js/touch-icons.js): .f 흰 면+잉크 선, .l 흰 동작선, .k 잉크 세부 선. 쿨다운 부채꼴(::after) 아래에 깔린다 */
+.touch-btn > .touch-icon {
+  z-index: 0;
+  display: block;
+  width: 64%;
+  height: 64%;
+  pointer-events: none;
+  filter: drop-shadow(0 1.5px 0 var(--ink));
+}
+.touch-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.touch-icon .f { fill: var(--white); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; }
+.touch-icon .l { fill: none; stroke: var(--white); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.touch-icon .k { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* 아이콘 버튼의 작은 글씨(쿨다운 초·길게·BREAK)는 아래쪽 알약으로 */
+.touch-btn[data-touch-action="hvy"] > .touch-sub,
+.touch-btn[data-touch-action="grd"] > .touch-sub,
+.touch-btn.touch-jump > .touch-sub {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  max-width: none;
+  padding: 2px 5px;
+  font-size: calc(10px * var(--m-k));
+  color: var(--white);
+  background: var(--ink);
+  border-radius: 999px;
+  text-shadow: none;
+}
+.touch-btn.is-cooling > .touch-sub { color: var(--yellow); }
+/* 부위 파손 / 쥬스 부족으로 막힌 스킬: 더 흐리게, 이유 글씨는 빨갛게 */
+.touch-btn.is-locked { filter: grayscale(.85) brightness(.8); }
+.touch-btn.is-locked > .touch-sub { color: #ff8a8a; }
 
 /* 스킬 쿨다운: 남은 비율만큼 어두운 부채꼴 (JS 는 --cd 한 값만 단계적으로 쓴다) */
 .touch-btn[data-touch-action="hvy"]::after,
@@ -701,8 +763,6 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
   text-shadow: var(--ts-2);
 }
 .touch-btn[data-touch-action="atk"] .touch-label { font-size: calc(21px * var(--m-k)); }
-.touch-btn[data-touch-action="hvy"] .touch-label,
-.touch-btn[data-touch-action="grd"] .touch-label { font-size: calc(10.5px * var(--m-k)); white-space: normal; text-align: center; word-break: keep-all; }
 .touch-sub {
   max-width: 88%;
   font-size: calc(9.5px * var(--m-k));
@@ -773,7 +833,9 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 @media (orientation: landscape) {
   .touch-status {
     bottom: calc(var(--m-sab) + 8px);
-    max-width: max(120px, calc(100vw - 2 * (var(--m-cluster-w) + var(--m-edge) + 12px) - var(--m-sal) - var(--m-sar)));
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: max(120px, calc(100vw - 2 * (max(var(--m-cluster-w), var(--m-left-w)) + var(--m-edge) + 12px) - var(--m-sal) - var(--m-sar)));
   }
 }
 
@@ -785,6 +847,13 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 .touch-controls.left-handed .touch-stick {
   left: auto;
   right: calc(var(--m-sar) + var(--m-edge) + 4px);
+}
+.touch-controls.left-handed .touch-btn.touch-jump {
+  left: auto;
+  right: calc(var(--m-sar) + var(--m-edge) + 4px + var(--stick) / 2 + var(--m-jd) - var(--tj) / 2);
+}
+@media (orientation: landscape) {
+  .touch-controls.left-handed .touch-btn.touch-jump { right: calc(var(--m-sar) + var(--m-edge) + 4px + var(--stick) + 1.5 * var(--tg)); }
 }
 .touch-controls.left-handed .touch-actions {
   right: auto;

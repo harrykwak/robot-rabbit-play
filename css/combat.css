@@ -34,6 +34,45 @@
 }
 .card.shielded { box-shadow: 0 0 0 2px #9ff3ff, 0 0 16px rgba(159, 243, 255, .7); }
 
+/* 로봇 당근쥬스 (에너지) + 부서진 부위 */
+.card-juice { display: none; align-items: center; gap: 6px; margin-top: 2px; }
+.card-juice.show { display: flex; }
+.card-juice .jlabel { flex: none; font-size: 10px; line-height: 1; }
+.card-juice .jparts { flex: none; font-size: 9px; font-weight: 900; color: #ff8a8a; text-shadow: var(--ts-2); white-space: nowrap; }
+.card-juice .jparts:empty { display: none; }
+.bar.jbar { flex: 1; height: 7px; }
+.bar.jbar .fill {
+  background: linear-gradient(180deg, #ffe2b8 0%, var(--carrot) 40%, #c9560b 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55);
+  transition: width .12s linear;
+}
+.card-juice.low .jbar .fill, .skill-juice.low .jbar .fill { animation: juice-low .6s ease-in-out infinite alternate; }
+.card-juice.empty .jlabel, .skill-juice.empty .jlabel { filter: grayscale(1); }
+@keyframes juice-low { to { filter: brightness(1.6); } }
+
+.skill-juice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 170px;
+  padding: 4px 10px;
+  background: rgba(16, 26, 58, .88);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 0 4px 0 var(--ink);
+  transform: skewX(-10deg);
+}
+.skill-juice .jlabel, .skill-juice .jnum { flex: none; font: italic 900 13px/1 var(--font); color: var(--white); text-shadow: var(--ts-2); }
+.skill-juice .jnum { min-width: 26px; text-align: right; color: var(--carrot); }
+.skill-juice .jbar { height: 10px; }
+.skill .jcost { position: relative; z-index: 2; margin-left: auto; font: 900 11px/1 var(--font); color: var(--carrot); text-shadow: var(--ts-2); white-space: nowrap; }
+.skill .jcost:empty { display: none; }
+.skill.broken .name { text-decoration: line-through; }
+@media (max-height: 520px) {
+  .skill-juice { min-width: 120px; padding: 3px 8px; }
+  .skill-juice .jbar { height: 7px; }
+}
+
 .ctx-hint {
   position: absolute;
   left: 50%;
@@ -59,5 +98,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .combo .rate[data-lv="4"] { animation: none; }
+  .card-juice.low .jbar .fill, .skill-juice.low .jbar .fill { animation: none; }
 }
-

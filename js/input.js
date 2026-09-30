@@ -17,6 +17,36 @@ const DEFAULTS = {
 // 설정할 수 없는 키 (키 안내 토글, 브라우저 필수 키)
 export const RESERVED = new Set(['F1', 'F5', 'F11', 'F12', 'Tab', 'MetaLeft', 'MetaRight', 'ContextMenu']);
 
+// ---------------- 두 번 밀기 → 대시 (순수 상태 기계, 노드 테스트 대상) ----------------
+// 스틱(또는 이동 키)을 세게 밀었다가(push) 놓고(rest) 짧은 틈(gap) 안에 같은 쪽(cone)으로 다시 밀면 한 번 true.
+// 첫 번째 밀기가 maxHold 보다 길면 걷기로 보고 무시한다 (걷다가 엄지를 고쳐 잡아도 대시가 새지 않게).
+export const DOUBLE_PUSH = { push: 0.7, rest: 0.35, maxHold: 350, gap: 300, cone: Math.PI / 4 };
+export function createDoubleTapDetector(options = {}) {
+  const o = { ...DOUBLE_PUSH, ...options };
+  const minDot = Math.cos(o.cone);
+  let state = 'rest', dx = 0, dz = 0, t0 = 0, t1 = 0;
+  const start = (x, z, m, t) => { state = 'push'; dx = x / m; dz = z / m; t0 = t; };
+  function update(x, z, t) {
+    if (![x, z, t].every(Number.isFinite)) return false;
+    const m = Math.hypot(x, z);
+    if (state === 'gap' && t - t1 > o.gap) state = 'rest';
+    if (state === 'rest') { if (m >= o.push) start(x, z, m, t); return false; }
+    if (state === 'push') {
+      if (m <= o.rest) { if (t - t0 <= o.maxHold) { state = 'gap'; t1 = t; } else state = 'rest'; }
+      return false;
+    }
+    if (state === 'gap') {
+      if (m < o.push) return false;
+      if ((x * dx + z * dz) / m >= minDot) { state = 'done'; return true; }
+      start(x, z, m, t); // 다른 방향: 이번 밀기를 새 첫 번째로 센다
+      return false;
+    }
+    if (m <= o.rest) state = 'rest'; // done: 한 번 놓아야 다음 대시
+    return false;
+  }
+  return { update, reset() { state = 'rest'; } };
+}
+
 const BIND = {};
 let GAME_KEYS = new Set();
 const clone = (o) => { const r = {}; for (const a of ACTIONS) r[a] = [o[a][0] || null, o[a][1] || null]; return r; };
@@ -139,12 +169,28 @@ addEventListener('keydown', (e) => {
   }
   if (!e.repeat) pressed.add(e.code);
   down.add(e.code);
+  if (!e.repeat) feedKeyDash(e.code);
 }, true);
-addEventListener('keyup', (e) => { down.delete(e.code); for (const a of HOLDABLE) if (BIND[a].includes(e.code)) releaseRearm(a); });
+addEventListener('keyup', (e) => {
+  down.delete(e.code);
+  for (const a of HOLDABLE) if (BIND[a].includes(e.code)) releaseRearm(a);
+  feedKeyDash(e.code);
+});
 addEventListener('blur', () => resetInputs());
 if (hasDoc) document.addEventListener('visibilitychange', () => { if (document.hidden) resetInputs(); });
 
 const any = (list, set) => list.some((k) => k && set.has(k));
+
+// 이동 키를 같은 방향으로 두 번 톡톡 누르면 대시 (Shift 대시는 그대로)
+const keyDash = createDoubleTapDetector();
+let keyDashTap = false;
+const MOVES = ['up', 'down', 'left', 'right'];
+function feedKeyDash(code) {
+  if (!MOVES.some((a) => BIND[a].includes(code))) return;
+  const x = (any(BIND.right, down) ? 1 : 0) - (any(BIND.left, down) ? 1 : 0);
+  const z = (any(BIND.down, down) ? 1 : 0) - (any(BIND.up, down) ? 1 : 0);
+  if (keyDash.update(x, z, performance.now())) keyDashTap = true;
+}
 
 // ---------------- 터치 입력 (touch.js 가 채운다) ----------------
 // down: 누르고 있는 동작, pressed: 새로 눌린 동작. poll 전에 떼도 endFrame 까지 남아 빠른 탭이 사라지지 않는다
@@ -259,6 +305,7 @@ export function poll() {
   for (const a of HOLDABLE) {
     let hd = any(BIND[a], down) || touch.down.has(a) || PAD[a].some(b);
     let pr = any(BIND[a], pressed) || touch.pressed.has(a) || PAD[a].some(bp);
+    if (a === 'dash' && keyDashTap) pr = true;
     if (blocked.has(a)) {
       // 누르고 있는 동안은 무시. 모든 입력원에서 떼면 해제 (뗀 뒤 같은 프레임의 새 탭은 인정)
       if (hd) { hd = false; pr = false; } else blocked.delete(a);
@@ -275,13 +322,14 @@ export function poll() {
   return intents;
 }
 
-export function endFrame() { pressed.clear(); touch.pressed.clear(); }
+export function endFrame() { pressed.clear(); touch.pressed.clear(); keyDashTap = false; }
 
 // 일시정지/재개, 매치 시작·종료 등에서 모든 입력 상태와 PlayerCtrl 버퍼를 비운다
 // 패드는 지금 누른 버튼을 이전 상태로 기록해 재개 직후 가짜 눌림이 생기지 않게 한다
 export function resetInputs() {
   down.clear();
   pressed.clear();
+  keyDash.reset(); keyDashTap = false;
   clearTouch();
   blocked.clear();
   const pad = readPad();

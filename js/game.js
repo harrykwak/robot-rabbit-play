@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Human, Robot, EJECT_HOLD } from './entities.js';
 import { createCarrot } from './models.js';
 import { ROBOT_STATS, RULES, PILOTS, ROBOT_ORDER, DIFFICULTY } from './data.js';
+import { localHit, pickPart, damagePart, comboDamageMul, COMBO_MOVES } from './robot-systems.js';
 import { AICtrl } from './ai.js';
 import * as audio from './audio.js';
 import * as input from './input.js';
@@ -11,6 +12,7 @@ const keyName = (a) => document.documentElement.classList.contains('touch-mode')
 
 const V = () => new THREE.Vector3();
 const tA = V(), tB = V(), tC = V(), tD = V(), tDir = V(), UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0);
+const tLocal = { side: 0, h: 0 };
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // 히트스톱/흔들림: 작은 타격은 가볍게, 큰 타격만 묵직하게
 const HS = [0.04, 0.07, 0.115, 0.18];
@@ -295,6 +297,11 @@ export class Game {
     let dmg = h.dmg;
     let power = h.power || 0;
     const byRobot = att && att.kind === 'robot';
+    // 로봇 공격자: 쥬스가 바닥났거나 콤보에 쓰는 부위가 부서졌으면 약해진다
+    if (byRobot && att.mods) {
+      const k = att.mods.dmg * (att.act && COMBO_MOVES.has(att.act.name) ? comboDamageMul(att.type, att.broken) : 1);
+      if (k !== 1) dmg = Math.max(1, Math.round(dmg * k));
+    }
     const playerInvolved = (src && src.isPlayer) || t === this.player || (t.kind === 'robot' && t.pilot === this.player);
     let color = src ? src.color : 0xffffff;
     // 콤보 보정: 같은 상대를 오래 때릴수록 피해 감소
@@ -462,6 +469,7 @@ export class Game {
         }
       }
       if (t.pilot) { t.pilot.lastHitBy = src; t.pilot.lastHitT = this.time; }
+      this.hitPart(t, at, dmg * (byRobot ? 1 : RULES.partHumanMul));
       color = 0xbfe8ff;
     }
     // 공통 연출: 작은 타격은 짧고 가볍게, 큰 타격만 묵직하게
@@ -485,8 +493,19 @@ export class Game {
       if (!src.riding) src.addGauge(dmg * RULES.gaugeDeal);
       this.comboHit(src, t, dmg);
     }
+    // 로봇이 공격을 맞히면 당근쥬스가 조금 찬다
+    if (byRobot && att.addJuice && att.state === 'active') att.addJuice(dmg * RULES.juiceHit);
     if (t.kind === 'robot' && t.armor <= 0) this.destroyRobot(t, 'armor', src);
     return true;
+  }
+
+  // 부위 피해: 타격 지점의 높이/좌우로 부위를 고르고, 내구도가 0 이 되면 떨어져 나간다
+  hitPart(r, at, amount) {
+    if (!r.parts || !at || r.state === 'dead' || r.armor <= 0) return null;
+    localHit(r.pos.x, r.pos.y, r.pos.z, r.facing, r.height, at.x, at.y, at.z, tLocal);
+    const part = pickPart(tLocal.side, tLocal.h, r.radius);
+    if (damagePart(r.parts, part, amount)) r.breakPart(part);
+    return part;
   }
 
   // 타로 버티기 반격: 가까운 공격자에게 되받아치기. 로봇이면 약점 노출
@@ -973,6 +992,7 @@ export class Game {
     // 파일럿 특성: 로봇 내구도
     const am = (h.P.robot && h.P.robot.armor) || 1;
     r.maxArmor = Math.round(r.maxArmor * am); r.armor = r.maxArmor;
+    r.resetParts();
     this.robots.push(r);
     const mark = tC.set(px, py, pz);
     this.fx.pillar(mark, h.color, 1.5);
@@ -1414,6 +1434,9 @@ export class Game {
   }
 
   nearestEnemy(r, p, maxD, f, cosMin) {
+    // 머리가 부서진 로봇: 조준 거리와 원뿔이 좁아진다
+    const m = r && r.kind === 'robot' && r.mods;
+    if (m && m.aimRange !== 1) { maxD *= m.aimRange; if (f) cosMin = 1 - (1 - cosMin) * m.aimCone; }
     let best = null, bd = maxD;
     for (const t of this.targets(r)) {
       if (t.kind === 'robot' && t.state === 'idle' && t.owner === r.pilot) continue;
@@ -1565,6 +1588,7 @@ export class Game {
       c.mesh.position.set(c.pos.x, c.pos.y + (c.landed ? Math.sin(c.t * 4) * 0.15 : 0), c.pos.z);
       c.mesh.rotation.y = c.t * 2.5;
       if (!c.landed) continue;
+      let taken = false;
       for (const h of this.humans) {
         if (h.dead || h.out || h.riding) continue;
         if (this.dist2D(h.pos, c.pos) < 1.2 && Math.abs(h.pos.y + 0.7 - c.pos.y) < 1.4) {
@@ -1573,11 +1597,24 @@ export class Game {
           this.fx.sparkle(c.pos, 0xffb040);
           this.sound('gaugeFull', c.pos, 0.5, 1.5);
           this.ui.callout(h.pos, '🥕 +32', 'good');
-          this.releaseCarrot(c.mesh);
-          this.carrots.splice(i, 1);
+          taken = true;
           break;
         }
       }
+      // 탑승 중인 로봇은 당근을 밟아 당근쥬스를 채운다
+      if (!taken) for (const r of this.robots) {
+        if (r.state !== 'active' || !r.pilot) continue;
+        if (this.dist2D(r.pos, c.pos) < r.radius + 0.9 && c.pos.y > r.pos.y - 1 && c.pos.y < r.pos.y + r.height * 0.5) {
+          const got = Math.round(r.addJuice(RULES.juiceCarrot));
+          this.fx.sparkle(c.pos, 0xff9a2e);
+          this.fx.ring(tA.copy(r.pos).setY(r.pos.y + 0.1), null, 0.5, r.radius + 2, 0.35, 0xff9a2e, 0.9);
+          this.sound('gaugeFull', c.pos, 0.6, 1.2);
+          this.ui.callout(r.pos, '🥕 쥬스 +' + got, 'good', r.height + 0.8);
+          taken = true;
+          break;
+        }
+      }
+      if (taken) { this.releaseCarrot(c.mesh); this.carrots.splice(i, 1); }
     }
   }
 
