@@ -9,14 +9,14 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const grad = (() => {
-  const t = new THREE.DataTexture(new Uint8Array([90, 170, 230, 255]), 4, 1, THREE.RedFormat);
-  t.minFilter = t.magFilter = THREE.NearestFilter;
+  const t = new THREE.DataTexture(new Uint8Array([112, 140, 167, 193, 216, 235, 248, 255]), 8, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.LinearFilter;
   t.needsUpdate = true;
   return t;
 })();
 const toon = (color, extra = {}) => new THREE.MeshToonMaterial({ color, gradientMap: grad, ...extra });
-const olMat = new THREE.MeshBasicMaterial({ color: 0x0b0d18, side: THREE.BackSide });
-olMat.onBeforeCompile = (s) => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normal * 0.08;'); };
+const olMat = new THREE.MeshBasicMaterial({ color: 0x514b48, side: THREE.BackSide });
+olMat.onBeforeCompile = (s) => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normal * 0.025;'); };
 
 function mesh(geo, mat, parent, x = 0, y = 0, z = 0, outline = true) {
   const m = new THREE.Mesh(geo, mat);
@@ -124,47 +124,54 @@ function bakeBatch(root) {
   return { merged, hidden, geos };
 }
 
-let groundTex = null;
-function groundTexture() {
-  if (groundTex) return groundTex;
+const groundTextures = new Map();
+const THEMES = {
+  farm: { turf: '#83aa68', light: '#92b477', path: '#c8bd8a', edge: '#e3d3a3', grass: 0x83aa68, rim: 0x567849, dirt: 0xa47c59, rock: 0x827d86, stone: 0x9aaba7, cap: 0xc6cfbd, sky: [0x77accb, 0xd0e5dc, 0xb9d6cf] },
+  fort: { turf: '#baa97c', light: '#c4b58c', path: '#d6c7a1', edge: '#f0ddb0', grass: 0xaaa47c, rim: 0x95815b, dirt: 0xb18b63, rock: 0x8e8280, stone: 0xbaaa8a, cap: 0xe0d1ae, sky: [0x86b1c6, 0xe4e3d0, 0xc5d8cf] },
+  sky: { turf: '#9cb8ae', light: '#afc7b6', path: '#ced7c3', edge: '#f1e6d0', grass: 0x9cb8ae, rim: 0x728f8c, dirt: 0xb1a3a4, rock: 0x8b8aab, stone: 0xa7b9be, cap: 0xdce0d7, sky: [0x92acd7, 0xe3dfe9, 0xc4d4e4] },
+};
+function groundTexture(theme = 'farm') {
+  if (!Object.hasOwn(THEMES, theme)) theme = 'farm';
+  if (groundTextures.has(theme)) return groundTextures.get(theme);
+  const p = THEMES[theme];
   const c = document.createElement('canvas');
-  c.width = c.height = 1024;
+  c.width = c.height = 512;
   const g = c.getContext('2d');
-  const cx = 512;
-  g.fillStyle = '#6fcf4f';
-  g.fillRect(0, 0, 1024, 1024);
-  for (let r = 0; r < 12; r++) {
-    for (let a = 0; a < 32; a++) {
-      if ((r + a) % 2) continue;
-      g.beginPath();
-      const r0 = r * 40, r1 = r0 + 40, a0 = (a / 32) * TAU, a1 = ((a + 1) / 32) * TAU;
-      g.arc(cx, cx, r1, a0, a1);
-      g.arc(cx, cx, r0, a1, a0, true);
-      g.fillStyle = '#7ddb5b';
-      g.fill();
-    }
-  }
-  // 가장자리 경고 링
-  const R = 500;
-  for (let a = 0; a < 72; a++) {
+  // Large quiet brush patches survive the mobile mip levels; no high-contrast checkerboard.
+  let seed = 719;
+  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  g.fillStyle = p.turf;
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 90; i++) {
+    g.globalAlpha = 0.16 + random() * 0.14;
+    g.fillStyle = p.light;
     g.beginPath();
-    g.arc(cx, cx, R, (a / 72) * TAU, ((a + 1) / 72) * TAU);
-    g.arc(cx, cx, R - 26, ((a + 1) / 72) * TAU, (a / 72) * TAU, true);
-    g.fillStyle = a % 2 ? '#fff4d6' : '#ff8a1f';
+    g.ellipse(random() * 512, random() * 512, 12 + random() * 44, 8 + random() * 23, random() * TAU, 0, TAU);
     g.fill();
   }
-  g.lineWidth = 6;
-  g.strokeStyle = '#2a1a10';
-  g.beginPath(); g.arc(cx, cx, R - 27, 0, TAU); g.stroke();
-  for (let i = 0; i < 600; i++) {
-    const x = Math.random() * 1024, y = Math.random() * 1024;
-    g.fillStyle = Math.random() < 0.5 ? 'rgba(40,120,40,.18)' : 'rgba(255,255,200,.12)';
-    g.fillRect(x, y, 3, 8);
+  g.globalAlpha = 0.38;
+  g.strokeStyle = p.path; g.lineWidth = theme === 'fort' ? 30 : 22; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(244, 463); g.bezierCurveTo(292, 345, 219, 206, 264, 72); g.stroke();
+  g.beginPath(); g.moveTo(58, 285); g.bezierCurveTo(205, 248, 322, 210, 457, 258); g.stroke();
+  // Fine hand-painted flecks stay subordinate to fighters and ground telegraphs.
+  for (let i = 0; i < 680; i++) {
+    g.globalAlpha = 0.1 + random() * 0.1;
+    g.fillStyle = i % 3 ? p.light : p.path;
+    g.fillRect(random() * 512, random() * 512, 1 + random() * 3, 1 + random() * 4);
+  }
+  g.globalAlpha = 1;
+  g.strokeStyle = p.edge; g.lineWidth = 8;
+  g.beginPath(); g.arc(256, 256, 250, 0, TAU); g.stroke();
+  // Sparse warm edge markers give the fall boundary a readable, non-industrial trim.
+  g.strokeStyle = '#b68254'; g.lineWidth = 7;
+  for (let i = 0; i < 36; i++) {
+    const a = i / 36 * TAU;
+    g.beginPath(); g.arc(256, 256, 250, a, a + 0.024); g.stroke();
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  groundTex = t;
+  t.anisotropy = 4;
+  groundTextures.set(theme, t);
   return t;
 }
 
@@ -184,6 +191,21 @@ function stripeTexture() {
   t.repeat.set(4, 4);
   stripeTex = t;
   return t;
+}
+
+let contactTex = null;
+function contactTexture() {
+  if (contactTex) return contactTex;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const fade = g.createRadialGradient(32, 32, 5, 32, 32, 31);
+  fade.addColorStop(0, 'rgba(44,51,48,.34)');
+  fade.addColorStop(0.48, 'rgba(44,51,48,.20)');
+  fade.addColorStop(1, 'rgba(44,51,48,0)');
+  g.fillStyle = fade; g.fillRect(0, 0, 64, 64);
+  contactTex = new THREE.CanvasTexture(c);
+  contactTex.colorSpace = THREE.SRGBColorSpace;
+  return contactTex;
 }
 
 // ---------------- 도형 계산 ----------------
@@ -252,19 +274,19 @@ export function createArena(scene) {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: { top: { value: new THREE.Color(0x2f7fe0) }, mid: { value: new THREE.Color(0x8fd0ff) }, bot: { value: new THREE.Color(0xffe0b0) } },
+    uniforms: { top: { value: new THREE.Color(0x77accb) }, mid: { value: new THREE.Color(0xd0e5dc) }, bot: { value: new THREE.Color(0xb9d6cf) } },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.6, h)) : mix(mid, bot, smoothstep(0.0, 0.5, -h)); gl_FragColor = vec4(c, 1.0); }',
+    fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = normalize(vP).y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.65, h)) : mix(mid, bot, smoothstep(0.0, 0.65, -h)); gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), skyMat);
   sky.renderOrder = -1;
   scene.add(sky);
-  scene.fog = new THREE.Fog(0xbfe4ff, 90, 380);
+  scene.fog = new THREE.Fog(0xd0e5dc, 65, 250);
 
-  const hemi = new THREE.HemisphereLight(0xdff2ff, 0x6a8a4a, 1.15);
+  const hemi = new THREE.HemisphereLight(0xd9e9ff, 0x858363, 1.25);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1d8, 2.6);
-  sun.position.set(22, 40, 16);
+  const sun = new THREE.DirectionalLight(0xffecd1, 2.0);
+  sun.position.set(-24, 36, 18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -273,11 +295,11 @@ export function createArena(scene) {
   sun.shadow.normalBias = 0.04;
   scene.add(sun);
   scene.add(sun.target);
-  const amb = new THREE.AmbientLight(0xffffff, 0.35);
+  const amb = new THREE.AmbientLight(0xe2eaff, 0.2);
   scene.add(amb);
 
   const floaters = [];
-  const islandMat = toon(0x6fcf4f), islandRock = toon(0x8a7070);
+  const islandMat = toon(0x90ab92), islandRock = toon(0x8996a8), treeMat = toon(0x74998e);
   for (let i = 0; i < 7; i++) {
     const g = new THREE.Group();
     const a = (i / 7) * TAU + 0.3, d = 50 + (i % 3) * 18;
@@ -290,7 +312,7 @@ export function createArena(scene) {
     // 절전 화질에서 쓰는 인스턴스용: 단위 도형 → 원래 크기 배율
     const parts = [[0, t, new THREE.Vector3(s, 0.8, s)], [1, r, new THREE.Vector3(s, s, s)]];
     if (i % 2 === 0) {
-      const tr = new THREE.Mesh(new THREE.SphereGeometry(s * 0.45, 8, 6), toon(0x3faa3a));
+      const tr = new THREE.Mesh(new THREE.SphereGeometry(s * 0.45, 8, 6), treeMat);
       tr.position.y = s * 0.6;
       g.add(tr);
       parts.push([2, tr, new THREE.Vector3(s, s, s)]);
@@ -298,7 +320,7 @@ export function createArena(scene) {
     scene.add(g);
     floaters.push({ g, base: g.position.y, ph: i * 1.3, parts });
   }
-  const cloudMat = toon(0xffffff, { transparent: true, opacity: 0.95 });
+  const cloudMat = toon(0xf1f2ed, { transparent: true, opacity: 0.95 });
   const puff = new THREE.SphereGeometry(1, 10, 8);
   const clouds = [];
   for (let i = 0; i < 12; i++) {
@@ -309,9 +331,9 @@ export function createArena(scene) {
       m.scale.setScalar(2 + (k % 2) * 1.2);
       c.add(m);
     }
-    const a = (i / 12) * TAU, d = 70 + (i % 4) * 30;
-    c.position.set(Math.cos(a) * d, -22 + (i % 5) * 10 - (i % 2) * 30, Math.sin(a) * d);
-    c.scale.setScalar(1 + (i % 3) * 0.5);
+    const a = (i / 12) * TAU, d = 48 + (i % 4) * 23;
+    c.position.set(Math.cos(a) * d, -19 - (i % 4) * 7, Math.sin(a) * d);
+    c.scale.set(1.8 + (i % 3) * 0.7, 0.8 + (i % 3) * 0.25, 1.6 + (i % 3) * 0.6);
     scene.add(c);
     clouds.push({ c, a, d, sp: 0.01 + (i % 3) * 0.006 });
   }
@@ -324,7 +346,7 @@ export function createArena(scene) {
     const kinds = [
       [new THREE.CylinderGeometry(1, 0.9, 1, 12), islandMat],
       [new THREE.ConeGeometry(0.9, 2, 8), islandRock],
-      [new THREE.SphereGeometry(0.45, 8, 6), toon(0x3faa3a)],
+      [new THREE.SphereGeometry(0.45, 8, 6), treeMat],
     ];
     const slots = [];
     const counts = [0, 0, 0];
@@ -333,7 +355,7 @@ export function createArena(scene) {
       slots.push({ owner: f.g, k, idx: counts[k]++, L: new THREE.Matrix4().multiplyMatrices(mesh.matrix, _s.makeScale(sc.x, sc.y, sc.z)) });
     }
     const puffLow = new THREE.SphereGeometry(1, 8, 6);
-    const cloudLowMat = toon(0xffffff); // 불투명: 정렬/블렌딩 없이 그린다
+    const cloudLowMat = toon(0xf1f2ed); // 불투명: 정렬/블렌딩 없이 그린다
     let nc = 0;
     for (const c of clouds) for (const p of c.c.children) {
       p.updateMatrix();
@@ -391,33 +413,51 @@ export function createArena(scene) {
     A.obstacles = [];
   }
 
-  function makeMats() {
+  function makeMats(id = 'farm') {
+    if (!Object.hasOwn(THEMES, id)) id = 'farm';
+    const p = THEMES[id];
     return {
-      ground: M(new THREE.MeshToonMaterial({ map: groundTexture(), gradientMap: grad })),
-      grass: M(toon(0x6fcf4f)),
-      grassDark: M(toon(0x4f9a38)),
-      rim: M(toon(0x3f7d2c)),
-      dirt: M(toon(0x9a6a3e)),
-      rock: M(toon(0x7a6a6a)),
-      mound: M(toon(0x7fd65a, { side: THREE.DoubleSide })),
-      wood: M(toon(0xc98b4b)),
-      woodDark: M(toon(0x8a5a32)),
-      stone: M(toon(0x9aa3ad)),
-      stoneTop: M(toon(0xb8c0c8)),
-      brick: M(toon(0xd9a066)),
-      roof: M(toon(0xe0473a)),
-      white: M(toon(0xfff1dd)),
-      hay: M(toon(0xf2c65a)),
-      hayBand: M(toon(0xb3462e)),
-      metal: M(toon(0x5f7fa8)),
-      metalTop: M(toon(0x8fd8ff)),
-      cap: M(toon(0xff4f6a)),
-      dot: M(toon(0xffffff)),
-      holeWall: M(new THREE.MeshBasicMaterial({ color: 0x160f1c, side: THREE.BackSide })),
+      ground: M(new THREE.MeshToonMaterial({ map: groundTexture(id), gradientMap: grad })),
+      grass: M(toon(p.grass)),
+      grassDark: M(toon(p.rim)),
+      rim: M(toon(p.rim)),
+      dirt: M(toon(p.dirt)),
+      rock: M(toon(p.rock)),
+      mound: M(toon(p.grass, { side: THREE.DoubleSide })),
+      wood: M(toon(0xc29a68)),
+      woodDark: M(toon(0x81674e)),
+      stone: M(toon(p.stone)),
+      stoneTop: M(toon(p.cap)),
+      brick: M(toon(0xbba27c)),
+      roof: M(toon(0xbd7160)),
+      white: M(toon(0xeae0c7)),
+      hay: M(toon(0xd7b872)),
+      hayBand: M(toon(0x947252)),
+      metal: M(toon(0x7b97a7)),
+      metalTop: M(toon(0xb1d7dc)),
+      cap: M(toon(0xd97f78)),
+      dot: M(toon(0xfff1d8)),
+      holeWall: M(new THREE.MeshBasicMaterial({ color: 0x39424c, side: THREE.BackSide })),
       stripe: M(new THREE.MeshToonMaterial({ map: stripeTexture(), gradientMap: grad })),
       // forceSinglePass: 가산 합성이라 앞/뒷면 순서가 결과에 영향이 없다. 두 번 그리며 매 프레임 재질을 갱신하는 비용을 없앤다.
       glow: M(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.2, 2.6), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true })),
     };
+  }
+
+  // All static props share one soft contact-shadow draw, including in low quality.
+  function buildContacts() {
+    if (!st.contacts.length) return;
+    const mat = M(new THREE.MeshBasicMaterial({ map: contactTexture(), transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    const shadows = new THREE.InstancedMesh(G(new THREE.PlaneGeometry(1, 1)), mat, st.contacts.length);
+    const dummy = new THREE.Object3D();
+    st.contacts.forEach(([x, z, y, sx, sz, rot = 0], i) => {
+      dummy.position.set(x, y + 0.035, z);
+      dummy.rotation.set(-Math.PI / 2, 0, rot);
+      dummy.scale.set(sx, sz, 1); dummy.updateMatrix();
+      shadows.setMatrixAt(i, dummy.matrix);
+    });
+    shadows.renderOrder = 1;
+    st.g.add(shadows);
   }
 
   // ---------------- 지형 빌더 ----------------
@@ -440,11 +480,11 @@ export function createArena(scene) {
     top.rotation.x = -Math.PI / 2;
     top.castShadow = false;
     const seg = Math.max(24, Math.round(r * 3));
-    mesh(G(new THREE.CylinderGeometry(r, r, 1.2, seg, 1, true)), mats.grassDark, st.g, x, h - 0.6, z, false).castShadow = false;
-    const rim = mesh(G(new THREE.TorusGeometry(r, 0.3, 6, seg)), mats.rim, st.g, x, h - 0.05, z, false);
+    mesh(G(new THREE.CylinderGeometry(r, r, 0.65, seg, 1, true)), mats.grassDark, st.g, x, h - 0.325, z, false).castShadow = false;
+    const rim = mesh(G(new THREE.TorusGeometry(r, 0.18, 6, seg)), mats.rim, st.g, x, h - 0.1, z, false);
     rim.rotation.x = Math.PI / 2;
     rim.castShadow = false;
-    mesh(G(new THREE.CylinderGeometry(r * 0.99, r * 0.88, 3, seg)), mats.dirt, st.g, x, h - 2.6, z, false).castShadow = false;
+    mesh(G(new THREE.CylinderGeometry(r * 0.99, r * 0.88, 3, seg)), mats.dirt, st.g, x, h - 2.1, z, false).castShadow = false;
     const ch = Math.max(8, r * 1.1);
     const rockGeo = G(new THREE.ConeGeometry(r * 0.88, ch, 14, 3));
     const pos = rockGeo.attributes.position;
@@ -454,7 +494,7 @@ export function createArena(scene) {
       pos.setX(i, pos.getX(i) * k); pos.setZ(i, pos.getZ(i) * k);
     }
     rockGeo.computeVertexNormals();
-    const rock = mesh(rockGeo, mats.rock, st.g, x, h - 4.1 - ch / 2, z, false);
+    const rock = mesh(rockGeo, mats.rock, st.g, x, h - 3.6 - ch / 2, z, false);
     rock.rotation.x = Math.PI;
     rock.castShadow = false;
     if (holes) for (const hl of holes) {
@@ -471,6 +511,19 @@ export function createArena(scene) {
     const geo = G(new THREE.BoxGeometry(hu * 2, top - bottom, hv * 2));
     const m = mesh(geo, [side, side, cap || side, side, side, side], st.g, x, (top + bottom) / 2, z, o.outline !== false);
     m.rotation.y = -rot;
+    if (bottom >= 0) {
+      st.contacts.push([x, z, bottom, hu * 2 + 1.6, hv * 2 + 1.6, rot]);
+      // Shallow cornice and mortar courses make the fort read as built stone.
+      const lip = new THREE.Mesh(G(new THREE.BoxGeometry(hu * 2 + 0.12, 0.12, hv * 2 + 0.12)), cap || side);
+      lip.position.y = (top - bottom) / 2 - 0.065;
+      m.add(lip);
+      const courses = Math.floor((top - bottom) / 0.8);
+      for (let i = 1; i <= courses; i++) {
+        const seam = new THREE.Mesh(G(new THREE.BoxGeometry(hu * 2 + 0.015, 0.035, hv * 2 + 0.015)), mats.woodDark);
+        seam.position.y = -(top - bottom) / 2 + i * (top - bottom) / (courses + 1);
+        m.add(seam);
+      }
+    }
     const s = addShape({ type: 'box', x, z, hu, hv, rot, h: top, thick: top - bottom, solid: true, walk: o.walk !== false });
     return { m, s };
   }
@@ -540,20 +593,32 @@ export function createArena(scene) {
     g.position.set(x, 0.75, z);
     g.rotation.y = -rot;
     st.g.add(g);
-    const c = mesh(G(new THREE.CylinderGeometry(0.75, 0.75, 3.4, 18)), mats.hay, g, 0, 0, 0);
+    const c = mesh(G(new THREE.CylinderGeometry(0.75, 0.75, 3.4, 18)), mats.hay, g, 0, 0, 0, false);
     c.rotation.z = Math.PI / 2;
     for (const s of [-1, 1]) {
       const b = new THREE.Mesh(G(new THREE.TorusGeometry(0.77, 0.07, 6, 20)), mats.hayBand);
       b.position.x = s * 0.9; b.rotation.y = Math.PI / 2;
       g.add(b);
+      for (const radius of [0.26, 0.52]) {
+        const coil = new THREE.Mesh(G(new THREE.TorusGeometry(radius, 0.028, 4, 16)), mats.hayBand);
+        coil.position.x = s * 1.705; coil.rotation.y = Math.PI / 2;
+        g.add(coil);
+      }
     }
+    st.contacts.push([x, z, 0, 4.1, 2.4, rot]);
     addShape({ type: 'box', x, z, hu: 1.7, hv: 0.78, rot, h: 1.5, thick: 1.5, solid: true });
   }
 
   function stone(x, z, r, top) {
-    const m = mesh(G(new THREE.DodecahedronGeometry(1, 0)), mats.stone, st.g, x, top * 0.5, z);
-    m.scale.set(r * 1.05, top * 0.62, r);
+    const m = mesh(G(new THREE.DodecahedronGeometry(1, 0)), mats.stone, st.g, x, top * 0.5, z, false);
+    m.scale.set(r * (1 + Math.sin(x) * 0.06), top * 0.58, r);
     m.rotation.y = x;
+    // A smaller companion facet stays inside the existing circular collision footprint.
+    if (r > 1) {
+      const chip = mesh(G(new THREE.DodecahedronGeometry(1, 0)), mats.stoneTop, st.g, x + r * 0.5, top * 0.21, z + r * 0.25, false);
+      chip.scale.set(r * 0.38, top * 0.27, r * 0.44); chip.rotation.y = z;
+    }
+    st.contacts.push([x, z, 0, r * 2.8, r * 2.8]);
     addShape({ type: 'disc', x, z, r, h: top, thick: top, solid: true });
   }
 
@@ -563,16 +628,22 @@ export function createArena(scene) {
     st.g.add(mill);
     mesh(G(new THREE.CylinderGeometry(1.1, 1.6, 6, 8)), mats.white, mill, 0, 3, 0);
     mesh(G(new THREE.ConeGeometry(1.6, 2.2, 8)), mats.roof, mill, 0, 7.1, 0);
+    mesh(G(new THREE.BoxGeometry(0.68, 1.5, 0.13)), mats.woodDark, mill, 0, 0.76, 1.47, false);
+    mesh(G(new THREE.BoxGeometry(0.54, 0.7, 0.12)), mats.metal, mill, 0, 3.3, 1.29, false);
+    mesh(G(new THREE.BoxGeometry(0.68, 0.1, 0.22)), mats.wood, mill, 0, 2.93, 1.34, false);
+    st.contacts.push([x, z, base, 4.9, 4.9]);
     const blades = new THREE.Group();
     blades.position.set(0, 5.6, 1.3);
     blades.userData.dyn = true;
     mill.add(blades);
     const bladeGeo = G(new THREE.BoxGeometry(0.6, 4.2, 0.1));
     for (let i = 0; i < 4; i++) {
-      const b = mesh(bladeGeo, mats.dot, blades, 0, 0, 0);
+      const b = mesh(bladeGeo, mats.dot, blades, 0, 0, 0, false);
       b.position.set(Math.sin((i * Math.PI) / 2) * 2.1, Math.cos((i * Math.PI) / 2) * 2.1, 0);
       b.rotation.z = (-i * Math.PI) / 2;
     }
+    const hub = mesh(G(new THREE.CylinderGeometry(0.34, 0.34, 0.28, 12)), mats.woodDark, blades, 0, 0, 0.12, false);
+    hub.rotation.x = Math.PI / 2;
     st.anim.push((t, dt) => { blades.rotation.z -= dt * 1.2; });
     addShape({ type: 'disc', x, z, r: 1.8, h: base + 8, thick: 8, solid: true, walk: false });
   }
@@ -936,10 +1007,14 @@ export function createArena(scene) {
     if (!BUILD[id]) id = 'farm';
     if (A.stageId === id && st) return;
     disposeStage();
-    st = { g: new THREE.Group(), geos: [], mats: [], anim: [], pads: [] };
+    st = { g: new THREE.Group(), geos: [], mats: [], anim: [], pads: [], contacts: [] };
     group.add(st.g);
-    mats = makeMats();
+    mats = makeMats(id);
+    const palette = THEMES[id];
+    for (const [i, name] of ['top', 'mid', 'bot'].entries()) skyMat.uniforms[name].value.set(palette.sky[i]);
+    scene.fog.color.set(palette.sky[1]);
     const def = BUILD[id]();
+    buildContacts();
     A.stageId = id;
     for (const s of st.pads) if (s.padTo) s.padTo.y = gAt(s.padTo.x, s.padTo.z, 1e6, true) ?? 0;
     A.spawnPoints = def.spawns.map(([x, z]) => new THREE.Vector3(x, gAt(x, z, 1e6, true) ?? 0, z));

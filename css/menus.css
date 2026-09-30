@@ -1,0 +1,235 @@
+/* Menu art direction. Kept separate from combat HUD and touch controls. */
+.screen { --menu-navy: #141a33; --menu-cream: #fff8ec; --menu-orange: #ff7a1a; --menu-teal: #2fd3c4; color: var(--menu-cream); }
+.screen.dim { background: #0c1227b8; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.screen .panel { background: linear-gradient(145deg, #202942, #141a33 65%); border: 2px solid #ffffff24; border-radius: 20px; box-shadow: 0 20px 65px #080c2255; padding: 26px; }
+.screen .panel::before { display: none; }
+.screen .panel h2, .screen h3, .screen .sec-h { font-style: normal; transform: none; text-shadow: none; letter-spacing: -.035em; }
+.screen .panel h2 { color: var(--menu-cream); font-size: 28px; line-height: 1.2; }
+.screen .btn { min-height: 48px; padding: 10px 20px; border: 2px solid #ffffff20; border-radius: 12px; background: #2b3450; color: var(--menu-cream); box-shadow: 0 4px 12px #070c2024; font-size: 15px; font-style: normal; letter-spacing: 0; text-shadow: none; transform: none; }
+.screen .btn::after { display: none; }
+.screen .btn:hover { background: #384460; transform: translateY(-2px); filter: none; box-shadow: 0 8px 20px #080d2733; }
+.screen .btn:active { transform: translateY(1px); box-shadow: none; }
+.screen .btn.big { background: var(--menu-orange); color: var(--menu-navy); border-color: #ffad66; font-size: 18px; }
+.screen .btn.big:hover { background: #ff963f; }
+.screen .btn:disabled { opacity: .45; transform: none; filter: grayscale(.4); }
+.screen :is(.sec-h,.campaign-eyebrow,.menu-eyebrow) { color: var(--menu-teal); }
+.menu-eyebrow { font-size: 10px; font-weight: 900; letter-spacing: .2em; }
+.screen .panel-actions { gap: 10px; align-items: center; margin-top: 16px; }
+.screen :is(.tabs .tab,.k-slot,.pd-role,.pilot-role,.rc-tag,.mv-in) { transform: none; text-shadow: none; font-style: normal; box-shadow: none; border-width: 1px; }
+.screen .tabs { gap: 7px; }
+.screen .tabs .tab { border: 1px solid #ffffff25; border-radius: 10px; background: #2b3450; min-height: 42px; }
+.screen .tabs .tab.on { background: var(--menu-teal); color: var(--menu-navy); }
+.screen .help-note { border-left: 3px solid var(--menu-teal); border-radius: 8px; }
+.screen .ph-card { background: #ffffff06; border: 1px solid #ffffff22; border-top: 3px solid var(--c); border-radius: 14px; }
+.screen .opts-grid { gap: 12px; }
+.screen .sec-h { font-size: 15px; margin-top: 14px; }
+.screen :is(input[type=range],input[type=checkbox]) { accent-color: var(--menu-orange); }
+.screen :is(.opts-grid select,.peer-panel input,.peer-panel select,.peer-panel textarea) { border: 1px solid #ffffff30; background: #0f162b; border-radius: 10px; }
+
+/* A left navigation column and an unobstructed live character stage. */
+#title { display: grid; grid-template-columns: minmax(300px, .85fr) 1.15fr; gap: 6vw; align-items: center; padding: 5vh max(5vw, env(safe-area-inset-left)) 8vh; background: linear-gradient(90deg,#10172cf0 0%,#141a3388 38%,transparent 75%); overflow: hidden; }
+#title .title-content { width: 100%; max-width: 420px; justify-self: end; display: flex; flex-direction: column; gap: 18px; }
+#title .logo { animation: none; text-align: left; margin: 0; }
+#title .logo h1 { font-size: clamp(64px,7.5vw,112px); align-items: flex-start; line-height: .9; margin-left: 0; font-style: normal; transform: none; letter-spacing: -.07em; }
+#title .logo h1 span { -webkit-text-stroke-width: .035em; transform: none; text-shadow: 0 .04em 0 #141a33; }
+#title .logo h1 .l2 { color: var(--menu-orange); background: none; -webkit-text-fill-color: var(--menu-orange); filter: none; }
+#title .logo-sub { border: 0; border-radius: 0; box-shadow: none; padding: 0; transform: none; background: none; color: var(--menu-teal); font-size: 10px; letter-spacing: .23em; margin-bottom: 18px; }
+#title .logo-ko { background: none; border: none; box-shadow: none; transform: none; text-shadow: none; color: var(--menu-cream); font-size: 13px; letter-spacing: .35em; margin-top: 18px; padding: 0; }
+#title .title-tagline { font-size: 15px; font-weight: 650; color: #e0e5ef; }
+#title .title-menu { display: grid; grid-template-columns: 1fr; min-width: 0; gap: 9px; margin: 0; }
+#title .title-menu .btn { width: 100%; justify-content: flex-start; text-align: left; gap: 13px; border-radius: 15px; }
+#title .title-menu .btn > span:last-child { margin-left: auto; }
+#title .title-menu .btn > span:first-child { margin-left: 0; }
+#title .title-menu .btn small { display: block; font-size: 11px; font-weight: 500; margin-top: 3px; opacity: .7; }
+#title .title-menu .title-play { min-height: 76px; padding: 14px 22px; font-size: 25px; border-color: #ffab64; box-shadow: 0 8px 28px #ff7a1a24; }
+#title .title-play > span:last-child { font-size: 34px; }
+#title .title-mode { min-height: 62px; background: #fff8ec; color: #141a33; border-color: #fff8ec; }
+#title .title-mode:hover { background: #ffffff; }
+#title .mode-symbol { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #141a330a; color: #7c8498; font-size: 11px; letter-spacing: .08em; }
+#title .title-tools { display: flex; gap: 16px; }
+#title .title-tools .btn { min-height: 38px; padding: 4px 2px; background: none; border: none; box-shadow: none; color: #d0d7e5; font-size: 12px; gap: 6px; }
+#title .title-tools .btn span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #ffffff35; border-radius: 50%; }
+#title .title-showcase { position: relative; height: min(72vh,720px); align-self: center; border: 1px solid #fff8ec40; border-radius: 44% 44% 20px 20px; box-shadow: inset 0 0 60px #fff8ec10; pointer-events: none; }
+.showcase-kicker { position: absolute; left: 22px; top: 22px; font-size: 10px; font-weight: 850; letter-spacing: .18em; color: #fff8ec; text-shadow: 0 2px 8px #141a33; }
+#title .title-showcase .showcase-kicker { top: 12%; left: 50%; transform: translateX(-50%); white-space: nowrap; color: #141a33; text-shadow: none; }
+.showcase-caption { position: absolute; left: 0; right: 0; bottom: 22px; text-align: center; font-weight: 900; font-size: 18px; color: #fff8ec; text-shadow: 0 2px 10px #141a33; }
+.showcase-caption i { display: block; font-style: normal; font-size: 9px; letter-spacing: .24em; margin-top: 6px; color: #fff8ecb8; }
+#title .title-hint { bottom: 18px; left: 5vw; width: auto; max-width: 80vw; padding: 0; background: none; border: 0; transform: none; font-size: 11px; text-align: left; color: #d2d9e6; }
+
+/* Loadout: choices on the left, live preview and concise ability cards on the right. */
+#select { padding: max(18px,env(safe-area-inset-top)) max(22px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)); background: linear-gradient(90deg,#141a3350,transparent 75%); align-items: stretch; overflow: hidden; }
+#select .select-wrap { display: grid; grid-template-columns: minmax(390px, .95fr) minmax(250px,1fr); width: min(1240px,100%); height: 100%; margin: auto; gap: 24px; padding: 0; }
+#select .select-panel { width: 100%; max-height: 100%; min-height: 0; display: flex; align-self: center; gap: 12px; padding: 22px; overflow: auto !important; }
+#select .select-panel h2 { position: static !important; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px !important; margin: 2px 0 0 !important; color: var(--menu-teal); letter-spacing: .08em; }
+#select .select-panel h2 span { color: var(--menu-cream); font-size: 16px; letter-spacing: -.025em; margin-left: 6px; }
+#select .pilot-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#select button.pilot { position: relative; min-height: 66px; border: 2px solid #ffffff18; border-radius: 13px; padding: 10px !important; background: #252e47; box-shadow: none; gap: 8px; }
+#select button.pilot.on { background: #fff8ec; color: #141a33; border-color: var(--menu-orange); box-shadow: 0 0 0 1px var(--menu-orange); }
+#select .pilot-face { width: 38px; height: 38px; border: 0; border-radius: 10px; background: none; box-shadow: none; overflow: hidden; }
+#select .pilot-face svg { display: block; width: 100%; height: 100%; }
+#select .pilot-name { font-size: 14px; }
+#select .pilot-desc, #select .pilot-skills { display: none; }
+#select .pilot-role { font-size: 9px; padding: 2px 5px; background: #141a3315; color: #c5cee2; border: 0; margin-left: auto; }
+#select button.pilot.on .pilot-role { background: #141a330a; color: #5c6379; }
+#select .robot-list { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px !important; }
+#select button.robot-card { min-height: 62px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; background: #252e47; border: 2px solid #ffffff18; box-shadow: none; border-radius: 12px; padding: 9px 14px !important; }
+#select button.robot-card::before { width: 4px; border: 0; }
+#select button.robot-card.on { background: #fff8ec; color: #141a33; border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
+#select button.robot-card.on::after { display: none; }
+#select .rc-name { font-size: 14px; font-style: normal; text-shadow: none; color: inherit; }
+#select .rc-tag { font-size: 9px; padding: 1px 5px; border: 0; border-radius: 4px; }
+#select .opt-row { margin-top: 2px; gap: 10px 18px; }
+#select .opt { gap: 7px; }
+#select .opt > span { font-style: normal; text-shadow: none; font-size: 11px; color: #aebad2; }
+#select .opt-stage { flex-basis: 100%; }
+#select .seg { border: 1px solid #ffffff20; border-radius: 9px; background: #0f162b; box-shadow: none; overflow: hidden; transform: none; }
+#select .seg button { font-size: 11px; min-height: 36px; padding: 5px 10px; font-style: normal; text-shadow: none; border: 0; background: none; }
+#select .seg button.on { background: #2fd3c4; color: #141a33; }
+#select .stage-desc { font-size: 11px; line-height: 1.4; color: #aebad2; }
+#select .select-actions { position: sticky; bottom: -22px; display: flex; flex-direction: row; gap: 10px; margin-top: 0 !important; padding: 12px 0 2px !important; background: #141a33; z-index: 2; }
+#select .select-actions .btn { min-height: 48px; padding: 8px 16px; font-size: 14px; flex: 0 0 auto; }
+#select .select-actions .btn.big { font-size: 18px; flex: 1; }
+#select .detail-col { display: flex; width: 100%; height: 100%; max-height: 100%; align-self: stretch; position: relative; top: auto; margin: 0; gap: 10px; overflow: hidden; }
+#select .select-showcase { position: relative; flex: 1; min-height: 180px; border: 1px solid #fff8ec55; border-radius: 20px; }
+#select :is(.pilot-detail,.robot-detail) { padding: 14px 16px; gap: 6px; background: #141a33f2; border: 1px solid #ffffff30; border-left: 3px solid var(--c); border-radius: 14px; box-shadow: 0 8px 26px #080d2724; }
+#select :is(.pilot-detail,.robot-detail) h3 { font-size: 18px; transform: none; text-shadow: none; font-style: normal; }
+#select :is(.pilot-detail,.robot-detail) > p { display: block; font-size: 11px; line-height: 1.5; }
+#select .pilot-detail :is(.stats,.traits,.move-list), #select .robot-detail :is(.stats,.skill-desc) { display: none; }
+#select .pilot-skill-rows { display: flex; flex-wrap: wrap; list-style: none; padding: 0; gap: 4px 12px; }
+#select .pilot-detail .pilot-skill-rows li { font-size: 11px; color: #cbd5e7; }
+
+/* Secondary screens share the same quiet surfaces and strong primary action. */
+.screen .campaign-panel { width: min(1060px,100%); }
+.screen .campaign-heading h2 { font-size: 30px; }
+.screen #campaign-progress { padding: 8px 12px; border-radius: 99px; background: #2fd3c414; color: var(--menu-teal); font-size: 12px; }
+.screen .campaign-loadout { background: #fff8ec; color: #141a33; border: none; border-radius: 14px; padding: 12px 16px; }
+.screen .campaign-loadout .btn { background: #141a33; }
+.screen .mission-card { border: 1px solid #ff7a1a88; background: linear-gradient(150deg,#30374e,#20273e); border-radius: 16px; gap: 10px; padding: 20px; }
+.screen .mission-card.locked { background: #141a3380; border-color: #ffffff18; }
+.screen .mission-card.cleared { border-color: #2fd3c470; }
+.screen .mission-number { color: var(--menu-orange); font-size: 28px; letter-spacing: -.06em; }
+.screen .mission-card h3 { font-size: 17px; }
+.screen .mission-goal { font-size: 13px; color: #dce2ed; }
+.screen .mission-meta,.screen .mission-medals { font-size: 11px; color: #9daac3; }
+.screen .peer-panel .campaign-eyebrow { color: var(--menu-teal); }
+.screen .peer-guide,.screen .pwa-panel { border-color: #ffffff20; background: #ffffff04; border-radius: 14px; }
+.screen .peer-paths > .btn[aria-pressed=true] { background: var(--menu-orange); color: var(--menu-navy); border-color: #ffad66; }
+.screen #peer-status { background: #2fd3c40d; border-left-color: var(--menu-teal); border-radius: 10px; }
+.screen .pause-panel { min-width: min(440px,100%); }
+.screen .pause-body .col { flex: 1; gap: 10px; }
+.screen .pause-keys { border: 1px solid #ffffff20; background: #ffffff04; border-radius: 12px; }
+.screen .result-panel { width: min(780px,100%); }
+.screen .result-panel h2 { font-size: 44px; color: var(--menu-orange); }
+.screen #result-table { border-radius: 12px; }
+.screen .result-panel .select-actions { gap: 10px; flex-wrap: wrap; }
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .screen { padding: 12px max(18px,env(safe-area-inset-left)); }
+  .screen .panel { padding: 18px; max-height: calc(100dvh - 24px); }
+  #title { grid-template-columns: minmax(290px,.9fr) 1.1fr; gap: 7vw; padding: 16px 7vw 28px; }
+  #title .title-content { max-width: 370px; gap: 9px; }
+  #title .logo { position: relative; }
+  #title .logo h1 { font-size: clamp(36px,10vh,60px); flex-direction: row; gap: 6px; margin: 0 0 2px; transform: none; }
+  #title .logo h1 .l1,#title .logo h1 .l2 { transform: none; }
+  #title .logo-sub { font-size: 8px; margin-bottom: 10px; }
+  #title .logo-ko { display: none; }
+  #title .title-tagline { font-size: 11px; }
+  #title .title-menu { gap: 6px; }
+  #title .title-menu .title-play { min-height: 52px; padding: 7px 16px; font-size: 20px; }
+  #title .title-menu .title-mode { min-height: 43px; padding: 5px 13px; font-size: 12px; gap: 9px; }
+  #title .title-menu .title-mode small { display: inline; margin-left: 8px; font-size: 9px; }
+  #title .title-menu .title-play small { font-size: 9px; margin-top: 1px; }
+  #title .mode-symbol { width: 24px; height: 24px; font-size: 9px; }
+  #title .title-tools { gap: 20px; }
+  #title .title-tools .btn { min-height: 27px; font-size: 10px; }
+  #title .title-showcase { height: 85vh; max-height: 440px; }
+  #title .title-hint { position: absolute; bottom: 8px; left: 7vw; margin: 0; font-size: 9px; }
+  .showcase-caption { bottom: 12px; font-size: 13px; }
+  #select { padding: 10px max(16px,env(safe-area-inset-left)); }
+  #select .select-wrap { grid-template-columns: minmax(370px,1.35fr) minmax(220px,1fr); gap: 14px; }
+  #select .select-panel { gap: 6px; padding: 13px; height: 100%; max-height: 100% !important; align-self: stretch; }
+  #select .menu-eyebrow { font-size: 8px; }
+  #select .select-panel h2 span { font-size: 12px; }
+  #select .pilot-list { gap: 5px; }
+  #select button.pilot { min-height: 42px; padding: 3px 8px !important; }
+  #select .pilot-name { font-size: 12px; }
+  #select .pilot-face { width: 34px; height: 34px; }
+  #select .pilot-role { font-size: 8px; }
+  #select .robot-list { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px !important; }
+  #select button.robot-card { min-height: 43px; padding: 5px 8px !important; gap: 3px; }
+  #select .rc-name { font-size: 11px; }
+  #select .rc-tag { font-size: 8px; padding: 1px 3px; }
+  #select .opt-row { gap: 4px 12px; }
+  #select .opt { gap: 5px; }
+  #select .opt > span { font-size: 10px; }
+  #select .seg button { min-height: 30px; font-size: 10px; padding: 4px 8px; }
+  #select .opt-stage { flex-basis: auto; }
+  #select .stage-desc { display: none; }
+  #select .select-actions { margin-top: auto !important; padding: 5px 0 0 !important; bottom: -13px; }
+  #select .select-actions .btn { min-height: 42px; padding: 5px 14px; }
+  #select .select-showcase { min-height: 130px; }
+  #select :is(.pilot-detail,.robot-detail) { padding: 8px 10px; gap: 3px; }
+  #select :is(.pilot-detail,.robot-detail) h3 { font-size: 13px; }
+  #select :is(.pilot-detail,.robot-detail) > p { display: none; }
+  #select .pilot-detail .pilot-skill-rows { display: flex; }
+  #select .pilot-detail .pilot-skill-rows li { font-size: 9px; }
+  #select .showcase-kicker { left: 12px; top: 12px; font-size: 8px; }
+  .screen .campaign-heading h2 { font-size: 24px; }
+}
+
+@media (orientation: portrait) and (max-width: 700px) {
+  .screen { padding: max(12px,env(safe-area-inset-top)) 14px max(12px,env(safe-area-inset-bottom)); }
+  .screen .panel { padding: 20px 16px; border-radius: 18px; }
+  #title { display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr; padding: max(24px,env(safe-area-inset-top)) 24px max(34px,env(safe-area-inset-bottom)); gap: 0; background: linear-gradient(0deg,#141a33 0%,#141a33f2 30%,#141a3300 76%); }
+  #title .title-content { display: contents; }
+  #title .logo { position: absolute; left: 26px; top: max(29px,env(safe-area-inset-top)); z-index: 1; }
+  #title .logo-sub { font-size: 8px; margin-bottom: 12px; letter-spacing: .13em; color: #141a33; }
+  #title .logo h1 { font-size: clamp(48px,16vw,68px); margin-left: 12px; }
+  #title .logo-ko { display: none; }
+  #title .title-tagline { position: absolute; bottom: 384px; left: 26px; font-size: 12px; }
+  #title .title-showcase { position: absolute; left: 18%; right: 12px; top: 180px; height: calc(100dvh - 582px); border-radius: 50% 50% 18px 18px; border-color: #fff8ec30; }
+  #title .title-showcase .showcase-kicker { display: none; }
+  #title .showcase-caption { bottom: 10px; font-size: 12px; }
+  #title .showcase-caption i { display: none; }
+  #title .title-menu { position: absolute; left: 24px; right: 24px; bottom: 88px; gap: 8px; }
+  #title .title-menu .title-play { min-height: 66px; font-size: 23px; }
+  #title .title-menu .title-mode { min-height: 60px; }
+  #title .title-tools { position: absolute; bottom: 40px; left: 24px; }
+  #title .title-hint { position: absolute; left: 24px; bottom: 16px; font-size: 9px; margin: 0; max-width: calc(100% - 48px); }
+  #select { padding: max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)); overflow-y: auto; }
+  #select .select-wrap { display: flex; flex-direction: column; justify-content: flex-start; gap: 12px; height: auto; min-height: 100%; margin: 0; }
+  #select .select-panel { order: 2; max-height: none !important; overflow: visible !important; padding: 16px; gap: 10px; flex: none; }
+  #select .detail-col { order: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 180px auto; flex: none; height: auto; overflow: visible; gap: 6px; }
+  #select .select-showcase { grid-column: 1 / -1; min-height: 180px; }
+  #select :is(.pilot-detail,.robot-detail) { padding: 9px; min-width: 0; }
+  #select :is(.pilot-detail,.robot-detail) h3 { font-size: 12px; flex-wrap: wrap; gap: 4px; }
+  #select :is(.pilot-detail,.robot-detail) > p, #select .pilot-skill-rows { display: none; }
+  #select .pd-role { font-size: 8px; padding: 1px 4px; }
+  #select button.pilot { min-height: 49px; padding: 3px 6px !important; column-gap: 7px; row-gap: 2px; grid-template-columns: 38px minmax(0,1fr); grid-template-areas: "face name" "face role"; }
+  #select .pilot-role { font-size: 8px; max-width: 55px; }
+  #select .pilot-name { font-size: 12px; }
+  #select .robot-list { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px !important; }
+  #select button.robot-card { min-height: 54px; padding: 5px 7px !important; }
+  #select .rc-name { font-size: 11px; }
+  #select .rc-tag { font-size: 8px; padding: 1px 3px; }
+  #select .opt-row { gap: 8px; }
+  #select .seg button { min-height: 34px; padding: 5px 8px; font-size: 10px; }
+  #select .stage-desc { display: none; }
+  #select .select-actions { bottom: -16px; padding-top: 8px !important; }
+  .screen .campaign-heading h2 { font-size: 24px; }
+  .screen #mission-list { grid-template-columns: 1fr; }
+  .screen .mission-card { padding: 18px; }
+  .screen .campaign-loadout { align-items: flex-start; gap: 10px; }
+  .screen .campaign-loadout .btn { width: 100%; }
+  .screen .result-panel h2 { font-size: 36px; }
+}
+@media (orientation: portrait) and (max-height: 740px) {
+  #title .title-showcase { top: 150px; height: calc(100dvh - 466px); }
+  #title .logo h1 { font-size: 48px; }
+  #title .title-tagline { display: none; }
+  #title .title-menu { bottom: 76px; gap: 6px; }
+  #title .title-menu .title-mode { min-height: 50px; padding: 5px 15px; }
+  #title .title-menu .title-play { min-height: 58px; }
+  #title .title-tools { bottom: 34px; }
+  #title .title-hint { bottom: 12px; }
+}

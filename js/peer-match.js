@@ -3,9 +3,12 @@ import * as THREE from 'three';
 import { KEYS, applyRig } from './poses.js';
 import { ROBOT_ORDER } from './data.js';
 import { PART_ALL } from './robot-systems.js';
+import { HUMAN_ACTS, ROBOT_ACTS } from './actions.js';
+import { PEER_VERSION } from './peer-protocol.js';
 import * as audio from './audio.js';
 
-const EDGES = ['jump','atk','hvy','dash','actP','grdP'];
+export const INPUT_EDGES = ['jump','atk','hvy','dash','actP','grdP'];
+const EDGES = INPUT_EDGES;
 const BUTTONS = [...EDGES, 'atkD','hvyD','grd','act'];
 const neutral = () => Object.fromEntries([['mx',0],['mz',0], ...BUTTONS.map(k=>[k,false])]);
 const num = (v, min=-10000, max=10000) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -39,15 +42,15 @@ export class RemoteCtrl {
 }
 
 // v1.4: cd1/cd2/cd2Max (skill HUD), hitsTaken (break burst), bubbleT (Dori barrier), exposedT (robot weak point)
-const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT'];
+const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT','koT','ejectHold'];
 // v1.5: juice/maxJuice (carrot juice energy), broken (destroyed parts bitmask, robot-systems.js PART_BIT)
 const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT','juice','maxJuice','broken'];
 const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaternion.toArray().map(round),s:mesh.scale.toArray().map(round),visible:mesh.visible});
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
-  parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
+  action:f.act?.name??null,spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
 const numbers = (o,keys)=>Object.fromEntries(keys.map(k=>[k,round(o[k]||0)]));
 export function captureSnapshot(game,{matchId,seq,onInvalid}) {
-  const state={v:1,matchId,seq,time:round(game.time),timeLeft:round(game.timeLeft),phase:game.phase,introStep:game.introStep ?? -1,
+  const state={v:PEER_VERSION,matchId,seq,time:round(game.time),timeLeft:round(game.timeLeft),phase:game.phase,introStep:game.introStep ?? -1,
     humans:game.humans.map(h=>({...fighterState(h),...numbers(h,HNUM),id:h.id,dead:h.dead,out:h.out,riding:h.riding?.id??null,boardTarget:h.boardTarget?.id??null,
       combo:{n:h.combo.n,dmg:round(h.combo.dmg),best:h.combo.best}})),
     robots:game.robots.map(r=>({...fighterState(r),...numbers(r,RNUM),id:r.id,type:r.type,owner:r.owner?.id??null,pilot:r.pilot?.id??null,cds:numbers(r.cds,['k','l','dash']),ring:rootState(r.ring)})),
@@ -62,18 +65,19 @@ export function captureSnapshot(game,{matchId,seq,onInvalid}) {
 }
 const validRoot = r=>r && vector(r.p,3) && vector(r.q,4,1.01) && Math.abs(Math.hypot(...r.q)-1)<.01 && vector(r.s,3,200) && r.s.every(v=>v>=0) && bool(r.visible);
 const validFighter = f=>validRoot(f) && vector(f.pos,3) && vector(f.pose,KEYS.length,1000) && num(f.hipY,-100,100) && typeof f.state==='string' && /^[a-zA-Z]{1,24}$/.test(f.state)
-  && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
+  && num(f.spinYaw) && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
+const validAction = (name, table)=>name===null||(typeof name==='string'&&Object.hasOwn(table,name));
 export function validateSnapshot(s,matchId) {
   try {
-    if(!s || s.v!==1 || s.matchId!==matchId || !integer(s.seq) || !num(s.time,0,7200) || !num(s.timeLeft,-1,7200) || !['intro','fight','end'].includes(s.phase) || !integer(s.introStep,-1,3)) return false;
+    if(!s || s.v!==PEER_VERSION || s.matchId!==matchId || !integer(s.seq) || !num(s.time,0,7200) || !num(s.timeLeft,-1,7200) || !['intro','fight','end'].includes(s.phase) || !integer(s.introStep,-1,3)) return false;
     if(!Array.isArray(s.humans)||s.humans.length!==4 || !Array.isArray(s.robots)||s.robots.length>12) return false;
     const ids=new Set(s.robots.map(r=>r.id)); if(ids.size!==s.robots.length) return false;
     const rid=id=>id===null||ids.has(id), hid=id=>id===null||integer(id,0,3);
     if(!s.humans.every((h,i)=>h.id===i&&validFighter(h)&&HNUM.every(k=>num(h[k],-1000,1000000))&&integer(h.stock,0,3)&&num(h.hp,0,h.maxHp)&&num(h.maxHp,1,1000)
-      && bool(h.dead)&&bool(h.out)&&rid(h.riding)&&rid(h.boardTarget)&&h.combo&&['n','dmg','best'].every(k=>num(h.combo[k],0,1000000)))) return false;
+      && validAction(h.action,HUMAN_ACTS)&&bool(h.dead)&&bool(h.out)&&rid(h.riding)&&rid(h.boardTarget)&&h.combo&&['n','dmg','best'].every(k=>num(h.combo[k],0,1000000)))) return false;
     if(!s.robots.every(r=>integer(r.id,100,1000000)&&ROBOT_ORDER.includes(r.type)&&validFighter(r)&&RNUM.every(k=>num(r[k],-1000,10000))&&num(r.armor,0,r.maxArmor)&&num(r.maxArmor,1,10000)
       && num(r.maxJuice,1,1000)&&num(r.juice,0,r.maxJuice)&&integer(r.broken,0,PART_ALL)
-      && hid(r.owner)&&hid(r.pilot)&&r.cds&&['k','l','dash'].every(k=>num(r.cds[k],-7200,1000))&&validRoot(r.ring))) return false;
+      && validAction(r.action,ROBOT_ACTS)&&hid(r.owner)&&hid(r.pilot)&&r.cds&&['k','l','dash'].every(k=>num(r.cds[k],-7200,1000))&&validRoot(r.ring))) return false;
     if(!s.humans.every(h=>h.riding===null||s.robots.find(r=>r.id===h.riding)?.pilot===h.id) || !s.robots.every(r=>r.pilot===null||s.humans[r.pilot].riding===r.id)) return false;
     if(!Array.isArray(s.projectiles)||s.projectiles.length>64||!s.projectiles.every(p=>validRoot(p)&&['shot','boomer','fist','missile'].includes(p.type)))return false;
     if(!Array.isArray(s.carrots)||s.carrots.length>8||!s.carrots.every(validRoot))return false;
@@ -89,6 +93,11 @@ function setRoot(mesh,s) { mesh.position.fromArray(s.p); mesh.quaternion.fromArr
 export class PeerReplica {
   constructor(game,{matchId,localIndex=1}) {
     this.game=game; this.matchId=matchId; this.localIndex=localIndex; this.seq=-1; this.targets=new Map(); this.pools={};
+    // Game.start builds player 0 before the guest switches control to player 1.
+    // Reassign the two existing shared textures to the actual local player.
+    const playerMark=game.humans.find(h=>h.markPlayer)?.mark?.material.map;
+    const otherMark=game.humans.find(h=>!h.markPlayer)?.mark?.material.map;
+    if(playerMark&&otherMark)for(const h of game.humans){h.markPlayer=!!h.isPlayer;h.mark.material.map=h.isPlayer?playerMark:otherMark;}
     this.group=new THREE.Group(); game.scene.add(this.group);
     this.geometries={shot:new THREE.SphereGeometry(.42,8,6),boomer:new THREE.TorusGeometry(.7,.16,6,12),fist:new THREE.BoxGeometry(1.6,1.6,2),missile:new THREE.ConeGeometry(.45,1.7,8),carrot:new THREE.ConeGeometry(.4,1.7,8),trap:new THREE.CircleGeometry(.9,12),shield:new THREE.IcosahedronGeometry(1,1),ring:new THREE.PlaneGeometry(2,2),beam:new THREE.CylinderGeometry(1,1,1,8)};
     this.geometries.beam.translate(0,.5,0); this.up=new THREE.Vector3(0,1,0); this.direction=new THREE.Vector3();
@@ -131,6 +140,8 @@ export class PeerReplica {
   }
   fighter(f,s,snap) {
     f.pos.fromArray(s.pos);f.onGround=s.onGround;f.state=s.state;
+    f.spinYaw=s.spinYaw;
+    f.act=s.action===null?null:{name:s.action,def:(f.kind==='robot'?ROBOT_ACTS:HUMAN_ACTS)[s.action]};
     for(let i=0;i<KEYS.length;i++)f.pose[KEYS[i]]=s.pose[i];
     applyRig(f.rig,f.pose,f.restHips,f.sc);f.rig.hips.position.y=s.hipY;
     ['remote','handL','handR'].forEach((k,i)=>{if(f.rig[k])f.rig[k].visible=s.parts[i];});
@@ -141,6 +152,7 @@ export class PeerReplica {
     let t=this.targets.get(f);
     if(!t)this.targets.set(f,t={p:new THREE.Vector3(),q:new THREE.Quaternion()});
     t.p.fromArray(s.p);t.q.fromArray(s.q).normalize();
+    f.syncMark();
   }
   visuals(key,items,typeOf) {
     const pool=this.pools[key] ||= [];
@@ -159,7 +171,12 @@ export class PeerReplica {
   }
   update(dt) {
     const a=1-Math.exp(-dt*30);
-    for(const [f,t]of this.targets){f.rig.root.position.lerp(t.p,a);f.rig.root.quaternion.slerp(t.q,a);}
+    for(const [f,t]of this.targets){
+      f.rig.root.position.lerp(t.p,a);f.rig.root.quaternion.slerp(t.q,a);
+      f.syncMark();
+      // Keep the mark on the ground while its fighter interpolates between packets.
+      if(f.mark?.visible)f.mark.position.y=f.gh-f.rig.root.position.y+.05;
+    }
     for(const r of this.game.robots)if(r.debris?.length)r.updateDebris(dt);
     const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.updateCamera(dt);
   }

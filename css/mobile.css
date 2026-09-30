@@ -884,6 +884,64 @@ html.touch-mode #hud .skills { display: none; }
   html.touch-mode #hud .killfeed { display: none; }
 }
 
+/* Match controls: one material, one shadow, and orange reserved for the context action. */
+#touch-controls { --control-ink: #141a33; --control-paper: #fff8ec; --control-orange: #ff7a1a; }
+#touch-controls .touch-stick {
+  background: #141a3326; border: 2px solid #fff8ec66;
+  box-shadow: inset 0 0 0 1px #141a3333, 0 3px 0 #141a3326;
+}
+#touch-controls .touch-knob { background: var(--control-paper); border: 2px solid var(--control-ink); box-shadow: 0 3px 0 #141a3359; }
+#touch-controls .touch-stick.is-down { border-color: var(--control-paper); box-shadow: inset 0 0 0 1px #141a3333, 0 3px 0 #141a3326; }
+#touch-controls .touch-btn {
+  --tc: var(--control-ink); color: var(--control-paper); background: var(--control-ink);
+  border: 2px solid #fff8ec99; box-shadow: 0 4px 0 #141a3359; opacity: .96; filter: none;
+  font-style: normal; text-shadow: none;
+}
+#touch-controls .touch-btn[data-touch-action="atk"] {
+  color: var(--control-ink); background: #fff; border: 2px solid var(--control-ink); box-shadow: 0 4px 0 #141a3359;
+}
+#touch-controls .touch-btn[data-touch-action="act"] {
+  color: var(--control-ink); background: var(--control-orange); border-color: var(--control-ink); box-shadow: 0 4px 0 #141a3359;
+}
+#touch-controls .touch-icon { width: 59%; height: 59%; flex: none; filter: none; }
+#touch-controls .touch-icon .f { fill: var(--control-paper); stroke: var(--control-ink); }
+#touch-controls .touch-icon .l { stroke: var(--control-paper); }
+#touch-controls .touch-icon .k { stroke: var(--control-ink); }
+#touch-controls .touch-btn > .touch-glyph { order: -1; width: 35%; height: 35%; }
+#touch-controls .touch-btn[data-touch-action="atk"] .touch-glyph { width: 38%; height: 38%; }
+#touch-controls .touch-glyph .f { fill: var(--control-ink); stroke: var(--control-ink); }
+#touch-controls .touch-glyph .l { stroke: var(--control-ink); }
+#touch-controls .touch-glyph .k { stroke: var(--control-paper); }
+#touch-controls .touch-label { font-size: calc(11px * var(--m-k)); font-style: normal; text-shadow: none; }
+#touch-controls .touch-btn[data-touch-action="atk"] .touch-label { font-size: calc(17px * var(--m-k)); }
+#touch-controls .touch-sub { font-size: calc(9px * var(--m-k)); color: var(--control-paper); text-shadow: none; background: var(--control-ink); }
+#touch-controls .touch-btn[data-touch-action="atk"] .touch-sub,
+#touch-controls .touch-btn[data-touch-action="act"] .touch-sub { color: var(--control-ink); background: none; }
+#touch-controls .touch-btn[data-touch-action="act"] .touch-sub { font-size: calc(8px * var(--m-k)); }
+#touch-controls .touch-btn.is-down { transform: translateY(3px) scale(.96); box-shadow: 0 1px 0 #141a3359; filter: none; }
+#touch-controls .touch-btn[data-touch-action="atk"].is-down { background: var(--control-paper); }
+#touch-controls .touch-btn.is-active { border-color: var(--control-paper); box-shadow: 0 4px 0 #141a3359, 0 0 0 2px #fff8ec59; }
+#touch-controls .touch-btn.is-cooling { opacity: .85; }
+#touch-controls .touch-btn.is-cooling .touch-sub { color: var(--control-paper); }
+#touch-controls .touch-btn.is-locked { opacity: .5; }
+#touch-controls .touch-btn.is-locked .touch-sub { color: var(--control-orange); }
+#touch-controls .touch-btn.is-burst::before { border: 3px solid var(--control-orange); box-shadow: none; inset: -6px; }
+#touch-controls .touch-btn.is-burst .touch-sub { color: var(--control-orange); }
+#touch-controls .touch-special[data-kind="board"]::after,
+#touch-controls .touch-special[data-kind="exit"]::after { background: conic-gradient(var(--control-paper) calc(var(--hold, 0) * 360deg), #141a3333 0); }
+#touch-controls .touch-menu {
+  top: max(10px, var(--m-sat)); right: max(12px, var(--m-sar)); width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  padding: 11px; color: var(--control-paper); background: var(--control-ink); border: 1px solid #fff8ec50; border-radius: 12px; box-shadow: 0 3px 0 #141a3340;
+}
+#touch-controls .touch-menu svg { display: block; width: 20px; height: 20px; fill: currentColor; }
+#touch-controls .touch-status { padding: 4px 8px; font-size: 10px; color: var(--control-paper); background: #141a33e6; border: 0; box-shadow: none; text-shadow: none; }
+#touch-controls .touch-btn:focus-visible, #touch-controls .touch-menu:focus-visible, #touch-controls .touch-stick:focus-visible { outline-color: var(--control-orange); }
+@media (max-width: 360px) and (orientation: portrait) {
+  #touch-controls { --m-edge: 9px; --tg: 6px; --stick0: 104px; --ta0: 72px; --tb0: 48px; --tj0: 48px; }
+  #touch-controls .touch-jump { left: calc(var(--m-sal) + 12px + var(--stick) - var(--tj)); bottom: calc(var(--m-sab) + var(--stick) + 15px); }
+  #touch-controls.left-handed .touch-jump { left: auto; right: calc(var(--m-sar) + 12px + var(--stick) - var(--tj)); }
+}
+
 /* ---------------- 선택 화면: 파일럿 카드 v2 (8명 · 클래스·역할 · 스킬 1/2) ----------------
    카드 = 얼굴 | 이름 + 역할 칩 / 스킬 1·2 이름. 한 줄 소개(desc)는 오른쪽 상세 패널에만 둔다. */
 .pilot-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }

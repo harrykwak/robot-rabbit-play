@@ -7,6 +7,7 @@ import { localHit, pickPart, damagePart, comboDamageMul, COMBO_MOVES } from './r
 import { AICtrl } from './ai.js';
 import * as audio from './audio.js';
 import * as input from './input.js';
+import { CAMERA_PITCH, cameraViewport, cameraSubject, fitSubject, frameCombat, cameraAim } from './camera-framing.js';
 
 const keyName = (a) => document.documentElement.classList.contains('touch-mode') && a === 'act' ? '호출 버튼' : input.actionLabel(a);
 
@@ -82,6 +83,7 @@ export class Game {
     this.trauma = 0;
     this.camPos = new THREE.Vector3(0, 20, 26);
     this.camLook = new THREE.Vector3();
+    this.camLead = new THREE.Vector3();
     this.camDist = 20;
     this.zoomPunch = 0;
     this.ringGeo = new THREE.RingGeometry(0.86, 1, 48);
@@ -129,6 +131,11 @@ export class Game {
     this.carrotT = 7;
     this.camPos.set(0, 40, 60);
     this.camDist = 20;
+    this.camLead.set(0, 0, 0);
+    this.camLook.set(0, 0, 0);
+    this.zoomPunch = 0;
+    this._cameraReady = false;
+    this._camKind = null;
     audio.startMusic('battle');
   }
 
@@ -1690,47 +1697,58 @@ export class Game {
   }
 
   updateCamera(realDt) {
-    const cam = this.camera;
-    const pl = this.player;
-    const focus = tA.set(0, 0, 0);
-    let dist = 22;
-    if (pl) {
-      const me = pl.riding || pl;
-      const mp = pl.dead ? tB.set(0, 0, 0) : tB.copy(me.pos);
-      mp.y = Math.max(-2, Math.min(me.gh !== undefined && me.gh > -50 ? me.gh + Math.min(3, Math.max(0, mp.y - me.gh)) : mp.y, 8));
-      // 장외로 날아가도 카메라는 섬을 벗어나지 않는다
-      const md = Math.hypot(mp.x, mp.z), lim = this.arena.radius - 5;
-      if (md > lim) { mp.x *= lim / md; mp.z *= lim / md; }
-      // 주변 전투원을 느슨하게 화면에 담는다
-      let sx = 0, sz = 0, n = 0, spread = 0;
-      for (const h of this.humans) {
-        if (h.dead || h.out) continue;
-        const e = h.riding || h;
-        const d = this.dist2D(e.pos, mp);
-        if (d > 22) continue;
-        const w = h === pl ? 3 : 1;
-        sx += e.pos.x * w; sz += e.pos.z * w; n += w;
-        spread = Math.max(spread, d);
-      }
-      for (const r of this.robots) if (r.state === 'idle' && r.owner === pl) { const d = this.dist2D(r.pos, mp); if (d < 22) { sx += r.pos.x; sz += r.pos.z; n++; spread = Math.max(spread, d); } }
-      if (n > 0) focus.set(sx / n, mp.y * 0.6, sz / n); else focus.copy(mp);
-      const fd = Math.hypot(focus.x, focus.z);
-      if (fd > lim) { focus.x *= lim / fd; focus.z *= lim / fd; }
-      dist = (pl.riding ? 22 : 16) + clamp(spread - 6, 0, 16) * 0.5;
-      if (pl.dead) dist = 30;
-      if (this.phase === 'intro') dist += 6;
+    const cam = this.camera, pl = this.player;
+    if (!pl) return;
+    const width = typeof innerWidth === 'number' ? innerWidth : 1280;
+    const height = typeof innerHeight === 'number' ? innerHeight : 720;
+    const touch = typeof document !== 'undefined' && document.documentElement?.classList.contains('touch-mode');
+    const offset = cam.view?.enabled ? cam.view.offsetY * height / cam.view.fullHeight : 0;
+    const view = cameraViewport(width, height, touch, offset, cam.fov);
+    const me = pl.riding || pl;
+    const player = cameraSubject(me, this._camPlayer || (this._camPlayer = {}));
+    if (pl.dead || pl.out) { player.x = player.y = player.z = 0; }
+    const lead = tA.set(0, 0, 0);
+    if (!pl.dead && me.vel) {
+      lead.set(me.vel.x * 0.14, 0, me.vel.z * 0.14);
+      if (lead.length() > 1.2) lead.setLength(1.2);
     }
+    this.camLead.lerp(lead, 1 - Math.exp(-realDt * 2.5));
+    const pts = this._camPts || (this._camPts = []);
+    const pool = this._camPool || (this._camPool = []);
+    pts.length = 0;
+    const add = (entity) => {
+      if (Math.hypot(entity.pos.x - player.x, entity.pos.z - player.z) >= 12) return;
+      const i = pts.length;
+      pts.push(cameraSubject(entity, pool[i] || (pool[i] = {})));
+    };
+    for (const h of this.humans) if (h !== pl && !h.dead && !h.out) add(h.riding || h);
+    for (const r of this.robots) if (r.state === 'idle' && r.owner === pl) add(r);
+    const frame = frameCombat(view, player, pts, this.camLead, this.arena.radius,
+      this._camFrame || (this._camFrame = {}));
+    let distance = frame.distance;
+    if (pl.dead || pl.out) distance *= 1.6;
+    if (this.phase === 'intro') distance *= 1.35;
+    const k = 1 - Math.exp(-realDt * 6.5);
+    if (!this._cameraReady) {
+      this.camLook.set(frame.x, frame.y, frame.z);
+      this.camDist = distance;
+      this._cameraReady = true;
+    } else {
+      this.camLook.lerp(tB.set(frame.x, frame.y, frame.z), k);
+      // Boarding changes the visual center by several units at once. Center
+      // the new body before fitting, avoiding a one-frame excessive zoom-out.
+      if (this._camKind !== me.kind) this.camLook.y = frame.y;
+    }
+    this._camKind = me.kind;
     this.zoomPunch = Math.max(0, this.zoomPunch - realDt * 2.2);
-    dist *= 1 - Math.sin(this.zoomPunch * Math.PI) * 0.12;
-    // Preserve useful horizontal field of view on narrow phone screens.
-    // Presentation only: this does not affect movement or combat distances.
-    dist *= Math.max(1, Math.min(1.8, 1.05 / cam.aspect));
-    this.camDist += (dist - this.camDist) * (1 - Math.exp(-realDt * 3));
-    const pitch = 0.8;
-    const want = tC.set(focus.x, focus.y + Math.sin(pitch) * this.camDist, focus.z + Math.cos(pitch) * this.camDist);
-    const k = 1 - Math.exp(-realDt * (this.phase === 'intro' ? 1.8 : 6.5));
-    this.camPos.lerp(want, k);
-    this.camLook.lerp(focus, k);
+    distance *= 1 - Math.sin(this.zoomPunch * Math.PI) * 0.06;
+    this.camDist += (distance - this.camDist) * (1 - Math.exp(-realDt * (distance > this.camDist ? 4.5 : 1.5)));
+    // A mount, launch or resize can grow the visual bounds in one frame.
+    // Protect the local fighter immediately, while normal zoom-in stays slow.
+    this.camDist = Math.max(this.camDist, fitSubject(view, this.camLook, player));
+    const aim = cameraAim(view, this.camLook, this.camDist, this._camAim || (this._camAim = {}));
+    this.camPos.set(aim.x, aim.y + Math.sin(CAMERA_PITCH) * this.camDist,
+      aim.z + Math.cos(CAMERA_PITCH) * this.camDist);
     cam.position.copy(this.camPos);
     this.trauma = Math.max(0, this.trauma - realDt * 1.9);
     const s = this.reducedMotion ? 0 : this.trauma * this.trauma;
@@ -1740,7 +1758,7 @@ export class Game {
       cam.position.y += (Math.sin(t * 1.7 + 1) + Math.sin(t * 3.3)) * s * 0.6;
       cam.position.z += Math.sin(t * 2.1 + 2) * s * 0.4;
     }
-    cam.lookAt(tD.set(this.camLook.x, this.camLook.y + 1.2, this.camLook.z));
+    cam.lookAt(tD.set(aim.x, aim.y, aim.z));
     if (s > 0) cam.rotateZ(Math.sin(this.time * 90) * s * 0.02);
   }
 }

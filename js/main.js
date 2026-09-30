@@ -41,14 +41,14 @@ setModelQuality(profile.low);
 const savePreferences = () => { try { localStorage.setItem('rr-mobile', JSON.stringify(preferences)); } catch { /* session settings still work */ } };
 
 const canvas = document.getElementById('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'default' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'default' });
 renderer.info.autoReset = false;
 renderer.setPixelRatio(profile.dpr);
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = profile.shadows;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
@@ -93,9 +93,10 @@ function resizeView() {
     hasTouch(), devicePixelRatio, innerWidth, innerHeight);
   profile.dpr = next.dpr * Math.min(renderBudget.scale, renderBudget.thermal >= 2 ? .75 : 1);
   camera.aspect = innerWidth / innerHeight;
-  // Shift the portrait battlefield above the two thumbs without changing world coordinates.
+  // Shift the portrait battlefield slightly above the two thumbs without changing world coordinates.
+  // The in-match camera already frames the fight tightly, so only a small lift is needed.
   if (mobileControls && innerHeight > innerWidth && mode === 'game') {
-    const reserve = Math.min(260, innerHeight * 0.32);
+    const reserve = Math.min(150, innerHeight * 0.18);
     camera.setViewOffset(innerWidth, innerHeight, 0, reserve * 0.5, innerWidth, innerHeight);
   } else camera.clearViewOffset();
   camera.updateProjectionMatrix();
@@ -231,6 +232,7 @@ function confirmSelection() { if (choosingCampaignPilot) openCampaign(); else st
 const showcase = new THREE.Group();
 scene.add(showcase);
 let previewRobot = null, previewHuman = null, previewKey = '';
+const previewBounds = new THREE.Box3(), previewSize = new THREE.Vector3(), previewCenter = new THREE.Vector3();
 function buildPreview() {
   const key = cfg.robot + cfg.pilot;
   if (key === previewKey) return;
@@ -241,11 +243,60 @@ function buildPreview() {
   previewRobot = createRobot(cfg.robot, { team: p.color });
   previewHuman = createHuman(p);
   previewRobot.root.position.set(0, 0, 0);
-  previewHuman.root.position.set(3.4, 0, 1.6);
+  previewHuman.root.position.set(2.8, 0, .6);
+  previewHuman.root.scale.setScalar(1.5);
   previewHuman.root.rotation.y = -0.5;
   showcase.add(previewRobot.root, previewHuman.root);
+  showcase.updateMatrixWorld(true);
+  previewBounds.setFromObject(showcase);
+  previewBounds.getSize(previewSize);
+  previewBounds.getCenter(previewCenter);
   previewRobot.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   for (const e of previewRobot.eyes) e.material.emissiveIntensity = 2.5;
+}
+
+// Small, crisp roster portraits share the 3D pilots' palette and signature headwear.
+function pilotPortrait(p) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 64 64');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const body = hex(p.body), accent = hex(p.accent), hair = hex(p.hair), skin = hex(p.skin);
+  const eye = hex(p.look?.eye ?? 0x141a33), style = p.style;
+  const path = (d, fill, extra = '') => `<path d="${d}" fill="${fill}" ${extra}/>`;
+  const rear = style === 3 ? path('M42 16Q62 13 55 46L46 38 42 22Z', hair)
+    : style === 7 ? path('M14 25Q11 48 16 59L23 57 24 31H41L43 59 51 57Q51 35 46 23Z', hair)
+    : style === 4 ? path('M15 24Q10 37 15 48L23 45H44L51 47Q54 30 46 22Z', hair) : '';
+  const front = [
+    path('M15 28L12 20 19 21 19 12 27 17 32 8 36 17 46 12 46 20 52 20 48 31 43 25 35 24 29 28 24 23 19 31Z', hair),
+    path('M14 28Q11 10 32 11Q48 12 49 27L43 29 40 25 21 27Z', body) + path('M17 25Q35 19 52 27L46 31 20 30Z', accent),
+    path('M16 28L14 16Q9 0 17 2L25 19H39L45 3Q52 0 51 11L47 29Z', body)
+      + path('M20 31L20 24Q32 17 43 25L44 31 38 27 34 31 29 26 24 31Z', hair),
+    path('M14 31Q9 11 30 12Q46 7 49 27L42 32 39 21 32 30 32 22 22 29 19 35Z', hair),
+    path('M14 28Q12 10 32 10Q51 10 50 29L44 27 39 26 32 26 22 28Z', accent)
+      + path('M28 11H36V24H28Z', body) + path('M32 16L36 20 32 24 28 20Z', '#ffe29a'),
+    path('M14 32L9 22 17 22 14 13 25 16 30 8 35 16 46 12 45 22 54 22 48 33 42 27 37 28 27 25 20 32Z', hair)
+      + '<rect x="17" y="20" width="30" height="7" rx="3" fill="#141a33"/><rect x="20" y="19" width="10" height="9" rx="3" fill="#83e4ec"/><rect x="34" y="19" width="10" height="9" rx="3" fill="#83e4ec"/>',
+    '<circle cx="32" cy="11" r="6" fill="' + hair + '"/>' + path('M14 30Q11 14 29 14Q49 11 50 32L44 25 20 25Z', hair)
+      + path('M15 23Q33 18 49 23V28Q32 24 15 29Z', body),
+    path('M17 33L16 23 47 22 47 35 41 28 35 29 35 25 27 29 26 26 21 35Z', hair)
+      + path('M12 24L24 19 29 2 35 5 42 20 54 25 50 29H14Z', accent)
+      + path('M24 19L42 20 44 24 22 24Z', '#ffe29a'),
+  ][style] || '';
+  const fierce = p.look?.eyes === 'fierce' || p.look?.eyes === 'sharp';
+  const mouth = p.look?.mouth === 'grin' ? path('M25 43Q32 50 39 43Z', '#fff8ec')
+    : path(p.look?.mouth === 'flat' ? 'M28 45H37' : 'M28 44Q33 48 38 43', 'none');
+  svg.innerHTML = `<g stroke="#141a33" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">`
+    + `<rect x="1" y="1" width="62" height="62" rx="15" fill="${body}" fill-opacity=".17" stroke="none"/>`
+    + rear + path('M9 64Q11 50 25 50H39Q53 50 55 64Z', body)
+    + path('M25 49L32 56 39 49 40 64H24Z', accent)
+    + `<ellipse cx="32" cy="34" rx="17" ry="18" fill="${skin}"/>` + front
+    + `<ellipse cx="25" cy="36" rx="2.5" ry="3.7" fill="${eye}" stroke="none"/><ellipse cx="39" cy="36" rx="2.5" ry="3.7" fill="${eye}" stroke="none"/>`
+    + '<circle cx="25.5" cy="34.5" r="1" fill="#fff8ec" stroke="none"/><circle cx="39.5" cy="34.5" r="1" fill="#fff8ec" stroke="none"/>'
+    + (fierce ? path('M21 30L28 32M35 32L42 30', 'none') : '')
+    + (p.look?.blush ? '<path d="M20 41H24M40 41H44" stroke="#e99893" stroke-width="3"/>' : '')
+    + mouth + '</g>';
+  return svg;
 }
 
 function renderPilots() {
@@ -257,7 +308,7 @@ function renderPilots() {
     b.setAttribute('aria-pressed', String(i === cfg.pilot));
     b.style.setProperty('--c', hex(p.color));
     b.innerHTML = '<span class="pilot-face"></span><span class="pilot-txt"><span class="pilot-name"></span><span class="pilot-desc"></span><span class="pilot-skills"></span></span><span class="pilot-role"></span>';
-    b.querySelector('.pilot-face').style.background = hex(p.color);
+    b.querySelector('.pilot-face').appendChild(pilotPortrait(p));
     b.querySelector('.pilot-name').textContent = p.name;
     b.querySelector('.pilot-desc').textContent = p.desc;
     const role = roleOf(p), skills = [p.skill1?.name, p.skill2?.name].filter(Boolean);
@@ -686,8 +737,8 @@ function renderKeyHints() {
     ['{move}', '이동'], ['{atk}', '공격 · 콤보 / 로봇 콤보'], ['{hvy}', '스킬 1'], ['{grd}', '스킬 2'],
     ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '호출 · 탑승 · 하차'], ['{pause}', '일시정지'], ['F1', '키 안내'],
   ]);
-  $('title-hint').textContent = input.fmtKeys('{move} 이동 · {atk} 공격 · {hvy} 스킬 1 · {grd} 스킬 2 · {jump} 점프 · {dash} 대시 · {act} 호출. 주먹으로 게이지를 채워 호출하면 배리어가 지켜 주는 동안 토끼 로봇이 떨어집니다. 먼저 올라타세요.');
-  if (mobileControls) $('title-hint').textContent = '터치로 바로 플레이 · 왼손 이동, 오른손 공격! 당근 게이지가 차면 호출 버튼이 나타나요. 로봇 가까이에서 탑승을 길게 누르세요.';
+  $('title-hint').textContent = input.fmtKeys('{move} 이동 · {atk} 공격 · 당근을 모아 로봇을 호출하세요.');
+  if (mobileControls) $('title-hint').textContent = '왼손으로 이동 · 오른손으로 공격 · 당근을 모아 로봇 호출!';
 }
 function refreshKeysUI() {
   renderKeyHints();
@@ -756,8 +807,9 @@ function startMatch(skipGuide = false, peerConfig = null) {
   input.resetInputs();
   simulationClock.reset();
   renderBudget.scale = 1;
-  applyPreferences();
   mode = 'game';
+  // Restore the battlefield projection before the first match frame.
+  applyPreferences();
   subStack.length = 0;
   show(null);
   hud.classList.remove('hidden');
@@ -970,7 +1022,7 @@ function frame(now = performance.now()) {
     fx.update(dt, dt);
     const sel = !document.getElementById('select').classList.contains('hidden');
     if (previewRobot) {
-      previewRobot.root.rotation.y = sel ? -0.5 + Math.sin(menuT * 0.6) * 0.35 : menuT * 0.3;
+      previewRobot.root.rotation.y = -0.35 + Math.sin(menuT * 0.6) * 0.22;
       previewRobot.earL.rotation.x = Math.sin(menuT * 2) * 0.15;
       previewRobot.earR.rotation.x = Math.sin(menuT * 2 + 0.6) * 0.15;
       previewRobot.hips.position.y += 0;
@@ -979,17 +1031,19 @@ function frame(now = performance.now()) {
       if (previewRobot.chestCore) previewRobot.chestCore.material.emissiveIntensity = 1.8 + Math.sin(menuT * 5) * 0.8;
       previewHuman.armR.rotation.x = -2.6 + Math.sin(menuT * 3) * 0.2;
     }
-    if (sel) {
-      const wide = innerWidth / innerHeight;
-      // 선택 화면: 오른쪽 절반에 로봇이 보이도록
-      camera.position.set(-6.5 * Math.min(1.4, wide / 1.4), 5.2, 15);
-      camera.lookAt(-2.2 * Math.min(1.4, wide / 1.4), 3.1, 0);
-    } else {
-      const a = menuT * 0.12;
-      camera.position.set(Math.sin(a) * 17, 7 + Math.sin(menuT * 0.3) * 1, Math.cos(a) * 17);
-      camera.lookAt(0, 3.4, 0);
-      // 로봇이 로고 오른쪽에 보이도록 시선을 비튼다
-      camera.rotateY(innerWidth / innerHeight > 1 ? 0.42 : 0);
+    // Fit the live duo into the actual menu stage, including portrait phones.
+    // A projection offset composes the preview without moving the camera below terrain.
+    const frame = $(sel ? 'select-showcase' : 'title-showcase').getBoundingClientRect();
+    if (frame.width > 0 && frame.height > 0) {
+      const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov * .5));
+      const heightFraction = frame.height / innerHeight;
+      const widthFraction = frame.width / innerWidth;
+      const distance = Math.max(previewSize.y * 1.32 / (2 * tanHalf * heightFraction), previewSize.x * 1.24 / (2 * tanHalf * camera.aspect * widthFraction));
+      camera.position.set(previewCenter.x, previewCenter.y + .8, distance);
+      camera.lookAt(previewCenter.x, previewCenter.y, 0);
+      const centerX = (frame.left + frame.width * .5) / innerWidth * 2 - 1;
+      const centerY = 1 - (frame.top + frame.height * .5) / innerHeight * 2;
+      camera.setViewOffset(innerWidth, innerHeight, -centerX * innerWidth * .5, centerY * innerHeight * .5, innerWidth, innerHeight);
     }
   } else lastMenuFrame = null;
   fx.beforeRender();

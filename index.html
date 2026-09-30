@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="css/combat.css" />
   <link rel="stylesheet" href="css/mobile.css" />
   <link rel="stylesheet" href="css/peers.css" />
+  <link rel="stylesheet" href="css/menus.css" />
   <script type="importmap">
   { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -29,19 +30,22 @@
 
   <!-- 타이틀 -->
   <section id="title" class="screen">
+    <div class="title-content">
     <div class="logo">
-      <div class="logo-sub">CARROT REMOTE BRAWL</div>
+      <div class="logo-sub">SMALL PILOT. BIG TROUBLE.</div>
       <h1><span class="l1">ROBOT</span><span class="l2">RABBIT</span></h1>
       <div class="logo-ko">로봇 래빗</div>
     </div>
+    <p class="title-tagline">작은 파일럿, 커다란 한 방.</p>
     <div class="title-menu">
-      <button class="btn big" data-action="toCampaign">솔로 도전</button>
-      <button class="btn" data-action="toPeers">친구와 대전</button>
-      <button class="btn" data-action="toSelect">자유 난투</button>
-      <button class="btn" data-action="quickStart">바로 한 판</button>
-      <button class="btn" data-action="toHelp">조작법</button>
-      <button class="btn" data-action="toSettings">설정</button>
+      <button class="btn big title-play" data-action="quickStart"><span>바로 한 판<small>준비됐으면, 바로 출격!</small></span><span aria-hidden="true">↗</span></button>
+      <button class="btn title-mode" data-action="toCampaign"><span class="mode-symbol" aria-hidden="true">01</span><span>솔로 도전<small>여섯 번의 출격</small></span><span aria-hidden="true">›</span></button>
+      <button class="btn title-mode" data-action="toPeers"><span class="mode-symbol" aria-hidden="true">02</span><span>친구와 대전<small>함께하면 더 신나게</small></span><span aria-hidden="true">›</span></button>
+      <button class="btn title-mode" data-action="toSelect"><span class="mode-symbol" aria-hidden="true">03</span><span>자유 난투<small>나만의 조합으로</small></span><span aria-hidden="true">›</span></button>
     </div>
+    <div class="title-tools"><button class="btn" data-action="toHelp"><span aria-hidden="true">?</span> 조작법</button><button class="btn" data-action="toSettings"><span aria-hidden="true">⚙</span> 설정</button></div>
+    </div>
+    <div class="title-showcase" id="title-showcase" aria-hidden="true"><span class="showcase-kicker">MEET YOUR NEXT MAIN</span><span class="showcase-caption">당근 충전. 토끼 출격.<i>READY TO RUMBLE</i></span></div>
     <p class="title-hint" id="title-hint"></p>
   </section>
 
@@ -50,7 +54,7 @@
       <p class="campaign-eyebrow">NEARBY RABBIT / 2 PLAYERS</p>
       <h2 id="peers-h">친구와 연결하기</h2>
       <p class="peer-intro">Apple은 Safari 웹, Android는 앱에서. 같은 Wi-Fi에서 둘이 연결해 CPU 둘과 난투하세요.</p>
-      <p class="peer-note"><strong>추천: Android에서 초대 → Apple에서 참가.</strong> Apple 쪽의 게임 계산을 줄여 줍니다. 두 기기 모두 최신 버전으로 맞춰 주세요. <span data-build-version>v1.5.0</span></p>
+      <p class="peer-note"><strong>추천: Android에서 초대 → Apple에서 참가.</strong> Apple 쪽의 게임 계산을 줄여 줍니다. 두 기기 모두 최신 버전으로 맞춰 주세요. <span data-build-version>v1.6.0</span></p>
       <details class="peer-guide"><summary>두 기기 연결 순서 · 연결이 안 될 때</summary>
         <ol><li>둘 다 같은 일반 Wi-Fi에 연결하세요. Apple은 Safari에서 게임을 열고 「초대 받았어요」를 선택합니다.</li><li>Apple의 「내 ID 복사」 → 메시지로 Android 친구에게 전달합니다.</li><li>Android에서 친구 ID로 초대를 만들어 Apple에 보냅니다.</li><li>Apple에서 초대를 붙여 넣고 답장을 만들어 Android에 보냅니다.</li><li>Android에서 답장으로 연결한 뒤, 둘 다 준비 완료 → 초대한 사람이 난투 시작.</li></ol>
         <p>Safari는 공유 메뉴 → 홈 화면에 추가로 더 넓게 즐길 수 있어요. 연결 도중에는 두 기기 모두 게임 화면으로 돌아와 주세요.</p>
@@ -182,9 +186,10 @@
   <section id="select" class="screen hidden">
     <div class="select-wrap">
       <div class="panel select-panel">
-        <h2>파일럿</h2>
+        <p class="menu-eyebrow">BUILD YOUR DUO</p>
+        <h2>01 <span>파일럿 선택</span></h2>
         <div id="pilot-list" class="pilot-list"></div>
-        <h2>토끼 로봇</h2>
+        <h2>02 <span>토끼 로봇</span></h2>
         <div id="robot-list" class="robot-list"></div>
         <div class="opt-row">
           <div class="opt">
@@ -211,6 +216,7 @@
         </div>
       </div>
       <div class="detail-col">
+        <div id="select-showcase" class="select-showcase" aria-hidden="true"><span class="showcase-kicker">YOUR DUO / READY</span></div>
         <div class="pilot-detail" id="pilot-detail"></div>
         <div class="robot-detail" id="robot-detail"></div>
       </div>

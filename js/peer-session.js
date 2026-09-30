@@ -1,4 +1,4 @@
-import { RemoteCtrl, captureInput, captureSnapshot, PeerReplica } from './peer-match.js';
+import { INPUT_EDGES, RemoteCtrl, captureInput, captureSnapshot, PeerReplica } from './peer-match.js';
 import { PILOTS, ROBOT_ORDER, STAGES } from './data.js';
 
 const idOK = id => typeof id === 'string' && /^[a-zA-Z0-9-]{16,64}$/.test(id);
@@ -17,7 +17,7 @@ const sameConfig = (a,b) => validMatchConfig(a) && validMatchConfig(b)
 export class PeerSession {
   constructor({ game, lobby, startGame, showResult, paused, resumed, aborted }) {
     Object.assign(this, { game, lobby, startGame, showResult, paused, resumed, aborted });
-    this.round = null; this.startTimer = null; this.replica = null; this.remoteCtrl = null;
+    this.round = null; this.startTimer = null; this.resultTimer = null; this.replica = null; this.remoteCtrl = null;
   }
   get active() { return !!this.round; }
   get guest() { return this.round?.role === 'guest'; }
@@ -30,7 +30,7 @@ export class PeerSession {
     this.startTimer = setTimeout(() => { if (this.round?.phase === 'starting') this.abort('친구의 시작 응답이 없어요. 다시 준비해 주세요.'); }, 10000);
   }
   makeRound(id, role, config) {
-    this.round = { id, role, config, phase: 'starting', seq: 0, inputSeq: 0, elapsed: 0, localPaused: false, remotePaused: false, lastSnapshot: performance.now() };
+    this.round = { id, role, config, phase: 'starting', seq: 0, inputSeq: 0, elapsed: 0, inputElapsed: 0, inputClock: 0, inputEdges: {}, localPaused: false, remotePaused: false, lastSnapshot: performance.now() };
     this.lobby.setPlaying(true);
   }
   receive(message) {
@@ -63,7 +63,7 @@ export class PeerSession {
       this.applyPause();
     } else if (message.type === 'result' && r.role === 'guest' && r.phase === 'playing') {
       // Statistics are read from the last validated host snapshot, never this message.
-      if (!this.replica?.accept(message.state)) return;
+      if (message.state?.phase !== 'end' || !this.replica?.accept(message.state)) return;
       r.phase = 'result'; this.lobby.roundEnded();
       this.showResult(this.game.results());
     } else if (message.type === 'stop') this.abort('친구가 경기를 나갔어요. 이번 경기는 무효입니다.', false);
@@ -85,7 +85,16 @@ export class PeerSession {
       if (r.elapsed >= .05) { r.elapsed %= .05; this.snapshot(); }
     } else {
       if (performance.now() - r.lastSnapshot > 5000) { this.abort('친구의 경기 화면이 도착하지 않아요. 같은 Wi-Fi인지 확인해 주세요.'); return; }
-      this.lobby.send({ type: 'input', id: r.id, input: captureInput(intents, ++r.inputSeq) });
+      // Display refresh may exceed the transport's 120-message/sec limit. Send
+      // at 60Hz and retain brief button presses between sends (or backpressure).
+      r.inputClock += dt; r.inputElapsed += dt;
+      for (const k of INPUT_EDGES) if (intents[k]) r.inputEdges[k] = r.inputClock + .22;
+      if (r.inputElapsed + 1e-9 >= 1 / 60) {
+        r.inputElapsed = Math.max(0, r.inputElapsed - 1 / 60) % (1 / 60);
+        const input = captureInput(intents, ++r.inputSeq);
+        for (const k of INPUT_EDGES) input[k] = (r.inputEdges[k] ?? -Infinity) > r.inputClock;
+        if (this.lobby.send({ type: 'input', id: r.id, input })) r.inputEdges = {};
+      }
       this.replica?.update(dt);
     }
   }
@@ -93,8 +102,18 @@ export class PeerSession {
     const r = this.round;
     if (!r || r.role !== 'host' || r.phase !== 'playing') return;
     const state = captureSnapshot(this.game, { matchId: r.id, seq: ++r.seq });
-    this.lobby.send({ type: 'result', id: r.id, state });
     r.phase = 'result'; this.lobby.roundEnded();
+    // The render loop stops at the result screen. A temporary full RTC buffer
+    // must not leave the guest waiting forever for the one final packet.
+    let retries = 0;
+    const sendResult = () => {
+      this.resultTimer = null;
+      if (this.round !== r) return;
+      if (state && this.lobby.send({ type: 'result', id: r.id, state })) return;
+      if (++retries >= 40) { this.abort('경기 결과를 친구에게 보내지 못했어요. 다시 연결해 주세요.'); return; }
+      this.resultTimer = setTimeout(sendResult, 50);
+    };
+    sendResult();
   }
   setPaused(value) {
     const r = this.round;
@@ -107,11 +126,13 @@ export class PeerSession {
   applyPause() {
     const r = this.round;
     if (!r) return;
+    r.inputEdges = {}; r.inputElapsed = 0;
     if (r.localPaused || r.remotePaused) this.paused(r.remotePaused && !r.localPaused ? '친구가 일시정지했어요. 친구가 돌아오면 이어집니다.' : '두 기기의 경기를 함께 멈췄어요.');
     else { r.lastSnapshot = performance.now(); this.resumed(); }
   }
   clear() {
     clearTimeout(this.startTimer); this.startTimer = null;
+    clearTimeout(this.resultTimer); this.resultTimer = null;
     this.replica?.dispose(); this.replica = null;
     this.remoteCtrl?.reset(); this.remoteCtrl = null; this.round = null;
   }

@@ -57,11 +57,23 @@ function lowGeo(g) {
 }
 const half = (s, min) => Math.min(s, Math.max(min, Math.ceil(s / 2)));
 const rbox = (w, h, d, r = Math.min(w, h, d) * 0.22) => G('rb' + [w, h, d, r].map((v) => v.toFixed(3)).join(','), () => new RoundedBoxGeometry(w, h, d, 2, r), () => new RoundedBoxGeometry(w, h, d, 1, r));
+const box = (w, h, d) => G('bx' + [w, h, d].join(','), () => new THREE.BoxGeometry(w, h, d));
 const sph = (r, ws = 16, hs = 12) => G('sp' + r + ',' + ws, () => new THREE.SphereGeometry(r, ws, hs), () => new THREE.SphereGeometry(r, half(ws, 6), half(hs, 4)));
 const cyl = (rt, rb, h, s = 14) => G('cy' + [rt, rb, h, s].join(','), () => new THREE.CylinderGeometry(rt, rb, h, s), () => new THREE.CylinderGeometry(rt, rb, h, half(s, 6)));
 const cone = (r, h, s = 12) => G('co' + [r, h, s].join(','), () => new THREE.ConeGeometry(r, h, s), () => new THREE.ConeGeometry(r, h, half(s, 5)));
 const caps = (r, l) => G('ca' + r + ',' + l, () => new THREE.CapsuleGeometry(r, l, 4, 12), () => new THREE.CapsuleGeometry(r, l, 2, 8));
 const torus = (r, t) => G('to' + r + ',' + t, () => new THREE.TorusGeometry(r, t, 8, 24), () => new THREE.TorusGeometry(r, t, 5, 12));
+// Flat stitched insignia: a readable rabbit shape, with no texture or extra material in low mode.
+const rabbitPatch = () => G('rabbitPatch', () => {
+  const s = new THREE.Shape();
+  s.moveTo(-0.055, 0.005);
+  s.bezierCurveTo(-0.09, -0.075, 0.09, -0.075, 0.055, 0.005);
+  s.lineTo(0.064, 0.095); s.quadraticCurveTo(0.04, 0.128, 0.022, 0.085);
+  s.lineTo(0.01, 0.025); s.lineTo(-0.01, 0.025);
+  s.lineTo(-0.022, 0.085); s.quadraticCurveTo(-0.04, 0.128, -0.064, 0.095);
+  s.closePath();
+  return new THREE.ShapeGeometry(s, 5);
+});
 
 const outlineMats = new Map();
 function outlineMat(w) {
@@ -494,7 +506,7 @@ export function createHuman(o = {}) {
   const L = o.look || {};
   const outfit = L.outfit || 'bomber', legsT = L.legs || 'slim';
   const inner = L.inner ?? 0xffffff, pants = L.pants ?? accent, shoe = L.shoe ?? 0xffffff, sole = L.sole ?? accent, socks = L.socks ?? 0xffffff;
-  const K = new Kit(0.018);
+  const K = new Kit(0.012);
   const root = new THREE.Group();
   const hips = grp(root, 0, 0.98, 0);
   const rig = { root, hips, height: 1.9, radius: 0.45 };
@@ -528,8 +540,9 @@ export function createHuman(o = {}) {
       K.add(shin, rbox(0.125, 0.4, 0.14, 0.05), pants, 0, -0.19, 0);
     }
     // 하이탑 스니커즈
-    K.add(foot, rbox(0.14, 0.12, 0.25, 0.045), shoe, 0, -0.035, 0.035);
-    K.add(foot, rbox(0.15, 0.035, 0.265, 0.015), sole, 0, -0.09, 0.04, 0, 0, 0, false);
+    K.add(foot, rbox(0.165, 0.14, 0.28, 0.045), shoe, 0, -0.025, 0.04);
+    K.add(foot, rbox(0.175, 0.035, 0.295, 0.015), sole, 0, -0.09, 0.045, 0, 0, 0, false);
+    K.add(foot, box(0.12, 0.025, 0.095), inner, 0, 0.042, 0.075, -0.18, 0, 0, false);
     rig[s > 0 ? 'legL' : 'legR'] = leg;
     rig[s > 0 ? 'shinL' : 'shinR'] = shin;
     rig[s > 0 ? 'footL' : 'footR'] = foot;
@@ -587,16 +600,27 @@ export function createHuman(o = {}) {
   // 당근 배지 (모든 파일럿 공통 포인트)
   K.add(torso, cone(0.017, 0.06, 6), 0xff8a1f, 0.1, 0.39, fz - 0.003, Math.PI, 0, 0, false);
   K.add(torso, cone(0.011, 0.03, 4), 0x3fcf4a, 0.1, 0.43, fz - 0.003, 0, 0, 0, false);
+  // Broad shoulder seams and a back patch remain legible from the gameplay camera.
+  for (const s of [1, -1]) {
+    K.add(torso, box(0.17, 0.035, 0.022), inner, 0.095 * s, 0.425, -0.121 * wide, 0.05, 0, -0.16 * s, false);
+  }
+  K.add(torso, rbox(0.2, 0.22, 0.023, 0.035), accent, 0, 0.275, -0.117 * wide, 0.07, 0, 0, false);
+  K.add(torso, rabbitPatch(), inner, 0, 0.27, -0.135 * wide, 0.07, Math.PI, 0, false);
+  if (outfit === 'bomber' || outfit === 'coat') {
+    for (const s of [1, -1]) K.add(torso, box(0.065, 0.17, 0.03), accent, 0.065 * s, 0.43, fz + 0.02, -0.1, 0, 0.36 * s, false);
+  }
 
   // ----- 머리 -----
   const head = grp(torso, 0, 0.57, 0);
+  // Enlarge the complete face/hair assembly without moving animation joints or hitboxes.
+  head.scale.set(1.18, 1.12, 1.14);
   const headM = K.add(head, sph(HR, 20, 14), skin, 0, HCY, HCZ);
   headM.scale.set(0.9, 1.1, 0.95);
   const brow = shade(hair, 0.55);
   const tex = faceTexture({ eyes: L.eyes || 'sharp', eye: L.eye ?? 0x5a3a2a, mouth: L.mouth || 'smile', blush: !!L.blush, brow });
   let faceMat = null;
   if (tex) {
-    faceMat = new THREE.MeshToonMaterial({ map: tex, transparent: true, depthWrite: false, gradientMap: grad });
+    faceMat = new THREE.MeshToonMaterial({ map: tex, transparent: true, alphaTest: 0.04, depthWrite: false, gradientMap: grad });
     K.all.push(faceMat);
     const face = K.add(head, faceGeo(), faceMat, 0, HCY, HCZ, 0, 0, 0, false);
     face.scale.set(HX * 1.02, HYR * 1.02, HZR * 1.02);
@@ -609,7 +633,9 @@ export function createHuman(o = {}) {
   }
   // 헤어 베이스: 얼굴 앞면을 비우도록 위/뒤로 밀어 둔다
   const capHair = (sx = 1, sy = 1, sz = 1, dy = 0.04, dz = -0.035) => K.add(head, sph(0.1925, 18, 12), hair, 0, HCY + dy, HCZ + dz).scale.set(0.9 * sx, 1.06 * sy, 0.95 * sz);
-  const bang = (d0, d1, th1, w, th0 = 0.62, col = hair) => strand(K, head, hp(d0, th0, 1.1), hp(d1, th1, 1.08), w, col);
+  const hairLight = new THREE.Color(hair).lerp(new THREE.Color(0xffeddc), 0.16).getHex();
+  let bangIndex = 0;
+  const bang = (d0, d1, th1, w, th0 = 0.62, col = (++bangIndex % 3 === 1 ? hairLight : hair)) => strand(K, head, hp(d0, th0, 1.1), hp(d1, th1, 1.08), w, col);
   const spike = (d, th, len, w, bx = 0, by = 0.5, bz = -0.5, col = hair) => {
     const a = hp(d, th, 1.0);
     const n = [Math.sin(d) * Math.sin(th) + bx, Math.cos(th) + by, Math.cos(d) * Math.sin(th) + bz];
@@ -708,20 +734,20 @@ export function createHuman(o = {}) {
   for (const s of [1, -1]) {
     const arm = grp(torso, 0.225 * s, 0.47, 0);
     K.add(arm, sph(0.075, 10, 8), outfit === 'vest' ? accent : body, 0, 0, 0, 0, 0, 0, false);
-    K.add(arm, rbox(0.12, 0.3, 0.12, 0.04), sleeve, 0, -0.14, 0);
-    if (outfit === 'track') K.add(arm, rbox(0.02, 0.3, 0.1, 0.008), 0xffffff, 0.058 * s, -0.14, 0, 0, 0, 0, false);
-    if (outfit === 'bomber' && s > 0) K.add(arm, rbox(0.02, 0.06, 0.06, 0.008), 0xffd84a, 0.06, -0.08, 0, 0, 0, 0, false);
+    K.add(arm, rbox(0.14, 0.3, 0.14, 0.045), sleeve, 0, -0.14, 0);
+    if (outfit === 'track') K.add(arm, rbox(0.02, 0.3, 0.1, 0.008), 0xffffff, 0.072 * s, -0.14, 0, 0, 0, 0, false);
+    if (outfit === 'bomber' && s > 0) K.add(arm, rbox(0.02, 0.06, 0.06, 0.008), 0xffd84a, 0.074, -0.08, 0, 0, 0, 0, false);
     const fore = grp(arm, 0, -0.28, 0);
-    K.add(fore, rbox(0.105, 0.24, 0.105, 0.035), sleeve, 0, -0.1, 0);
+    K.add(fore, rbox(0.12, 0.24, 0.12, 0.04), sleeve, 0, -0.1, 0);
     const cuff = outfit === 'vest' ? 0xffffff : outfit === 'coat' || outfit === 'tech' ? accent : outfit === 'blazer' ? inner : shade2(body);
-    K.add(fore, rbox(0.115, 0.05, 0.115, 0.015), cuff, 0, -0.21, 0, 0, 0, 0, false);
+    K.add(fore, rbox(0.135, 0.05, 0.135, 0.015), cuff, 0, -0.21, 0, 0, 0, false);
     const hand = grp(fore, 0, -0.27, 0);
     if (L.hands === 'boxing') {
       K.add(hand, sph(0.085, 12, 10), body, 0, -0.01, 0.01);
       K.add(hand, cyl(0.07, 0.07, 0.05, 10), 0xffffff, 0, 0.06, 0, 0, 0, 0, false);
     } else {
-      K.add(hand, sph(0.06, 10, 8), skin, 0, -0.01, 0.01).scale.set(1, 1.15, 1.05);
-      if (L.hands === 'fingerless') K.add(hand, rbox(0.11, 0.06, 0.11, 0.02), 0x1b1b24, 0, 0.0, 0.01, 0, 0, 0, false);
+      K.add(hand, sph(0.069, 10, 8), skin, 0, -0.01, 0.01).scale.set(1, 1.15, 1.05);
+      if (L.hands === 'fingerless') K.add(hand, rbox(0.13, 0.065, 0.13, 0.02), 0x1b1b24, 0, 0.0, 0.01, 0, 0, 0, false);
     }
     rig[s > 0 ? 'armL' : 'armR'] = arm;
     rig[s > 0 ? 'foreL' : 'foreR'] = fore;
@@ -856,7 +882,8 @@ export function createRobot(type = 'titan', opts = {}) {
     rig.muzzles.push(rig.laserOrigin);
   } else {
     for (const s of [1, -1]) {
-      const e = K.add(head, sph(0.13, 12, 10), eyeM, 0.3 * s, 0.72, 0.56, 0, 0, 0, false);
+      K.add(head, rbox(0.38, 0.31, 0.09, 0.1), P.dark, 0.3 * s, 0.72, 0.555, 0, 0, -0.12 * s, false);
+      const e = K.add(head, sph(0.13, 12, 10), eyeM, 0.3 * s, 0.72, 0.61, 0, 0, 0, false);
       e.scale.set(1, type === 'titan' ? 0.75 : 1.15, 0.5);
       rig.eyes.push(e);
       if (type === 'titan') K.add(head, rbox(0.34, 0.08, 0.1, 0.03), P.dark, 0.3 * s, 0.86, 0.58, 0, 0, -0.25 * s, false);
@@ -868,11 +895,11 @@ export function createRobot(type = 'titan', opts = {}) {
     const tilt = grp(ear, 0, 0, 0);
     tilt.rotation.z = -0.18 * s;
     const L = P.ear;
-    const e = K.add(tilt, caps(0.24, L), P.main, 0, L * 0.5 + 0.2, 0);
+    const e = K.add(tilt, caps(0.24, L), FURC, 0, L * 0.5 + 0.2, 0);
     e.scale.set(1, 1, 0.62);
-    K.add(tilt, caps(0.12, L * 0.8), 0xffb3cf, 0, L * 0.5 + 0.2, 0.1, 0, 0, 0, false).scale.set(1, 1, 0.4);
+    K.add(tilt, caps(0.135, L * 0.8), 0xf88bae, 0, L * 0.5 + 0.2, 0.125, 0, 0, 0, false).scale.set(1, 1, 0.4);
     fur(tilt, FUR.earInner(), 0xffc6da, 0, L * 0.3 + 0.28, 0.13, 1, L * 0.75 + 0.2, 0.8);
-    if (type !== 'bolt') fur(tilt, FUR.earTip(), P.main, 0, L + 0.34, 0, 1, 1, 0.75);
+    if (type !== 'bolt') fur(tilt, FUR.earTip(), FURC, 0, L + 0.34, 0, 1, 1, 0.75);
     K.add(tilt, cyl(0.26, 0.26, 0.2, 10), P.metal, 0, 0.1, 0);
     K.add(tilt, rbox(0.3, 0.12, 0.2, 0.04), team, 0, L * 0.3 + 0.2, -0.05, 0, 0, 0, false);
     if (type === 'bolt') {

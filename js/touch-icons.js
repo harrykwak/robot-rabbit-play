@@ -14,6 +14,10 @@ export const ICONS = {
   smoke: svg('<circle class="f" cx="7.5" cy="8" r="3"/><circle class="f" cx="14" cy="4.8" r="2"/><path class="f" d="M8 26a5 5 0 0 1 .5-10 7 7 0 0 1 13.5-2.5 5.5 5.5 0 0 1 3 12.5z"/>'),
   blink: svg('<path class="f" d="M15 3l3 10 10 3.5-10 3L15 30l-3-10.5-10-3 10-3.5z"/><path class="l" d="M26 3v5M23.5 5.5h5"/>'),
   jump: svg('<path class="l" d="M8 28h16"/><path class="f" d="M16 3l11 11h-6v8H11v-8H5z"/>'),
+  // 특수 칸: 호출(로봇 머리 + 신호) / 탑승(위로 올라타기) / 하차(아래로 내리기)
+  call: svg('<path class="l" d="M4.5 10a12 12 0 0 0 0 13M27.5 10a12 12 0 0 1 0 13"/><rect class="f" x="12" y="2" width="3.2" height="8" rx="1.6"/><rect class="f" x="16.8" y="2" width="3.2" height="8" rx="1.6"/><rect class="f" x="9" y="9" width="14" height="15" rx="4"/><path class="k" d="M13.5 15v2M18.5 15v2M13.5 20.5h5"/>'),
+  board: svg('<path class="l" d="M6 28h20"/><path class="f" d="M16 3l9.5 9.5H20V23h-8V12.5H6.5z"/>'),
+  exit: svg('<path class="l" d="M6 28h20"/><path class="f" d="M12 3h8v10.5h5.5L16 23l-9.5-9.5H12z"/>'),
 };
 
 // 스킬 이름/종류로 아이콘을 고른다. 모르는 이름은 칸 기본값(1: 주먹 충격, 2: 방패)
@@ -31,4 +35,3 @@ export function skillIcon(slot, info) {
   for (const [re, key] of NAMES) if (re.test(name)) return key;
   return slot === 2 ? 'shield' : 'fist';
 }
-

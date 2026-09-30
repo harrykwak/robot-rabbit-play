@@ -33,7 +33,8 @@ export function createTouchControls({ onPause = () => {} } = {}) {
   const knob = make('div', 'touch-knob'); stick.append(knob);
   const group = make('div', 'touch-actions');
   const status = make('div', 'touch-status');
-  const menu = make('button', 'touch-menu', '메뉴'); menu.type = 'button'; menu.setAttribute('aria-label', '일시정지 메뉴');
+  const menu = make('button', 'touch-menu'); menu.type = 'button'; menu.setAttribute('aria-label', '일시정지 메뉴'); menu.title = '일시정지';
+  menu.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4.5" y="3.5" width="4" height="13" rx="1.6"/><rect x="11.5" y="3.5" width="4" height="13" rx="1.6"/></svg>';
   const buttons = new Map();
   // 점프는 스틱 옆(root), 나머지는 오른쪽 무리: 큰 흰 공격 + 아이콘 스킬 둘 + 필요할 때만 뜨는 특수 칸
   const names = { jump: '점프', atk: '공격', hvy: '스킬 1', grd: '스킬 2', act: '호출' };
@@ -48,6 +49,11 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     } else {
       b.label = make('span', 'touch-label', name);
       btn.append(b.label, b.sub);
+      // 공격(잉크 주먹)과 특수 칸(호출/탑승/하차)도 아이콘 + 글자. 아이콘은 CSS order 로 글자 앞에 온다
+      b.glyph = make('span', 'touch-icon touch-glyph');
+      b.glyph.setAttribute('aria-hidden', 'true');
+      b.glyph.innerHTML = ICONS[action === 'atk' ? 'fist' : 'call'];
+      btn.append(b.glyph);
     }
     if (action !== 'jump') group.append(btn);
     buttons.set(action, b);
@@ -194,6 +200,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
       const hint = ctx?.hint ?? meta.hint ?? '';
       label(b, name, hint, meta.aria && hint === meta.hint && name === meta.label ? meta.aria : '');
       if (b.btn.dataset.kind !== kind) b.btn.dataset.kind = kind;
+      if (b.glyphKey !== kind) { b.glyphKey = kind; b.glyph.innerHTML = ICONS[kind] || ICONS.call; }
       // 내 로봇이 멀리 있으면 칸은 보이되 흐리게 (다가가라는 안내)
       b.btn.classList.toggle('is-far', !!ctx?.kind && ctx.near === false && kind === 'board');
       fill(b, 'hold', ctx?.kind ? ctx.progress || 0 : b.hold, '--hold');
@@ -213,7 +220,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     const robot = player.riding || null;
     // 사람/로봇이 바뀌면 스킬 칸의 최대 쿨다운 기억을 새로 시작한다
     if (player !== lastPlayer || robot !== lastRiding) { lastPlayer = player; lastRiding = robot; for (const b of buttons.values()) { b.ready = true; b.max = 0; } }
-    if (player.out || player.dead) { reset(); setSpecial(null); text(status, player.out ? '탈락 · 경기를 관전하고 있어요' : '잠시 뒤 부활해요'); return; }
+    if (player.out || player.dead) { reset(); setSpecial(null); text(status, player.out ? '탈락 · 관전 중' : '잠시 뒤 부활해요'); return; }
     root.classList.toggle('is-riding', !!robot);
     label(buttons.get('atk'), robot ? '콤보' : '공격', '', robot ? '로봇 콤보 공격' : '공격 · 연타하면 콤보');
     let hud = null;
@@ -227,21 +234,17 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     try { ctx = typeof player.g?.contextAction === 'function' ? player.g.contextAction(player) : fallbackContext(player); } catch { ctx = fallbackContext(player); }
     setSpecial(ctx);
     if (robot) {
-      const armor = Math.max(0, Math.round(robot.armor / robot.maxArmor * 100));
       const juice = Math.max(0, Math.round((robot.juice ?? 0) / (robot.maxJuice || 100) * 100));
-      const broken = robot.broken | 0;
-      const lost = [[1, '왼팔'], [2, '오른팔'], [4, '머리'], [8, '다리']].filter(([bit]) => broken & bit).map(([, name]) => name);
-      // 좁은 가로 화면에서도 한 줄에 들어가게 짧게 (쥬스 바닥 안내는 토스트가 따로 알려 준다)
-      text(status, (juice <= 0 ? '쥬스 바닥! 당근 줍기 · ' : '쥬스 ' + juice + '% · ') + '내구도 ' + armor + '%' + (lost.length ? ' · 파손 ' + lost.join('·') : ''));
+      // 내구도·쥬스·파손 부위는 내 카드(왼쪽 위)가 늘 보여 준다. 여기서는 행동이 필요할 때만 한 줄
+      text(status, juice <= 0 ? '쥬스 바닥! 당근을 주워요' : '');
       return;
     }
-    const pct = Math.min(100, Math.floor(player.gauge / RULES.gaugeMax * 100));
     if (player.state === 'boarding') text(status, '탑승 중 ' + Math.min(100, Math.floor(player.boardT / player.boardNeed * 100)) + '% · 계속 누르세요');
     else if (hud?.[1]?.burst) text(status, '콤보에 갇혔어요! 스킬 2로 탈출!');
     else if (ctx?.kind === 'board' && ctx.near !== false) text(status, '스틱을 놓고 탑승을 길게 누르세요');
     else if (player.robot && player.robot.state !== 'dead') text(status, '내 로봇에 다가가서 탑승을 길게 누르세요');
-    else if (ctx?.kind === 'call') text(status, '당근 MAX! 호출 버튼으로 로봇을 부르세요');
-    else text(status, '당근 ' + pct + '% · 공격과 콤보로 게이지를 채워요');
+    else if (ctx?.kind === 'call') text(status, '당근 MAX! 호출로 로봇을 불러요');
+    else text(status, ''); // 평소엔 비워 둔다: 당근 게이지는 내 카드에 있다
   }
   return {
     setEnabled(value) { enabled = !!value; display(); },

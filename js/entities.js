@@ -35,6 +35,66 @@ export const EJECT_HOLD = 0.6;
 // 스킬 2 종류 → 액션 이름 (guard/parry 는 state 'guard')
 const SKILL2_ACT = { roll: 'rollDodge', flip: 'backFlip', smoke: 'smokeStep', barrier: 'barrierCast', brace: 'brace', blink: 'blinkStep' };
 const GUARD_KINDS = new Set(['guard', 'parry']);
+
+// ---------------- 발밑 표식: 접지 그림자 + 팀 색 링 (플레이어는 굵은 링 + 진행 방향 화살표) ----------------
+// 그림자 맵이 꺼진 저품질에서도 캐릭터가 땅에 붙어 보이고, 작은 화면에서 누가 나인지 바로 보이게 한다.
+// 전투원마다 드로우 1회. 텍스처는 문서/캔버스 없이 만든다 (노드 테스트에서도 동작).
+let markTex = null, markGeo = null;
+function markTextures() {
+  if (markTex) return markTex;
+  const N = 64;
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const make = (player) => {
+    const d = new Uint8Array(N * N * 4);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = ((x + 0.5) / N) * 2 - 1, w = ((y + 0.5) / N) * 2 - 1, r = Math.hypot(u, w);
+      // 로컬 +z(앞) = 텍스처 아래쪽(w < 0)
+      let blob = 0.5 * (1 - smooth(0.12, 0.56, r));
+      let ring = 0, ink = 0;
+      if (player) {
+        ring = smooth(0.58, 0.62, r) * (1 - smooth(0.72, 0.76, r));
+        ink = smooth(0.53, 0.57, r) * (1 - smooth(0.78, 0.82, r));
+        // 앞쪽 셰브론
+        const f = -w, s = Math.abs(u);
+        if (f > 0.7 && f < 0.99 && s < 0.3) {
+          const edge = 0.99 - s * 0.95;
+          const c = smooth(edge - 0.2, edge - 0.16, f) * (1 - smooth(edge - 0.03, edge, f));
+          const o = smooth(edge - 0.25, edge - 0.21, f) * (1 - smooth(edge + 0.01, edge + 0.04, f));
+          ring = Math.max(ring, c); ink = Math.max(ink, o);
+        }
+      } else {
+        ring = smooth(0.6, 0.63, r) * (1 - smooth(0.69, 0.72, r)) * 0.85;
+        ink = smooth(0.57, 0.6, r) * (1 - smooth(0.72, 0.75, r)) * 0.5;
+      }
+      const dark = Math.max(blob, ink * 0.75);
+      const a = Math.max(ring, dark);
+      const v = a > 0 ? Math.round(255 * ring / a) : 0;
+      const i = (y * N + x) * 4;
+      d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.round(255 * a);
+    }
+    const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat);
+    t.magFilter = t.minFilter = THREE.LinearFilter;
+    t.generateMipmaps = false;
+    t.needsUpdate = true;
+    return t;
+  };
+  markGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+  markTex = { player: make(true), other: make(false) };
+  return markTex;
+}
+function addMark(f, color, size, player) {
+  const T = markTextures();
+  const mat = new THREE.MeshBasicMaterial({ map: player ? T.player : T.other, color, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const m = new THREE.Mesh(markGeo, mat);
+  m.name = 'rr-mark';
+  m.userData.rrGroundMark = true;
+  m.renderOrder = -1;
+  m.castShadow = m.receiveShadow = false;
+  f.rig.root.add(m);
+  f.mark = m; f.markSize = size; f.markPlayer = player;
+  const dispose = f.rig.dispose;
+  f.rig.dispose = () => { dispose(); mat.dispose(); };
+}
 // 공격으로 치지 않는 기술: 배리어를 깨지 않는다
 const NON_ATTACK = new Set(['barrierCast', 'rollDodge', 'backFlip', 'smokeStep', 'blinkStep', 'brace', 'burst', 'summon']);
 // 부위가 부서지면 숨기는 리그 그룹 (models.js createRobot 가 이미 노출한다). 팔은 팔뚝부터, 다리는 왼쪽 정강이부터 떨어진다
@@ -175,6 +235,28 @@ class Fighter {
       r.position.x += (Math.random() - 0.5) * s * 2;
       r.position.z += (Math.random() - 0.5) * s * 2;
     }
+    this.syncMark();
+  }
+
+  // 발밑 표식을 지면 높이에 붙인다. 공중에서는 작고 옅어진다 (루트는 y축 회전만 하므로 로컬 y = 월드 y 차이)
+  syncMark() {
+    const m = this.mark;
+    if (!m) return;
+    if (this.kind === 'robot') {
+      // 로봇 표식은 타고 있는 파일럿 색. 내가 타면 플레이어 표식으로 바뀐다
+      const who = this.pilot || this.owner, mine = !!(this.pilot && this.pilot.isPlayer);
+      if (mine !== this.markPlayer) { this.markPlayer = mine; m.material.map = mine ? markTextures().player : markTextures().other; }
+      if (who) m.material.color.setHex(who.color);
+    }
+    const gh = this.gh;
+    if (gh === undefined || gh < -50 || this.rig.root.parent !== this.g.scene) { m.visible = false; return; }
+    const h = Math.max(0, this.pos.y - gh);
+    const k = clamp(1 - h / 7, 0.3, 1);
+    m.visible = true;
+    m.position.set(0, gh - this.pos.y + 0.05, 0);
+    m.rotation.y = -this.spinYaw;
+    m.scale.setScalar(this.markSize * (0.65 + 0.35 * k));
+    m.material.opacity = k;
   }
 
   updateFlash(realDt) {
@@ -254,6 +336,7 @@ export class Human extends Fighter {
     ];
     this._ctx = { kind: null, progress: 0, label: '', hint: '', near: false };
     g.scene.add(rig.root);
+    addMark(this, this.color, 1.3, isPlayer);
   }
 
   get robot() {
@@ -950,6 +1033,7 @@ export class Robot extends Fighter {
     this.ring.visible = false;
     g.scene.add(this.ring);
     g.scene.add(rig.root);
+    addMark(this, owner.color, this.radius + 1, false);
     Object.assign(this.pose, RFALL);
   }
 

@@ -1,5 +1,7 @@
 // Local installation identity, not an authenticated account or a public directory.
-export const PEER_VERSION = 1;
+// v2 requires energy/part state and current action presentation. Reject older apps
+// at the invitation boundary instead of starting a match with rejected snapshots.
+export const PEER_VERSION = 2;
 export const MAX_WIRE_BYTES = 48 * 1024;
 export const MAX_CODE_LENGTH = 70000;
 const STORE = 'rr-peer-profile-v1';
@@ -53,6 +55,7 @@ export function encodeInvite(value) {
   const safe = validateInvite(value, value.kind);
   const bytes = encoder.encode(JSON.stringify(safe));
   let raw = ''; for (let i=0;i<bytes.length;i+=8192) raw += String.fromCharCode(...bytes.subarray(i,i+8192));
+  // RR1 identifies the code encoding; the enclosed v identifies game compatibility.
   return 'RR1.' + btoa(raw).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 }
 export function decodeInvite(code, kind) {
