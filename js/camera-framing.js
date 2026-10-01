@@ -19,8 +19,8 @@ export function cameraViewport(width, height, touch = false, viewOffsetY = 0, fo
 export function cameraSubject(entity, out = {}) {
   const robot = entity.kind === 'robot';
   out.x = entity.pos.x; out.y = entity.pos.y; out.z = entity.pos.z;
-  out.height = robot ? (entity.type === 'bolt' ? 8.1 : 7.6) : 2.3;
-  out.radius = robot ? (entity.type === 'hammer' ? 3.6 : 2.15) : 0.7;
+  out.height = robot ? (entity.type === 'bolt' ? 8.3 : 7.6) : 2.3;
+  out.radius = robot ? (entity.type === 'hammer' ? 4.9 : 2.15) : 0.7;
   return out;
 }
 
@@ -78,7 +78,7 @@ export function frameCombat(view, player, nearby = [], lead = { x: 0, z: 0 }, ar
   }
   // Farther opponents can leave the frame; the local fighter never does.
   const solo = mounted ? fitSubject(view, { x: player.x, y: playerCenterY, z: player.z }, player) : essential;
-  const contextLimit = Math.max(base, solo) * (mounted ? 1.08 : 1.65);
+  const contextLimit = Math.max(base, solo) * (mounted ? 1.06 : 1.65);
   out.distance = Math.max(essential, Math.min(context, contextLimit));
   return out;
 }

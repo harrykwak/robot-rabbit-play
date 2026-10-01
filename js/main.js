@@ -20,6 +20,7 @@ import { MISSIONS, loadProgress, saveProgress, missionStatus, isUnlocked, record
 import { PeerLobby } from './peer-lobby.js';
 import { PeerSession } from './peer-session.js';
 import { initInstallUI } from './install.js';
+import { rabbitPortrait } from './rabbit-portraits.js';
 
 const touchMedia = matchMedia('(pointer: coarse)');
 const hasTouch = () => touchMedia.matches || navigator.maxTouchPoints > 0;
@@ -64,8 +65,14 @@ function syncPostprocessing() {
     composer.dispose(); composer = null;
   } else if (profile.bloom && !composer) {
     composer = new EffectComposer(renderer);
+    // Postprocessing bypasses the canvas MSAA. Resolve the scene itself before
+    // bloom, keeping thin ears and facial curves smooth in the high profile.
+    const samples = Math.min(2, renderer.capabilities.maxSamples || 0);
+    composer.renderTarget1.samples = samples;
+    composer.renderTarget2.samples = samples;
     composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.5, 1.0));
+    // Keep cream fleece and pastel scenery readable; only bright combat sparks bloom.
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.35, 1.2));
     composer.addPass(new OutputPass());
   }
 }
@@ -231,6 +238,26 @@ function confirmSelection() { if (choosingCampaignPilot) openCampaign(); else st
 // 메뉴 배경: 무대 위에 로봇/파일럿 전시
 const showcase = new THREE.Group();
 scene.add(showcase);
+// Soft contact remains visible in battery mode, so the menu duo sits on the lawn.
+const showcaseContact = new THREE.Group();
+scene.add(showcaseContact);
+{
+  const size = 64, pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const r = Math.hypot((x + .5) / size * 2 - 1, (y + .5) / size * 2 - 1);
+    const i = (y * size + x) * 4;
+    pixels[i] = 64; pixels[i + 1] = 57; pixels[i + 2] = 44;
+    pixels[i + 3] = Math.round(Math.max(0, 1 - r) ** 1.4 * 95);
+  }
+  const map = new THREE.DataTexture(pixels, size, size);
+  map.needsUpdate = true; map.magFilter = map.minFilter = THREE.LinearFilter;
+  const material = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+  for (const [x, z, w, d] of [[0, .15, 3.7, 2.8], [2.8, .6, 1.45, 1.05]]) {
+    const contact = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material);
+    contact.rotation.x = -Math.PI / 2; contact.position.set(x, .025, z);
+    showcaseContact.add(contact);
+  }
+}
 let previewRobot = null, previewHuman = null, previewKey = '';
 const previewBounds = new THREE.Box3(), previewSize = new THREE.Vector3(), previewCenter = new THREE.Vector3();
 function buildPreview() {
@@ -252,7 +279,7 @@ function buildPreview() {
   previewBounds.getSize(previewSize);
   previewBounds.getCenter(previewCenter);
   previewRobot.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  for (const e of previewRobot.eyes) e.material.emissiveIntensity = 2.5;
+  for (const e of previewRobot.eyes) e.material.emissiveIntensity = 0.08;
 }
 
 // Small, crisp roster portraits share the 3D pilots' palette and signature headwear.
@@ -344,7 +371,7 @@ function renderRobots() {
     b.className = 'robot-card' + (t === cfg.robot ? ' on' : '');
     b.setAttribute('aria-pressed', String(t === cfg.robot));
     b.style.setProperty('--c', '#' + info.color.toString(16).padStart(6, '0'));
-    b.innerHTML = '<span class="rc-name"></span><span class="rc-tag"></span>';
+    b.innerHTML = '<span class="rc-face">' + rabbitPortrait(t) + '</span><span class="rc-copy"><span class="rc-name"></span><span class="rc-tag"></span></span>';
     b.querySelector('.rc-name').textContent = info.name;
     b.querySelector('.rc-tag').textContent = ROBOT_STATS[t].tag;
     b.onclick = () => { cfg.robot = t; audio.sfx('ui'); renderSelect(); };
@@ -523,6 +550,8 @@ function renderHelp() {
     if (mobileControls) body.appendChild(note('터치: 흰색 큰 버튼은 공격, 옆의 아이콘 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 나타나고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 스틱 옆 버튼은 점프, 스틱을 같은 방향으로 두 번 튕기면 대시예요. 로봇은 당근쥬스로 움직이고, 팔·머리·다리가 따로 부서질 수 있어요.', 'help-note hl'));
     body.appendChild(note('호출 배리어 — ' + BARRIER_TEXT, 'help-note hl'));
     body.appendChild(note('당근 게이지는 시간이 지나거나, 때리거나, 맞거나, 콤보를 이어가면 찹니다. 적이 로봇에 타고 있으면 더 빨리 찹니다.'));
+    body.appendChild(note('탑승하면 토끼 눈높이의 1인칭 시점이 됩니다. 스틱·방향키 좌우로 회전하고 앞뒤로 전진·후진합니다. 하차하면 사람의 3인칭 시점으로 돌아옵니다.', 'help-note hl'));
+    body.appendChild(note('공격 적중으로 얻은 어택 포인트(AP)는 호출 게이지와 별개입니다. 탑승한 채 커다란 음료 판매대 앞에서 멈춰 보급 버튼을 길게 누르면 20 AP로 주스 60을 구매합니다. 당근밭 분쇄기에서는 3.2초 동안 직접 갈아 무료로 주스 60을 얻습니다. 움직임·점프·공격·피격은 보급을 취소합니다. 보급소에서 벗어나면 하차 버튼으로 돌아옵니다.', 'help-note hl'));
     body.appendChild(note('빈 로봇은 누구나 탈 수 있습니다. 주인은 0.8초, 다른 사람은 2.2초가 걸리니 적 로봇이 떨어지면 달려가서 방해하거나 빼앗으세요. 탑승하려는 사람을 때리면 탑승이 취소됩니다.'));
     body.appendChild(note('게임패드: 왼쪽 스틱 이동, A 점프, X 공격, Y 스킬 1, B 스킬 2, RB 대시, LB 호출/탑승/하차, Start 일시정지'));
   } else if (helpTab === 'combo') {
@@ -784,6 +813,7 @@ function toMenu(screen) {
   mode = 'menu';
   hud.classList.add('hidden');
   showcase.visible = true;
+  showcaseContact.visible = true;
   hud.classList.remove('riding');
   subStack.length = 0;
   input.cancelCapture();
@@ -814,6 +844,7 @@ function startMatch(skipGuide = false, peerConfig = null) {
   show(null);
   hud.classList.remove('hidden');
   showcase.visible = false;
+  showcaseContact.visible = false;
   applyStage((peerConfig || cfg).stage);
   applyHint(hintDefaultOpen());
   hintSt.n++;
@@ -1022,13 +1053,15 @@ function frame(now = performance.now()) {
     fx.update(dt, dt);
     const sel = !document.getElementById('select').classList.contains('hidden');
     if (previewRobot) {
+      previewRobot.animateFace?.(menuT);
       previewRobot.root.rotation.y = -0.35 + Math.sin(menuT * 0.6) * 0.22;
       previewRobot.earL.rotation.x = Math.sin(menuT * 2) * 0.15;
       previewRobot.earR.rotation.x = Math.sin(menuT * 2 + 0.6) * 0.15;
-      previewRobot.hips.position.y += 0;
+      previewRobot.head.rotation.z = Math.sin(menuT * .75) * .045;
+      previewRobot.head.rotation.x = -.025 + Math.sin(menuT * 1.2) * .02;
       previewRobot.armL.rotation.x = -0.4 + Math.sin(menuT * 1.4) * 0.08;
       previewRobot.armR.rotation.x = -0.4 - Math.sin(menuT * 1.4) * 0.08;
-      if (previewRobot.chestCore) previewRobot.chestCore.material.emissiveIntensity = 1.8 + Math.sin(menuT * 5) * 0.8;
+      if (previewRobot.chestCore) previewRobot.chestCore.material.emissiveIntensity = .24 + Math.sin(menuT * 2) * .08;
       previewHuman.armR.rotation.x = -2.6 + Math.sin(menuT * 3) * 0.2;
     }
     // Fit the live duo into the actual menu stage, including portrait phones.

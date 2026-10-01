@@ -409,15 +409,17 @@ export class AICtrl {
       if (this.atkT <= 0 && r.act.def.next && dist < want + 2.5 && Math.random() < d.aggro) { i.atk = true; this.atkT = 0.15 + d.react * 0.3; }
       return;
     }
-    // 당근쥬스가 모자라면 가까운 당근을 먹으러 간다 (적이 바로 앞이면 싸운다)
-    if (r.juice < RULES.juiceLow && dist > 4) {
-      let carrot = null, cd = 26;
-      for (const c of g.carrots) {
-        if (!c.landed) continue;
-        const dd = Math.hypot(c.pos.x - r.pos.x, c.pos.z - r.pos.z);
-        if (dd < cd) { cd = dd; carrot = c; }
+    // AI uses the same paid purchase / interruptible grinding as human pilots.
+    if ((r.juice < RULES.juiceLow || me.supplyProgress > 0) && (dist > 4 || r.juice <= 0)) {
+      const stations = (g.juiceStations?.stations || []).filter(s => s.kind === 'farm' || me.attackPoints >= 20);
+      stations.sort((a, b) => r.pos.distanceToSquared(a.pos) - r.pos.distanceToSquared(b.pos));
+      const station = stations[0];
+      if (station) {
+        if (g.juiceStations.near(me)?.id === station.id) {
+          i.mx = i.mz = 0; i.actP = !me._supplyLatch; i.act = true;
+        } else this.goTo(station.pos.x, station.pos.z, 1, station.pos.y);
+        return;
       }
-      if (carrot) { this.goTo(carrot.pos.x, carrot.pos.z, 1, carrot.gy); return; }
     }
     const fx = Math.sin(r.facing), fz = Math.cos(r.facing);
     const align = (fx * dx + fz * dz) / (dist || 1);

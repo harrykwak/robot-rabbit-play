@@ -113,3 +113,26 @@ html #hud #robot-arrow { width: 34px; height: 34px; margin: -17px 0 0 -17px; fon
 @media (prefers-reduced-motion: reduce) {
   .hbar > i { transition: none; }
 }
+/* A compact supply readout keeps the first-person centre clear. */
+.supply-panel { display:none; position:absolute; top:94px; left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100vw - 28px); padding:7px 13px; border:1px solid #fff2ce55; border-radius:12px; background:#162c36df; color:#fff7e5; text-align:center; font-size:11px; line-height:1.45; pointer-events:none; box-shadow:0 3px 14px #10263030; }
+.supply-panel.show { display:grid; grid-template-columns:auto 1fr; gap:1px 9px; }
+.ap-balance { color:#ffc770; font-size:14px; align-self:center; grid-row:span 2; padding-right:9px; border-right:1px solid #ffffff30; }
+.supply-help { color:#ceded6; font-size:10px; }
+.supply-meter { display:none; grid-column:1/-1; height:4px; overflow:hidden; border-radius:3px; background:#ffffff30; margin-top:4px; }
+.supply-meter i { display:block; height:100%; background:#ffb53f; transform-origin:left; }
+.supply-panel.working .supply-meter { display:block; }
+.cockpit-reticle { display:none; position:absolute; left:50%; top:50%; width:26px; height:26px; transform:translate(-50%,-50%); border:1px solid #fff9d699; border-radius:50%; pointer-events:none; filter:drop-shadow(0 1px 2px #102a32); }
+.cockpit-reticle.show { display:block; }
+.cockpit-reticle i { position:absolute; width:4px; height:4px; border-radius:50%; background:#fff7cf; left:10px; top:10px; }
+.cockpit-reticle span { position:absolute; top:33px; left:50%; transform:translateX(-50%); color:#fff9d6; font-size:8px; letter-spacing:2px; white-space:nowrap; opacity:.7; }
+.cockpit-reticle.damaged { border-color:#ff805f; }
+.touch-mode .supply-panel { top:64px; }
+@media (orientation:portrait) { html .supply-panel, html.touch-mode .supply-panel { top:148px; font-size:10px; padding:5px 9px; } }
+
+/* Transient match messages sit below the AP readout, including its progress bar. */
+html #hud:has(.supply-panel.show) #toast { top:148px; }
+html.touch-mode #hud:has(.supply-panel.show) #toast { top:120px; }
+@media (orientation:portrait) {
+  html #hud:has(.supply-panel.show) #toast,
+  html.touch-mode #hud:has(.supply-panel.show) #toast { top:202px; }
+}

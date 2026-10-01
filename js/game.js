@@ -8,6 +8,8 @@ import { AICtrl } from './ai.js';
 import * as audio from './audio.js';
 import * as input from './input.js';
 import { CAMERA_PITCH, cameraViewport, cameraSubject, fitSubject, frameCombat, cameraAim } from './camera-framing.js';
+import { CockpitCamera, prepareMountedInput } from './cockpit.js';
+import { JuiceStations, JUICE_SERVICE } from './juice-stations.js';
 
 const keyName = (a) => document.documentElement.classList.contains('touch-mode') && a === 'act' ? '호출 버튼' : input.actionLabel(a);
 
@@ -99,6 +101,7 @@ export class Game {
     this.stockCount = 3;
     this.player = null;
     this.outSeq = 0;
+    this.cockpitCamera = new CockpitCamera();
   }
 
   // ---------------- 매치 ----------------
@@ -111,6 +114,7 @@ export class Game {
     const types = [cfg.robot, ...ROBOT_ORDER.filter((t) => t !== cfg.robot)];
     for (let n = 0; n < 4; n++) {
       const h = new Human(this, n, PILOTS[order[n]], n === 0, cfg.diff);
+      h.attackPoints = 0; h.supplyId = -1; h.supplyProgress = 0; h.supplyHeld = false;
       if (n === 0 && cfg.playerName) h.name = cfg.playerName;
       if (n === 1 && cfg.peer) { h.remote = true; h.name = cfg.peer.name; }
       if (n === 0 && cfg.autoplay) { h.ctrl = new AICtrl(this, h, DIFFICULTY[2]); h.autoplay = true; }
@@ -123,6 +127,7 @@ export class Game {
       this.ui.addFighter(h);
     }
     this.player = this.humans[0];
+    this.juiceStations = new JuiceStations(this);
     this.time = 0;
     this.timeLeft = RULES.matchTime;
     this.phase = 'intro';
@@ -140,6 +145,8 @@ export class Game {
   }
 
   clear() {
+    this.cockpitCamera?.reset(this.camera);
+    this.juiceStations?.dispose(); this.juiceStations = null;
     for (const h of this.humans) { this.scene.remove(h.rig.root); h.rig.dispose(); }
     for (const r of this.robots) r.dispose();
     for (const p of this.projectiles) this.removeProj(p);
@@ -170,6 +177,8 @@ export class Game {
     for (const h of this.humans) {
       if (h.isPlayer && !h.autoplay) h.ctrl.poll();
       else if (!h.dead && !h.out) h.ctrl.think(dt);
+      this.juiceStations?.update(h, dt);
+      if (h.riding && !h.autoplay && (h.isPlayer || h.remote)) h.ctrl.in = prepareMountedInput(h.riding, h.ctrl.in, dt);
     }
     for (let i = this.timers.length - 1; i >= 0; i--) {
       const t = this.timers[i];
@@ -185,6 +194,7 @@ export class Game {
       if (h.ctrl.consume) h.ctrl.consume();
     }
     this.separate();
+    if (this.juiceStations) for (const actor of [...this.humans, ...this.robots]) this.juiceStations.collide(actor);
     this.updateShields(dt);
     this.updateCombos(realDt);
     this.updateProjectiles(dt);
@@ -192,6 +202,7 @@ export class Game {
     this.updateCarrots(dt);
     this.fx.update(dt, realDt);
     this.arena.update(dt, this.time);
+    this.juiceStations?.present(this.time);
     this.updateCamera(realDt);
     if (present) this.ui.update(this, realDt);
   }
@@ -301,6 +312,7 @@ export class Game {
   // 모든 공격이 최종적으로 이곳을 거친다
   applyHit(att, t, h, dir, at, opt = {}) {
     const src = att ? this.credit(att) : null;
+    const healthBefore = t.kind === 'human' ? t.hp : t.armor;
     let dmg = h.dmg;
     let power = h.power || 0;
     const byRobot = att && att.kind === 'robot';
@@ -361,9 +373,9 @@ export class Game {
         this.fx.guard(at, dir);
         this.sound('block', at, 1);
         this.shake(0.05, at);
-        if (!byRobot) { if (t.hp <= 0) t.hp = 1; return true; }
+        if (!byRobot) { if (t.hp <= 0) t.hp = 1; this.awardAP(src, healthBefore - t.hp); return true; }
         t.addGauge(dmg * RULES.gaugeTake);
-        if (t.hp > 0) return true;
+        if (t.hp > 0) { this.awardAP(src, healthBefore - t.hp); return true; }
       } else {
         t.hp -= dmg;
       }
@@ -378,6 +390,7 @@ export class Game {
       const scale = 1 + clamp((100 - t.hp) / 100, 0, 1) * 0.55;
       const air = !t.onGround && t.pos.y - t.gh > 0.6;
       if (armored) {
+        this.awardAP(src, healthBefore - t.hp);
         t.flash = 1;
         this.fx.hit(at, dir, 0, 0xffe070);
         this.sound('block', at, 0.6, 0.8);
@@ -497,13 +510,17 @@ export class Game {
     this.ui.damage(at, dmg, t.kind === 'robot' ? 'robot' : power >= 2 ? 'big' : power >= 1 ? 'mid' : '');
     if (src) {
       src.dmgDealt += dmg;
+      this.awardAP(src, Math.min(dmg, healthBefore));
       if (!src.riding) src.addGauge(dmg * RULES.gaugeDeal);
       this.comboHit(src, t, dmg);
     }
-    // 로봇이 공격을 맞히면 당근쥬스가 조금 찬다
-    if (byRobot && att.addJuice && att.state === 'active') att.addJuice(dmg * RULES.juiceHit);
+    // Hits earn AP; only deliberate service actions refill the tank.
     if (t.kind === 'robot' && t.armor <= 0) this.destroyRobot(t, 'armor', src);
     return true;
+  }
+
+  awardAP(pilot, damage) {
+    if (pilot && damage > 0) pilot.attackPoints = Math.min(JUICE_SERVICE.maxAP, (pilot.attackPoints || 0) + damage * .5);
   }
 
   // 부위 피해: 타격 지점의 높이/좌우로 부위를 고르고, 내구도가 0 이 되면 떨어져 나간다
@@ -791,6 +808,11 @@ export class Game {
     const c = h._ctx || (h._ctx = { kind: null, progress: 0, label: '', hint: '', near: false });
     c.kind = null; c.progress = 0; c.label = ''; c.hint = ''; c.near = false;
     if (!h || h.dead || h.out) return c;
+    const supply = this.juiceStations?.context(h);
+    if (supply && (supply.ready || h.supplyHeld)) {
+      c.kind = supply.kind; c.label = supply.label; c.hint = supply.hint;
+      c.near = true; c.progress = supply.progress; return c;
+    }
     if (h.riding) {
       c.kind = 'exit'; c.label = '하차'; c.hint = '길게';
       c.progress = clamp(h.ejectHold / EJECT_HOLD, 0, 1);
@@ -1608,19 +1630,7 @@ export class Game {
           break;
         }
       }
-      // 탑승 중인 로봇은 당근을 밟아 당근쥬스를 채운다
-      if (!taken) for (const r of this.robots) {
-        if (r.state !== 'active' || !r.pilot) continue;
-        if (this.dist2D(r.pos, c.pos) < r.radius + 0.9 && c.pos.y > r.pos.y - 1 && c.pos.y < r.pos.y + r.height * 0.5) {
-          const got = Math.round(r.addJuice(RULES.juiceCarrot));
-          this.fx.sparkle(c.pos, 0xff9a2e);
-          this.fx.ring(tA.copy(r.pos).setY(r.pos.y + 0.1), null, 0.5, r.radius + 2, 0.35, 0xff9a2e, 0.9);
-          this.sound('gaugeFull', c.pos, 0.6, 1.2);
-          this.ui.callout(r.pos, '🥕 쥬스 +' + got, 'good', r.height + 0.8);
-          taken = true;
-          break;
-        }
-      }
+      // Raw pickups feed on-foot pilots; a rabbit needs a dispenser or grinder.
       if (taken) { this.releaseCarrot(c.mesh); this.carrots.splice(i, 1); }
     }
   }
@@ -1699,6 +1709,7 @@ export class Game {
   updateCamera(realDt) {
     const cam = this.camera, pl = this.player;
     if (!pl) return;
+    if (this.cockpitCamera.update(this, realDt)) return;
     const width = typeof innerWidth === 'number' ? innerWidth : 1280;
     const height = typeof innerHeight === 'number' ? innerHeight : 720;
     const touch = typeof document !== 'undefined' && document.documentElement?.classList.contains('touch-mode');

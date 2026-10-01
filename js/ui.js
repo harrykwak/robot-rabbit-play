@@ -79,6 +79,14 @@ export class UI {
     this.skillKey = '';
     this.robotInfo = {};
     this.hud = $('#hud');
+    this.supplyPanel = document.createElement('div');
+    this.supplyPanel.className = 'supply-panel';
+    this.supplyPanel.innerHTML = '<b class="ap-balance"></b><span class="supply-route"></span><span class="supply-help"></span><div class="supply-meter"><i></i></div>';
+    this.hud.appendChild(this.supplyPanel);
+    this.reticle = document.createElement('div');
+    this.reticle.className = 'cockpit-reticle';
+    this.reticle.innerHTML = '<i></i><span>RABBIT VISION</span>';
+    this.hud.appendChild(this.reticle);
     this.comboEndT = 0;
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'ctx-hint';
@@ -123,6 +131,7 @@ export class UI {
     this.flashEl.style.opacity = '0';
     this.dom = { arrowOn: false, arrowX: null, arrowY: null, arrowR: null, timerLow: null, flash: '0' };
     this.hud.classList.remove('riding');
+    this.supplyPanel.classList.remove('show'); this.reticle.classList.remove('show');
     this.hintEl.classList.remove('show');
     this.hintEl.textContent = '';
     this.hintSeen.clear();
@@ -201,6 +210,30 @@ export class UI {
     setClass(this.timerEl, this.dom, 'timerLow', 'low', tl <= 30);
     const W = innerWidth, H = innerHeight;
     const me = g.player, meAt = me ? (me.riding || me).pos : null;
+    const riding = !!me?.riding && !me.dead && !me.out && g.phase !== 'end';
+    this.reticle.classList.toggle('show', riding);
+    this.reticle.classList.toggle('damaged', riding && !!(me.riding.broken & PART_BIT.head));
+    this.supplyPanel.classList.toggle('show', !!me && !me.dead && !me.out);
+    if (me) {
+      this.supplyPanel.querySelector('.ap-balance').textContent = Math.floor(me.attackPoints || 0) + ' AP';
+      const supply = g.juiceStations?.context(me);
+      const route = this.supplyPanel.querySelector('.supply-route');
+      const help = this.supplyPanel.querySelector('.supply-help');
+      this.supplyPanel.classList.toggle('working', me.supplyProgress > 0);
+      this.supplyPanel.querySelector('.supply-meter i').style.transform = 'scaleX(' + (me.supplyProgress || 0) + ')';
+      if (supply) {
+        route.textContent = supply.label + ' · ' + supply.hint;
+        help.textContent = me.supplyProgress > 0 ? Math.round(me.supplyProgress * 100) + '% · 계속 누르세요' : !supply.ready ? '보급 불가 · 하차 버튼 사용 가능' : document.documentElement.classList.contains('touch-mode') ? '멈춰서 주스 보급 버튼을 길게' : controlLabel('act') + ' · 멈춰서 길게';
+      } else if (riding) {
+        route.textContent = (g.juiceStations?.stations || []).map(s => {
+          const dx = s.pos.x - meAt.x, dz = s.pos.z - meAt.z;
+          const angle = Math.atan2(dx, dz) - me.riding.facing;
+          const arrow = Math.cos(angle) < -.6 ? '뒤' : Math.sin(angle) > .2 ? '←' : Math.sin(angle) < -.2 ? '→' : '↑';
+          return (s.kind === 'shop' ? '판매대 ' : '당근밭 ') + arrow + ' ' + Math.round(Math.hypot(dx, dz)) + 'm';
+        }).join(' · ');
+        help.textContent = '좌우 회전 · 앞뒤 이동';
+      } else { route.textContent = '어택 포인트 · 공격 적중으로 획득'; help.textContent = '탑승 후 판매대 20 AP / 당근밭 무료'; }
+    }
     const tagsOn = this.tagList; tagsOn.length = 0;
     for (const [h, c] of this.cards) {
       const L = c.last;
@@ -252,7 +285,7 @@ export class UI {
         const at = e.rig && e.rig.root.parent ? e.rig.root.position : e.pos;
         tV.set(at.x, at.y + e.height + (r ? 0.6 : 0.4), at.z).project(this.camera);
         const x = (tV.x + 1) / 2 * W, y = (1 - tV.y) / 2 * H;
-        const vis = tV.z < 1 && x > -60 && x < W + 60 && y > -60 && y < H + 60;
+        const vis = !(riding && h === me) && tV.z >= -1 && tV.z < 1 && x > -60 && x < W + 60 && y > -60 && y < H + 60;
         const boarding = h.state === 'boarding' && h.boardTarget;
         if (vis) {
           // 가까운 상대 · 방금 주고받은 상대 · 탑승 시도 중만 이름을 보여 주고, 나머지는 얇은 체력선만

@@ -6,6 +6,7 @@ import { ICONS, skillIcon } from './touch-icons.js';
 
 // 호출 칸의 기본 표기. game.contextAction 이 label/hint 를 주면 그걸 쓴다 (나중에 다른 필살기로 교체 가능)
 const SPECIAL = {
+  supply: { label: '주스 보급', hint: '길게', aria: '주스 보급: 길게 누르기' },
   call: { label: '호출', hint: '준비!', aria: '호출: 로봇 부르기' },
   board: { label: '탑승', hint: '길게', aria: '탑승: 길게 누르기' },
   exit: { label: '하차', hint: '길게', aria: '하차: 길게 누르기' },
@@ -236,7 +237,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     if (robot) {
       const juice = Math.max(0, Math.round((robot.juice ?? 0) / (robot.maxJuice || 100) * 100));
       // 내구도·쥬스·파손 부위는 내 카드(왼쪽 위)가 늘 보여 준다. 여기서는 행동이 필요할 때만 한 줄
-      text(status, juice <= 0 ? '쥬스 바닥! 당근을 주워요' : '');
+      text(status, player.supplyProgress > 0 ? '보급 중 · 계속 누르세요' : juice <= 0 ? '주스 바닥 · 판매대 구매 / 당근밭에서 갈기' : '');
       return;
     }
     if (player.state === 'boarding') text(status, '탑승 중 ' + Math.min(100, Math.floor(player.boardT / player.boardNeed * 100)) + '% · 계속 누르세요');

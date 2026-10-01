@@ -735,6 +735,7 @@ noscript { position: fixed; inset: 0; z-index: 200; padding: 28px; background: #
 .touch-special[data-kind="exit"] { --tc: #6a7896; }
 .touch-special.is-far { filter: saturate(.5) brightness(.85); opacity: .75; }
 .touch-special[data-kind="board"]::after,
+.touch-special[data-kind="supply"]::after,
 .touch-special[data-kind="exit"]::after {
   /* 길게 누르기 진행 링 */
   content: "";
@@ -928,7 +929,9 @@ html.touch-mode #hud .skills { display: none; }
 #touch-controls .touch-btn.is-burst::before { border: 3px solid var(--control-orange); box-shadow: none; inset: -6px; }
 #touch-controls .touch-btn.is-burst .touch-sub { color: var(--control-orange); }
 #touch-controls .touch-special[data-kind="board"]::after,
+#touch-controls .touch-special[data-kind="supply"]::after,
 #touch-controls .touch-special[data-kind="exit"]::after { background: conic-gradient(var(--control-paper) calc(var(--hold, 0) * 360deg), #141a3333 0); }
+#touch-controls .touch-special[data-kind="supply"] .touch-label { font-size:calc(9px * var(--m-k)); max-width:90%; }
 #touch-controls .touch-menu {
   top: max(10px, var(--m-sat)); right: max(12px, var(--m-sar)); width: 44px; height: 44px; min-width: 44px; min-height: 44px;
   padding: 11px; color: var(--control-paper); background: var(--control-ink); border: 1px solid #fff8ec50; border-radius: 12px; box-shadow: 0 3px 0 #141a3340;

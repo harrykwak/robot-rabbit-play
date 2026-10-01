@@ -118,7 +118,8 @@ function tagSwap(root) {
 
 // 리그마다 재질을 따로 가진다 (피격 플래시용)
 class Kit {
-  constructor(outline) {
+  constructor(outline, plush = false) {
+    this.plush = plush;
     this.mats = new Map();
     this.flashMats = [];
     this.all = [];
@@ -133,7 +134,9 @@ class Kit {
   m(color) {
     let m = this.mats.get(color);
     if (!m) {
-      m = new THREE.MeshToonMaterial({ color, gradientMap: grad });
+      m = this.plush
+        ? new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 })
+        : new THREE.MeshToonMaterial({ color, gradientMap: grad });
       this.mats.set(color, m);
       this.flashMats.push(m);
       this.all.push(m);
@@ -185,12 +188,28 @@ class Kit {
     }
     this.bakes = [];
     if (!bones.size) return;
-    const vc = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: grad });
+    const vc = this.plush
+      ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0 })
+      : new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: grad });
     vc.emissive.copy(this.flashMats[0]?.emissive ?? vc.emissive);
     this.flashMats.push(vc);
     this.all.push(vc);
     for (const [bone, parts] of bones) {
       const geo = bakeVertexColored(parts);
+      // Authored plush surface gradients (cheek blush) keep their vertex colors
+      // through the static bake, using the same single flashable material.
+      if (this.plush) {
+        const colors = geo.attributes.color;
+        let offset = 0;
+        for (const p of parts) {
+          const source = p.geometry.attributes.color;
+          if (source) for (let i = 0; i < source.count; i++) {
+            colors.setXYZ(offset + i, source.getX(i) * p.color.r,
+              source.getY(i) * p.color.g, source.getZ(i) * p.color.b);
+          }
+          offset += p.geometry.attributes.position.count;
+        }
+      }
       this.bakedGeos.push(geo);
       const mesh = new THREE.Mesh(geo, vc);
       mesh.name = 'rr-baked';
@@ -244,65 +263,6 @@ const grp = (parent, x = 0, y = 0, z = 0) => {
   return g;
 };
 
-// ---------------- 털 뭉치 (가벼운 로우폴리) ----------------
-// 부드러운 법선의 이코사 구슬 + 짧은 원뿔 가닥을 한 지오메트리로 합친다: 뭉치 하나 = 드로우 1회.
-// 아웃라인/그림자 없이 쓰고, 저품질에서는 축소판(또는 빈 지오메트리)이 본 병합에 들어가 드로우가 늘지 않는다.
-const _white = new THREE.Color(1, 1, 1);
-const _up = new THREE.Vector3(0, 1, 0);
-const puffGeos = [new THREE.IcosahedronGeometry(1, 0), new THREE.IcosahedronGeometry(1, 1)];
-for (const g of puffGeos) g.setAttribute('normal', g.attributes.position.clone()); // 단위 구: 법선 = 위치
-const strandGeo = new THREE.ConeGeometry(1, 1, 4, 1, true).translate(0, 0.5, 0);
-// blobs: [x, y, z, r, detail], strands: [x, y, z, dx, dy, dz, len, r]
-function furMerge(blobs = [], strands = []) {
-  const parts = [];
-  for (const [x, y, z, r, d = 0] of blobs) {
-    parts.push({ geometry: puffGeos[d], matrix: new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(r, r, r)), color: _white });
-  }
-  for (const [x, y, z, dx, dy, dz, len, r] of strands) {
-    const q = new THREE.Quaternion().setFromUnitVectors(_up, new THREE.Vector3(dx, dy, dz).normalize());
-    parts.push({ geometry: strandGeo, matrix: new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(r, len, r)), color: _white });
-  }
-  const g = bakeVertexColored(parts);
-  g.deleteAttribute('color');
-  return g;
-}
-const furGeo = (key, high, low) => G('fur' + key, () => furMerge(...high), () => furMerge(...(low || [])));
-const FUR = {
-  // 폼폼 꼬리
-  tail: () => furGeo('tail', [
-    [[0, 0, -0.05, 0.34, 1], ...[[0.22, 0.08, -0.06], [-0.22, 0.06, -0.04], [0.06, 0.24, -0.08], [-0.04, -0.2, -0.06], [0.12, -0.08, -0.22], [-0.12, 0.1, -0.22]].map(([x, y, z]) => [x, y, z, 0.2])],
-  ], [[[0, 0, -0.06, 0.42, 1]]]),
-  // 콧수염 패드 + 볼털
-  muzzle: () => furGeo('muzzle', [
-    [[0.13, 0.27, 0.64, 0.13, 1], [-0.13, 0.27, 0.64, 0.13, 1], ...[1, -1].flatMap((s) => [[0.5 * s, 0.28, 0.44, 0.16], [0.6 * s, 0.18, 0.34, 0.13], [0.42 * s, 0.14, 0.5, 0.12]])],
-    [1, -1].flatMap((s) => [[0.6 * s, 0.24, 0.4, s, -0.3, 0.3, 0.22, 0.05], [0.52 * s, 0.1, 0.46, 0.8 * s, -0.8, 0.3, 0.2, 0.05], [0.66 * s, 0.3, 0.3, s, 0.1, 0, 0.2, 0.045]]),
-  ], [[[0.13, 0.27, 0.64, 0.13], [-0.13, 0.27, 0.64, 0.13], [0.52, 0.24, 0.42, 0.17], [-0.52, 0.24, 0.42, 0.17]]]),
-  whiskers: () => furGeo('whiskers', [[], [1, -1].flatMap((s) => [0, 1, 2].map((k) => [0.2 * s, 0.24 + k * 0.05, 0.7, s, (k - 1) * 0.25, 0.15, 0.5, 0.018]))]),
-  // 목 주변 가슴털 (x는 몸통 폭에 맞춰 스케일)
-  ruff: () => {
-    const pts = [];
-    for (let i = 0; i < 9; i++) { const a = -1.3 + i * (2.6 / 8); pts.push([0.62 * Math.sin(a), 1.66 + 0.04 * Math.cos(i * 1.7), 0.02 + 0.55 * Math.cos(a), a, 0.19 + 0.04 * (i % 2)]); }
-    // 앞쪽 아래로 늘어지는 두 번째 층 (둥근 덩어리만, 가닥은 짧게 옆으로)
-    const lower = [-0.5, -0.17, 0.17, 0.5].map((a, i) => [0.5 * Math.sin(a), 1.47 - 0.03 * (i % 2), 0.08 + 0.52 * Math.cos(a), 0.17]);
-    return furGeo('ruff', [[...pts.map(([x, y, z, , r]) => [x, y, z, r]), ...lower], pts.filter((p, i) => i % 2 === 0).map(([x, y, z, a]) => [x, y + 0.02, z, Math.sin(a), 0.35, Math.cos(a), 0.16, 0.08])],
-      [[[0.5, 1.66, 0.32, 0.23], [0, 1.68, 0.57, 0.25], [-0.5, 1.66, 0.32, 0.23]]]);
-  },
-  // 손목/발목 털 커프 (반지름 0.3 기준, 메시 스케일로 맞춤). 저품질은 생략
-  cuff: () => {
-    const ring = [];
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; ring.push([Math.cos(a), Math.sin(a), i]); }
-    return furGeo('cuff', [ring.map(([c, s, i]) => [0.3 * c, i % 2 ? 0.035 : -0.035, 0.3 * s, i % 2 ? 0.12 : 0.14])]);
-  },
-  // 귀 끝 솜털
-  earTip: () => furGeo('earTip', [
-    [[0, 0, 0, 0.2], [0.08, 0.1, 0, 0.13], [-0.08, 0.08, 0.02, 0.12], [0, 0.16, 0, 0.11]],
-    [[0, 0.1, 0, 0, 1, 0.1, 0.22, 0.06], [0.08, 0.08, 0, 0.5, 1, 0, 0.18, 0.05], [-0.08, 0.08, 0, -0.5, 1, 0, 0.18, 0.05]],
-  ], [[[0, 0.05, 0, 0.22], [0, 0.18, 0, 0.14]]]),
-  // 귓속 분홍 털 (저품질 생략)
-  earInner: () => furGeo('earInner', [
-    [[0, -0.02, 0, 0.12], [0.03, 0.1, 0.01, 0.11], [-0.025, 0.21, 0, 0.1], [0.015, 0.31, 0, 0.085], [0, 0.4, 0, 0.065]],
-  ]),
-};
 
 // ---------------- 아이템 ----------------
 const carrotMats = {
@@ -772,214 +732,383 @@ function shade2(c) { const o = new THREE.Color(c); o.multiplyScalar(0.72); retur
 
 // ---------------- 토끼 로봇 ----------------
 export const ROBOT_INFO = {
-  titan: { name: '캐럿 타이탄', color: 0xff4b3a, desc: '거대한 건틀릿으로 모든 걸 부수는 파워 브롤러. 로켓 펀치와 점프 스톰프가 특기.' },
-  bolt: { name: '볼트 헤어', color: 0x33d4ff, desc: '부스터로 전장을 가르는 스피드형. 귀를 드릴로 바꿔 돌진하고 토네이도 킥으로 휩쓴다.' },
-  cannon: { name: '문 캐논', color: 0x9b6bff, desc: '어깨 포드의 유도 당근 미사일과 눈에서 뿜는 문 레이저로 멀리서 제압하는 포격형.' },
-  hammer: { name: '해머 버니', color: 0x58cf5a, desc: '거대한 당근 해머를 휘두르는 중장갑 버니. 회전 해머와 대지 가르기 슬램.' },
+  titan: { name: '캐럿 타이탄', color: 0xeeb88e, desc: '살구빛 갈기와 포근한 크림 얼굴의 다정한 사자토끼 복서. 솜주먹 로켓 펀치와 점프 스톰프가 특기.' },
+  bolt: { name: '볼트 헤어', color: 0xa9d6c6, desc: '민트빛 털과 크림 목도리, 길게 선 귀의 경쾌한 산토끼. 드릴 이어 돌진과 토네이도 킥으로 달린다.' },
+  cannon: { name: '문 캐논', color: 0xc7b8dc, desc: '라벤더빛 털과 나른한 눈웃음, 폭신한 늘어진 귀의 달토끼. 씨앗 포드의 유도 당근과 문 레이저가 특기.' },
+  hammer: { name: '해머 버니', color: 0xb6c7a1, desc: '세이지빛 털과 크림 앞치마의 온순한 농장토끼. 커다란 당근 해머로 빙글 돌고 땅을 두드린다.' },
 };
 
 const PAL = {
-  titan: { main: 0xff4b3a, dark: 0x6e1d1c, acc: 0xffc93a, metal: 0xdfe3ea, bulk: 1.12, fist: 0.9, ear: 1.25 },
-  bolt: { main: 0x33d4ff, dark: 0x1c3a66, acc: 0xffffff, metal: 0xeaf6ff, bulk: 0.84, fist: 0.58, ear: 1.5 },
-  cannon: { main: 0x9b6bff, dark: 0x242a5c, acc: 0xffd24a, metal: 0xd4d2ee, bulk: 1.0, fist: 0.62, ear: 1.3 },
-  hammer: { main: 0x58cf5a, dark: 0x2c5f31, acc: 0xffd63a, metal: 0xf0ead2, bulk: 1.22, fist: 0.7, ear: 1.1 },
+  // The colored fleece frames a single cream face; breed identity comes from
+  // silhouette and cloth accessories, never facial aggression or exposed hardware.
+  titan: { main: 0xeeb88e, dark: 0xa27459, acc: 0xf1c49c, fur: 0xfff1dd, inner: 0xe8b4a5, bulk: 1.12, fist: 0.9, ear: 1.25, head: [1.43, 1.28, 1.08], belly: 1.02 },
+  bolt: { main: 0xa9d6c6, dark: 0x648d80, acc: 0xffefd7, fur: 0xfff4e4, inner: 0xe7b8ad, bulk: 0.84, fist: 0.58, ear: 2.15, head: [1.27, 1.34, 1.02], belly: 0.95 },
+  cannon: { main: 0xc7b8dc, dark: 0x9687b1, acc: 0xf1dba5, fur: 0xfff2e4, inner: 0xe0b8c7, bulk: 1, fist: 0.62, ear: 1.75, head: [1.49, 1.3, 1.12], belly: 1.08 },
+  hammer: { main: 0xb6c7a1, dark: 0x7d9571, acc: 0xffeed7, fur: 0xfff1dd, inner: 0xe5b8a8, bulk: 1.22, fist: 0.7, ear: 1.8, head: [1.52, 1.3, 1.12], belly: 1.08 },
+};
+const BUTTON_INK = 0x3d302c;
+// Robot-only surface cache. Low keeps 16x12 body surfaces, 24x18 faces and
+// 24x16 paws; pilot/item geometry and materials are untouched.
+const plushSphere = (face = false) => G('plushSphere' + face,
+  () => new THREE.SphereGeometry(1, face === true || face === 'paw' ? 32 : 24, face === true ? 24 : face === 'paw' ? 20 : 16),
+  () => new THREE.SphereGeometry(1, face === true || face === 'paw' ? 24 : 16, face === true ? 18 : face === 'paw' ? 16 : 12));
+
+// One continuous bottom-heavy volume. A narrowed upper hemisphere removes the
+// stacked chest/pelvis silhouette without changing any animation joint.
+const plushPear = () => G('plushPear', () => makePearGeometry(28, 20), () => makePearGeometry(16, 12));
+function makePearGeometry(ws, hs) {
+  const g = new THREE.SphereGeometry(1, ws, hs);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), taper = 1 - 0.2 * y;
+    p.setXYZ(i, p.getX(i) * taper, y, p.getZ(i) * taper);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// A swept, round-ended ear. Folded ears arch outward and then hang beside the
+// face, with the curve authored into geometry under the public ear joint.
+function rabbitEar(length, width, fold = 0, inner = false) {
+  const makeEar = (rows, sides) => {
+    const positions = [], indices = [];
+    const rings = inner ? rows - 4 : rows;
+    for (let i = 0; i <= rings; i++) {
+      const u = i / rings, t = (i + (inner ? 2 : 0)) / rows;
+      const r = Math.pow(Math.sin(Math.PI * u), 0.52);
+      const x = fold * length * t * t * 0.6;
+      const y = length * (t - Math.abs(fold) * 1.15 * t * t);
+      const dx = fold * length * 1.2 * t;
+      const dy = length * (1 - Math.abs(fold) * 2.3 * t);
+      const n = Math.hypot(dx, dy), nx = dy / n, ny = -dx / n;
+      // Inset rows follow the outer centerline, including the tangent frame.
+      const shellR = Math.pow(Math.sin(Math.PI * t), 0.52);
+      const front = inner ? width * shellR * 0.42 + 0.008 : 0;
+      for (let j = 0; j <= sides; j++) {
+        const a = j / sides * Math.PI * 2;
+        const across = Math.cos(a) * width * r * (inner ? 0.58 : 1);
+        positions.push(x + nx * across, y + ny * across,
+          front + Math.sin(a) * width * r * (inner ? 0.025 : 0.42) - t * t * 0.06);
+        if (i < rings && j < sides) {
+          const k = i * (sides + 1) + j;
+          indices.push(k, k + sides + 1, k + 1, k + 1, k + sides + 1, k + sides + 2);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    return g;
+  };
+  return G('plushEar' + [length, width, fold, inner].join(','),
+    () => makeEar(28, 16), () => makeEar(16, 10));
+}
+
+// A single scalloped cushion ring, with no tufts, spikes or layered fur blobs.
+const lionMane = () => G('plushLionMane', () => plushManeGeometry(96, 12), () => plushManeGeometry(64, 8));
+function plushManeGeometry(around, cross) {
+  const positions = [], indices = [];
+  for (let i = 0; i <= around; i++) {
+    const a = i / around * Math.PI * 2;
+    const scallop = 0.028 * Math.cos(12 * a);
+    for (let j = 0; j <= cross; j++) {
+      const b = j / cross * Math.PI * 2;
+      const thickness = 0.23 + scallop;
+      positions.push(Math.cos(a) * (1.4 + thickness * Math.cos(b)),
+        0.52 + Math.sin(a) * (1.22 + thickness * Math.cos(b)),
+        -0.12 + thickness * Math.sin(b) * 1.8);
+      if (i < around && j < cross) {
+        const k = i * (cross + 1) + j;
+        indices.push(k, k + cross + 1, k + 1, k + 1, k + cross + 1, k + cross + 2);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return g;
+}
+const moonPatch = () => G('moonPatch', () => {
+  const s = new THREE.Shape();
+  s.moveTo(0.1, 0.14);
+  s.bezierCurveTo(-0.2, 0.23, -0.23, -0.18, 0.07, -0.16);
+  s.bezierCurveTo(-0.09, -0.08, -0.06, 0.08, 0.1, 0.14);
+  return new THREE.ShapeGeometry(s, 10);
+});
+
+// Face marks follow the cream head surface; none project like a separate muzzle.
+function faceZ(P, x, y) {
+  return -0.04 + P.head[2] * Math.sqrt(Math.max(0,
+    1 - (x / P.head[0]) ** 2 - ((y - 0.52) / P.head[1]) ** 2));
+}
+function cheekBlush(P, type, side) {
+  const makeBlush = (segments) => {
+    const positions = [], colors = [], indices = [];
+    const cream = new THREE.Color(P.fur), pink = new THREE.Color(P.inner), color = new THREE.Color();
+    // Eight concentric rings fade from a warm tint to the exact fleece color.
+    // The entire patch is only 0.006 above the ellipsoid, including its edge.
+    for (let row = 0; row <= 8; row++) for (let j = 0; j <= segments; j++) {
+      const r = row / 8, a = j / segments * Math.PI * 2;
+      const x = side * 0.67 + Math.cos(a) * 0.21 * r, y = 0.37 + Math.sin(a) * 0.115 * r;
+      positions.push(x, y, faceZ(P, x, y) + 0.006);
+      color.copy(cream).lerp(pink, 0.52 * (1 - r * r) ** 2);
+      colors.push(color.r, color.g, color.b);
+      if (row < 8 && j < segments) {
+        const k = row * (segments + 1) + j;
+        indices.push(k, k + segments + 1, k + 1, k + 1, k + segments + 1, k + segments + 2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.setIndex(indices);
+    // Same analytic normals as the head, so the patch never shades like a wart.
+    const normals = positions.map(() => 0);
+    for (let i = 0; i < positions.length; i += 3) {
+      const n = new THREE.Vector3(positions[i] / P.head[0] ** 2,
+        (positions[i + 1] - 0.52) / P.head[1] ** 2, (positions[i + 2] + 0.04) / P.head[2] ** 2).normalize();
+      normals[i] = n.x; normals[i + 1] = n.y; normals[i + 2] = n.z;
+    }
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    return g;
+  };
+  return G('plushBlush' + type + side, () => makeBlush(24), () => makeBlush(16));
+}
+function faceStroke(P, key, points, radius = 0.012) {
+  const curve = new THREE.CatmullRomCurve3(points.map(([x, y]) => new THREE.Vector3(x, y, faceZ(P, x, y) + 0.008)));
+  return G('plushStroke' + key, () => new THREE.TubeGeometry(curve, 16, radius, 6, false),
+    () => new THREE.TubeGeometry(curve, 12, radius, 5, false));
+}
+// Highlight and dark button are one vertex-colored mesh. Blinking therefore
+// carries the tiny highlight with the eye, and keeps the low-mode draw budget.
+const buttonEye = () => G('plushButtonEye', () => button(20, 14), () => button(12, 8));
+function button(ws, hs) {
+  return bakeVertexColored([
+    { geometry: sph(1, ws, hs), matrix: new THREE.Matrix4(), color: new THREE.Color(BUTTON_INK) },
+    { geometry: sph(1, 8, 6), matrix: new THREE.Matrix4().compose(
+      new THREE.Vector3(-0.27, 0.36, 0.89), new THREE.Quaternion(), new THREE.Vector3(0.17, 0.17, 0.12)),
+      color: new THREE.Color(0xfff7e9) },
+  ]);
+}
+function moonEyes(P) {
+  const parts = [-1, 1].map(s => ({
+    geometry: faceStroke(P, 'moonEye' + s, [[s * 0.29, 0.62], [s * 0.39, 0.59], [s * 0.49, 0.63]], 0.024),
+    matrix: new THREE.Matrix4(), color: new THREE.Color(BUTTON_INK),
+  }));
+  return G('plushMoonEyes', () => bakeVertexColored(parts),
+    () => bakeVertexColored(parts.map(p => ({ ...p, geometry: lowGeo(p.geometry) }))));
+}
+const plushCarrotHammer = () => {
+  // Rounded crown, full shoulder and a gently tapered carrot tip. The lathe is
+  // continuous, so there is no seam between a cylinder and a separate cone.
+  const profile = [[0, -1.45], [0.075, -1.36], [0.19, -1.1], [0.34, -0.74],
+    [0.48, -0.3], [0.58, 0.16], [0.62, 0.49], [0.58, 0.72], [0.4, 0.91], [0.17, 1.01], [0, 1.04]];
+  const curve = new THREE.SplineCurve(profile.map(([r, y]) => new THREE.Vector2(r, y)));
+  const points = curve.getPoints(32);
+  // The spline may overshoot the two closed tips; negative radii invert faces.
+  for (const p of points) p.x = Math.max(0, p.x);
+  return G('plushCarrotHammer', () => new THREE.LatheGeometry(points, 32),
+    () => new THREE.LatheGeometry(points, 24));
 };
 
 export function createRobot(type = 'titan', opts = {}) {
-  const P = PAL[type] || PAL.titan;
+  const P = PAL[type] || PAL.titan, b = P.bulk;
   const team = opts.team ?? 0xffffff;
-  const b = P.bulk;
-  const K = new Kit(0.055);
-  const root = new THREE.Group();
-  const hips = grp(root, 0, 2.6, 0);
-  const rig = { root, hips, height: 5.5, radius: type === 'bolt' ? 1.25 : type === 'hammer' ? 1.55 : 1.45, type, eyes: [], thrusters: [], muzzles: [], weapon: null };
-  const eyeCol = type === 'cannon' ? 0xff4fd8 : type === 'bolt' ? 0x7dfcff : type === 'hammer' ? 0xfff27a : 0x66f0ff;
-  const eyeM = K.glow(eyeCol, 1.5);
-  const coreM = K.glow(type === 'titan' ? 0xffa030 : eyeCol, 1.5);
-  // 털: 작은 공유 지오메트리 뭉치, 그림자/아웃라인 없음 (저품질은 본 병합에 축소판으로 들어간다)
-  const FURC = 0xfff3e2;
-  const fur = (parent, geo, color, x, y, z, sx = 1, sy = 1, sz = 1, outline = false) => {
-    const m = K.add(parent, geo, color, x, y, z, 0, 0, 0, outline);
+  const K = new Kit(0.012, true);
+  const root = new THREE.Group(), hips = grp(root, 0, 2.6, 0);
+  // Gameplay dimensions, all joints and all sockets remain the existing contract.
+  const rig = { root, hips, height: 5.5, radius: type === 'bolt' ? 1.25 : type === 'hammer' ? 1.55 : 1.45,
+    type, eyes: [], thrusters: [], muzzles: [], weapon: null,
+    eyeIntensity: 0.08, coreIntensity: 0.24,
+    eyeHeight: 5.13, eyeForward: faceZ(P, 0, 0.63) + 0.05 };
+  const eyeM = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true,
+    roughness: 0.85, metalness: 0, emissive: 0x090604, emissiveIntensity: rig.eyeIntensity });
+  const coreM = new THREE.MeshStandardMaterial({ color: P.acc, roughness: 1, metalness: 0,
+    emissive: 0x493329, emissiveIntensity: rig.coreIntensity });
+  K.all.push(eyeM, coreM);
+  const blushM = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0 });
+  K.all.push(blushM);
+  K.flashMats.push(blushM);
+  const soft = (parent, name, color, x, y, z, sx, sy, sz, outline = true, face = false) => {
+    const m = K.add(parent, plushSphere(face), color, x, y, z, 0, 0, 0, outline);
+    m.name = name;
     m.scale.set(sx, sy, sz);
-    m.castShadow = outline;
-    m.userData.fur = true;
     return m;
   };
 
-  // 골반/꼬리
-  K.add(hips, rbox(1.35 * b, 0.62, 0.95), P.dark, 0, -0.05, 0);
-  K.add(hips, rbox(0.7 * b, 0.4, 0.2, 0.08), P.acc, 0, -0.05, 0.47, 0, 0, 0, false);
-  fur(hips, FUR.tail(), 0xffffff, 0, 0.08, -0.6, b, 1, 1, true);
-
-  // 다리
+  // Low belly and overlapping haunches make the visible legs short and chubby.
+  soft(hips, 'rabbit-rump', P.main, 0, -0.32, -0.1, 0.91 * b, 0.91, 0.76);
+  soft(hips, 'cottontail', P.fur, 0, -0.12, -0.91, 0.4, 0.39, 0.37);
   for (const s of [1, -1]) {
     const leg = grp(hips, 0.58 * b * s, -0.2, 0);
-    K.add(leg, sph(0.36, 12, 10), P.metal, 0, 0, 0, 0, 0, 0, false);
-    K.add(leg, rbox(0.62 * b, 1.0, 0.7 * b), P.main, 0, -0.52, 0);
+    soft(leg, 'rabbit-haunch', P.main, -0.06 * s, -0.22, -0.05, 0.46 * b, 0.77, 0.51);
     const shin = grp(leg, 0, -1.05, 0);
-    K.add(shin, sph(0.33, 12, 10), P.metal, 0, 0, 0.05, 0, 0, 0, false);
-    K.add(shin, rbox(0.72 * b, 0.98, 0.8 * b), P.main, 0, -0.5, 0);
-    K.add(shin, rbox(0.5 * b, 0.55, 0.14, 0.05), P.acc, 0, -0.45, 0.4 * b, 0, 0, 0, false);
+    soft(shin, 'rabbit-hock', P.main, 0, -0.3, 0.02, 0.37 * b, 0.72, 0.4);
     const foot = grp(shin, 0, -1.05, 0);
-    K.add(foot, rbox(0.86 * b, 0.32, 1.35), P.dark, 0, -0.14, 0.18);
-    K.add(foot, rbox(0.7 * b, 0.16, 0.4, 0.06), P.metal, 0, -0.02, 0.72, 0, 0, 0, false);
-    fur(foot, FUR.cuff(), FURC, 0, 0.06, 0, 1.3 * b, 1, 1.4 * b);
+    soft(foot, 'hind-paw', P.fur, 0, 0.07, 0.24, 0.44 * b, 0.37, type === 'bolt' ? 0.78 : 0.65, true, 'paw');
     if (type === 'bolt') {
-      K.add(shin, cyl(0.2, 0.26, 0.7, 10), P.metal, 0, -0.35, -0.5, 0.25);
-      const t = grp(shin, 0, -0.75, -0.6);
-      rig.thrusters.push(t);
+      soft(shin, 'soft-heel-pack', P.dark, 0, -0.38, -0.35, 0.18, 0.32, 0.19);
+      rig.thrusters.push(grp(shin, 0, -0.75, -0.6));
     }
     rig[s > 0 ? 'legL' : 'legR'] = leg;
     rig[s > 0 ? 'shinL' : 'shinR'] = shin;
     rig[s > 0 ? 'footL' : 'footR'] = foot;
   }
 
-  // 몸통
   const torso = grp(hips, 0, 0.15, 0);
-  K.add(torso, cyl(0.52 * b, 0.6 * b, 0.6, 14), P.metal, 0, 0.3, 0);
-  K.add(torso, rbox(1.95 * b, 1.35, 1.2, 0.28), P.main, 0, 1.08, 0);
-  K.add(torso, rbox(2.0 * b, 0.2, 1.24, 0.08), team, 0, 0.52, 0, 0, 0, 0, false);
-  K.add(torso, rbox(1.0 * b, 0.5, 0.2, 0.08), P.acc, 0, 0.45, 0.55);
-  const core = K.add(torso, sph(0.2, 12, 10), coreM, 0, 0.42, 0.66, 0, 0, 0, false);
-  rig.chestCore = core;
-  // 조종석 캐노피
-  const cockpit = grp(torso, 0, 0.62, 0.72);
-  rig.cockpit = cockpit;
-  const glass = new THREE.Mesh(sph(0.66, 20, 14), new THREE.MeshToonMaterial({ color: 0xa8ecff, transparent: true, opacity: 0.28, depthWrite: false, gradientMap: grad }));
+  const body = K.add(torso, plushPear(), P.main, 0, 0.26, -0.1);
+  body.name = 'rabbit-body';
+  body.scale.set(0.97 * b * P.belly, 1.23, 0.79 * P.belly);
+  soft(torso, 'fleece-belly', P.fur, 0, 0.19, 0.53, 0.71 * b, 0.83, 0.27, false);
+  rig.chestCore = K.add(torso, sph(0.13, 16, 12), coreM, 0, 0.42, 0.66, 0, 0, 0, false);
+  rig.chestCore.name = 'soft-energy-button';
+  // Keep the original boarding anchor and transparent canopy for mounted pilots.
+  rig.cockpit = grp(torso, 0, 0.62, 0.72);
+  const glass = new THREE.Mesh(sph(0.66, 20, 14), new THREE.MeshStandardMaterial({
+    color: 0xfff5e7, roughness: 1, metalness: 0, transparent: true, opacity: 0.1, depthWrite: false }));
   glass.position.set(0, 0.62, 0.74);
   glass.scale.set(1, 1, 0.8);
   glass.renderOrder = 2;
   K.all.push(glass.material);
   K.keep(glass);
   torso.add(glass);
-  K.add(torso, torus(0.62, 0.07), P.dark, 0, 1.0, 0.62, 0, 0, 0, false);
-  // 가슴 털 칼라 (목 주변)
-  fur(torso, FUR.ruff(), FURC, 0, 0, 0, b, 1, 1);
-  // 백팩 + 추진기
-  K.add(torso, rbox(1.25 * b, 1.05, 0.55), P.dark, 0, 1.05, -0.78);
+  // Equipment stays behind the plush silhouette, with unchanged exhaust sockets.
+  soft(torso, 'saddle-pack', P.dark, 0, 0.83, -0.72, 0.51 * b, 0.55, 0.29);
+  K.add(torso, rabbitPatch(), team, 0, 0.89, -1.015, 0, Math.PI, 0, false).scale.setScalar(1.8);
   for (const s of [1, -1]) {
-    K.add(torso, cyl(0.2, 0.28, 0.4, 10), P.metal, 0.38 * s, 0.4, -0.95);
+    soft(torso, 'exhaust-cuff', P.dark, 0.38 * s, 0.35, -0.86, 0.16, 0.22, 0.19, false);
     rig.thrusters.push(grp(torso, 0.38 * s, 0.15, -0.98));
   }
-  // 머리
+
+  // A single cream mochi face occupies almost the whole head. The colored back
+  // is tucked inside its perimeter; there is no muzzle, teeth, socket or brow.
   const head = grp(torso, 0, 1.75, 0);
-  K.add(head, cyl(0.3, 0.35, 0.3, 10), P.metal, 0, 0.05, 0, 0, 0, 0, false);
-  K.add(head, rbox(1.3, 1.02, 1.12, 0.3), P.main, 0, 0.55, 0);
-  K.add(head, rbox(1.0, 0.56, 0.22, 0.1), P.metal, 0, 0.36, 0.52);
-  // 토끼 주둥이: 콧수염 패드 + 볼털 + 수염, 앞니 판
-  fur(head, FUR.muzzle(), FURC, 0, 0, 0);
-  fur(head, FUR.whiskers(), 0x3a3346, 0, 0, 0);
-  for (const s of [1, -1]) {
-    K.add(head, rbox(0.15, 0.24, 0.08, 0.03), 0xffffff, 0.08 * s, 0.07, 0.68, 0, 0, 0, false);
-    K.add(head, sph(0.2, 10, 8), P.acc, 0.66 * s, 0.45, 0, 0, 0, Math.PI / 2, false).scale.set(1, 0.5, 1);
-  }
-  K.add(head, sph(0.09, 8, 6), 0xff7aa8, 0, 0.36, 0.75, 0, 0, 0, false).scale.set(1.2, 0.85, 1);
+  rig.viewpoint = grp(head, 0, 0.63, rig.eyeForward);
+  if (type === 'titan') K.add(head, lionMane(), P.acc).name = 'lionhead-mane';
+  soft(head, 'head-fleece-back', P.main, 0, 0.55, -0.26,
+    P.head[0] * 0.98, P.head[1] * 0.98, P.head[2], true, true);
+  soft(head, 'rabbit-skull', P.fur, 0, 0.52, -0.04, ...P.head, true, true);
+  for (const s of [-1, 1]) K.add(head, cheekBlush(P, type, s), blushM, 0, 0, 0, 0, 0, 0, false).name = 'soft-cheek-blush';
+  soft(head, 'rabbit-nose', P.inner, 0, 0.32, faceZ(P, 0, 0.32) + 0.012,
+    0.066, 0.047, 0.027, false);
+  K.add(head, faceStroke(P, 'smile' + type, [[-0.085, 0.21], [0, 0.18], [0.085, 0.21]]),
+    BUTTON_INK, 0, 0, 0, 0, 0, 0, false).name = 'tiny-smile';
   if (type === 'cannon') {
-    const v = K.add(head, rbox(1.1, 0.24, 0.16, 0.06), eyeM, 0, 0.72, 0.56, 0, 0, 0, false);
-    rig.eyes.push(v);
-    K.add(head, rbox(1.2, 0.36, 0.1, 0.05), P.dark, 0, 0.72, 0.5, 0, 0, 0, false);
+    const e = K.add(head, moonEyes(P), eyeM, 0, 0, 0, 0, 0, 0, false);
+    e.name = 'sleepy-curved-eyes';
+    rig.eyes.push(e);
     rig.laserOrigin = grp(head, 0, 0.72, 0.7);
     rig.muzzles.push(rig.laserOrigin);
+    // Moon signature lives on the back of the hood, keeping the face quiet.
+    K.add(head, moonPatch(), P.acc, 0, 0.95, -1.285, 0, Math.PI, 0, false).name = 'moon-hood-patch';
   } else {
     for (const s of [1, -1]) {
-      K.add(head, rbox(0.38, 0.31, 0.09, 0.1), P.dark, 0.3 * s, 0.72, 0.555, 0, 0, -0.12 * s, false);
-      const e = K.add(head, sph(0.13, 12, 10), eyeM, 0.3 * s, 0.72, 0.61, 0, 0, 0, false);
-      e.scale.set(1, type === 'titan' ? 0.75 : 1.15, 0.5);
+      const x = (type === 'bolt' ? 0.35 : 0.4) * s, y = 0.63;
+      const e = K.add(head, buttonEye(), eyeM, x, y, faceZ(P, x, y) + 0.014, 0, 0, 0, false);
+      e.scale.set(0.077, 0.092, 0.035);
+      e.rotation.y = Math.atan2(x * P.head[2], P.head[0] ** 2);
+      e.name = 'dark-button-eye';
       rig.eyes.push(e);
-      if (type === 'titan') K.add(head, rbox(0.34, 0.08, 0.1, 0.03), P.dark, 0.3 * s, 0.86, 0.58, 0, 0, -0.25 * s, false);
     }
   }
-  // 귀
   for (const s of [1, -1]) {
-    const ear = grp(head, 0.34 * s, 1.0, -0.1);
-    const tilt = grp(ear, 0, 0, 0);
-    tilt.rotation.z = -0.18 * s;
-    const L = P.ear;
-    const e = K.add(tilt, caps(0.24, L), FURC, 0, L * 0.5 + 0.2, 0);
-    e.scale.set(1, 1, 0.62);
-    K.add(tilt, caps(0.135, L * 0.8), 0xf88bae, 0, L * 0.5 + 0.2, 0.125, 0, 0, 0, false).scale.set(1, 1, 0.4);
-    fur(tilt, FUR.earInner(), 0xffc6da, 0, L * 0.3 + 0.28, 0.13, 1, L * 0.75 + 0.2, 0.8);
-    if (type !== 'bolt') fur(tilt, FUR.earTip(), FURC, 0, L + 0.34, 0, 1, 1, 0.75);
-    K.add(tilt, cyl(0.26, 0.26, 0.2, 10), P.metal, 0, 0.1, 0);
-    K.add(tilt, rbox(0.3, 0.12, 0.2, 0.04), team, 0, L * 0.3 + 0.2, -0.05, 0, 0, 0, false);
-    if (type === 'bolt') {
-      K.add(tilt, cone(0.26, 0.8, 10), P.metal, 0, L + 0.75, 0);
-      for (let k = 0; k < 3; k++) K.add(tilt, torus(0.2 - k * 0.05, 0.03), P.acc, 0, L + 0.5 + k * 0.2, 0, Math.PI / 2, 0, 0, false);
-    }
+    const ear = grp(head, 0.34 * s, 1, -0.1);
+    // Geometry moves to the larger head crown; the damage/animation joint stays.
+    const tilt = grp(ear, 0.47 * s, 0.48, -0.1);
+    tilt.rotation.z = -(type === 'bolt' ? 0.09 : type === 'titan' ? 0.2 : 0.05) * s;
+    tilt.rotation.x = type === 'bolt' ? -0.09 : 0;
+    const fold = type === 'hammer' ? 1.32 * s : type === 'cannon' ? (s > 0 ? 1.04 : -1.34) : 0;
+    const L = P.ear * (type === 'bolt' && s < 0 ? 0.96 : 1);
+    const width = type === 'bolt' ? 0.25 : type === 'titan' ? 0.3 : 0.38;
+    K.add(tilt, rabbitEar(L, width, fold), P.main).name = 'rabbit-ear';
+    K.add(tilt, rabbitEar(L, width, fold, true), P.inner, 0, 0, 0, 0, 0, 0, false).name = 'rabbit-ear-lining';
     rig[s > 0 ? 'earL' : 'earR'] = ear;
   }
-  if (type === 'titan') {
-    const ant = K.add(head, cone(0.16, 0.55, 8), 0xff8a1f, 0, 1.3, 0.2, Math.PI);
-    for (let i = 0; i < 3; i++) K.add(ant, cone(0.06, 0.3, 5), 0x3fcf4a, Math.sin(i * 2.1) * 0.06, -0.38, Math.cos(i * 2.1) * 0.06, Math.PI + Math.cos(i * 2.1) * 0.4, 0, Math.sin(i * 2.1) * 0.4, false);
-  }
-  if (type === 'hammer') {
-    K.add(head, rbox(1.36, 0.22, 1.18, 0.08), P.acc, 0, 0.98, 0, 0, 0, 0, false);
-  }
-  // 어깨 포드 (문 캐논)
-  if (type === 'cannon') {
+
+  if (type === 'bolt') {
+    // A pillowy cream scarf, with a soft hanging end at the side.
+    soft(torso, 'hare-scarf', P.acc, 0, 1.15, 0.04, 0.74, 0.21, 0.59);
+    soft(torso, 'scarf-knot', P.fur, -0.65, 1.09, 0.38, 0.22, 0.23, 0.2);
+    const end = soft(torso, 'scarf-end', P.acc, -0.74, 0.69, 0.46, 0.2, 0.46, 0.12);
+    end.rotation.z = -0.15;
+  } else if (type === 'hammer') {
+    soft(torso, 'farm-apron', P.acc, 0, 0.08, 0.64, 0.86, 0.82, 0.16, false);
+    soft(torso, 'apron-pocket', P.fur, 0, -0.22, 0.8, 0.31, 0.23, 0.032, false);
     for (const s of [1, -1]) {
-      const pod = grp(torso, 1.05 * s, 1.95, -0.25);
-      K.add(pod, rbox(0.8, 0.62, 1.05, 0.14), P.dark, 0, 0, 0);
-      K.add(pod, rbox(0.84, 0.14, 1.08, 0.05), team, 0, 0.18, 0, 0, 0, 0, false);
-      for (let k = 0; k < 3; k++) {
-        const x = (k - 1) * 0.24;
-        K.add(pod, cone(0.1, 0.3, 8), 0xff8a1f, x, -0.08, 0.62, Math.PI / 2, 0, 0, false);
-        rig.muzzles.push(grp(pod, x, 0.05, 0.6));
-      }
+      const strap = soft(torso, 'apron-strap', P.acc, 0.52 * s, 0.89, 0.53, 0.068, 0.43, 0.04, false);
+      strap.rotation.z = -0.2 * s;
     }
   }
-  // 팔
+  if (type === 'cannon') {
+    // Pods sit behind the head instead of making armored shoulder pauldrons.
+    // Their parents/launch sockets retain the existing missile positions.
+    for (const s of [1, -1]) {
+      const pod = grp(torso, 1.05 * s, 1.95, -0.25);
+      soft(pod, 'moon-seed-pod', P.main, 0, -0.13, -0.49, 0.3, 0.38, 0.45);
+      for (let k = 0; k < 3; k++) rig.muzzles.push(grp(pod, (k - 1) * 0.24, 0.05, 0.6));
+    }
+  }
+
   for (const s of [1, -1]) {
     const arm = grp(torso, 1.25 * b * s, 1.45, 0);
-    K.add(arm, sph(0.52, 14, 10), P.main, 0, 0.05, 0);
-    K.add(arm, rbox(0.7, 0.18, 0.7, 0.06), team, 0.06 * s, 0.38, 0, 0, 0, 0, false);
-    K.add(arm, rbox(0.46, 0.85, 0.46), P.metal, 0, -0.5, 0);
+    // Overlap through shoulder and elbow, with no caps, rings or cuff plates.
+    soft(arm, 'rabbit-upper-paw', P.main, -0.075 * s, -0.42, 0,
+      type === 'bolt' ? 0.35 : 0.44, 0.78, 0.42);
     const fore = grp(arm, 0, -0.95, 0);
-    K.add(fore, sph(0.3, 10, 8), P.dark, 0, 0, 0, 0, 0, 0, false);
-    K.add(fore, rbox(0.62 * (type === 'titan' ? 1.2 : 1), 0.82, 0.66 * (type === 'titan' ? 1.2 : 1)), P.main, 0, -0.42, 0);
-    fur(fore, FUR.cuff(), FURC, 0, -0.8, 0, type === 'titan' ? 1.25 : 1.05, 1, type === 'titan' ? 1.3 : 1.1);
-    const hand = grp(fore, 0, -0.9, 0);
-    const fist = grp(hand, 0, 0, 0);
-    const f = P.fist;
-    K.add(fist, rbox(f, f * 0.95, f, f * 0.25), type === 'titan' ? P.acc : P.dark, 0, -f * 0.3, 0.02);
-    K.add(fist, rbox(f * 1.02, f * 0.25, f * 0.5, f * 0.1), P.metal, 0, -f * 0.3, f * 0.3, 0, 0, 0, false);
+    soft(fore, 'rabbit-forepaw', P.main, 0, -0.32, 0,
+      type === 'titan' ? 0.46 : 0.36, 0.72, type === 'titan' ? 0.45 : 0.36);
+    const hand = grp(fore, 0, -0.9, 0), fist = grp(hand), f = P.fist;
+    soft(fist, 'front-paw', type === 'titan' ? P.acc : P.fur,
+      0, -f * 0.15, 0.05, f * 0.66, f * 0.62, f * 0.6, true, 'paw');
+    if (type === 'titan') {
+      // Broad cream fabric wrist wrap, inset into the mitten, not a metal ring.
+      soft(fist, 'boxer-wrap', P.fur, 0, f * 0.16, -0.025, f * 0.5, f * 0.25, f * 0.48, false);
+    }
     rig[s > 0 ? 'armL' : 'armR'] = arm;
     rig[s > 0 ? 'foreL' : 'foreR'] = fore;
     rig[s > 0 ? 'handL' : 'handR'] = hand;
     rig[s > 0 ? 'fistL' : 'fistR'] = fist;
   }
-  // 해머
   if (type === 'hammer') {
     const w = grp(rig.handR, 0, -0.2, 0.05);
-    K.add(w, cyl(0.12, 0.12, 2.6, 8), 0x8a5a2b, 0, -1.2, 0);
+    K.add(w, cyl(0.12, 0.12, 2.6, 16), 0xb38d69, 0, -1.2, 0);
     const headG = grp(w, 0, -2.55, 0);
-    K.add(headG, cyl(0.62, 0.62, 1.1, 14), 0xff8a1f, 0, 0, 0, 0, 0, Math.PI / 2);
-    K.add(headG, cone(0.62, 1.1, 14), 0xff8a1f, -1.1, 0, 0, 0, 0, Math.PI / 2);
-    for (let i = 0; i < 4; i++) K.add(headG, cone(0.14, 0.8, 5), 0x3fcf4a, 0.75, Math.sin(i * 1.6) * 0.25, Math.cos(i * 1.6) * 0.25, 0, 0, -Math.PI / 2 + Math.sin(i * 1.6) * 0.4, false);
-    for (let i = 0; i < 3; i++) K.add(headG, torus(0.5 - i * 0.1, 0.03), 0xd8620c, -0.2 - i * 0.35, 0, 0, 0, Math.PI / 2, 0, false);
+    // One smooth carrot head with a rounded, tapered end, instead of cone seams.
+    const carrot = K.add(headG, plushCarrotHammer(), 0xedaa70, -0.45, 0, 0);
+    carrot.name = 'carrot-hammer';
+    carrot.rotation.z = -Math.PI / 2;
+    for (let i = 0; i < 3; i++) {
+      const leaf = soft(headG, 'carrot-leaf', P.dark, 0.89, (i - 1) * 0.2, 0,
+        0.46, 0.12, 0.16, false);
+      leaf.rotation.z = (i - 1) * 0.48;
+    }
     rig.weapon = w;
   }
   rig.torso = torso;
   rig.head = head;
   rig.makeFist = () => {
-    // 발사체는 1초 남짓 살기 때문에 생성 시점 품질을 따른다 (지오메트리는 공유 캐시)
-    const low = K.low;
-    const q = (geo) => (low ? lowGeo(geo) : geo);
-    const g = new THREE.Group();
-    const f = P.fist;
-    const m = new THREE.Mesh(q(rbox(f, f * 0.95, f, f * 0.25)), K.m(type === 'titan' ? P.acc : P.dark));
-    if (!low) addOutline(m, K.ol, false);
+    const low = K.low, g = new THREE.Group(), f = P.fist;
+    const geo = plushSphere('paw');
+    const m = new THREE.Mesh(low ? lowGeo(geo) : geo, K.m(type === 'titan' ? P.acc : P.fur));
+    m.scale.set(f * 0.66, f * 0.62, f * 0.6);
     m.castShadow = true;
+    if (!low) addOutline(m, K.ol, false);
     g.add(m);
-    const k = new THREE.Mesh(q(rbox(f * 1.02, f * 0.25, f * 0.5, f * 0.1)), K.m(P.metal));
-    k.position.set(0, 0, f * 0.3);
-    g.add(k);
-    const ring = new THREE.Mesh(q(cyl(f * 0.45, f * 0.55, f * 0.5, 12)), K.m(P.main));
-    ring.rotation.x = Math.PI / 2;
-    ring.position.z = -f * 0.6;
-    if (!low) addOutline(ring, K.ol, false);
-    g.add(ring);
     return g;
+  };
+
+  const phase = { titan: 0, bolt: 1.1, cannon: 2.2, hammer: 3.3 }[type] ?? 0;
+  // Deterministic presentation-time animation, no allocations/rebuilds/material
+  // writes. The dynamic meshes survive baking; sleepy lids gently narrow.
+  rig.animateFace = (time) => {
+    if (!Number.isFinite(time)) return;
+    const t = ((time + phase) % 4.7 + 4.7) % 4.7;
+    const blink = t < 0.18 ? Math.sin(t / 0.18 * Math.PI) ** 2 : 0;
+    for (const e of rig.eyes) {
+      e.scale.y = type === 'cannon' ? 1 - blink * 0.15 : 0.092 * (1 - blink * 0.94);
+      if (type === 'cannon') e.position.y = 0.61 * (1 - e.scale.y);
+    }
   };
   return K.finish(rig);
 }

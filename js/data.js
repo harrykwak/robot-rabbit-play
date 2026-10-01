@@ -287,12 +287,9 @@ export const RULES = {
   // ---- 로봇 에너지: 당근쥬스 ----
   juiceMax: 100,
   juiceDrain: 1.2,        // 탑승 중(전투) 초당 감소
-  juiceIdleRegen: 5,      // 빈 로봇일 때 초당 회복
   juiceDash: 8,           // 대시 1회
   juiceBoost: 3,          // 공중 추진 초당
-  juiceHit: 0.2,          // 로봇이 준 피해당 회복
-  juiceCarrot: 40,        // 탑승 중 당근 아이템
-  juiceLow: 25,           // 이하이면 경고 (CPU 는 당근을 찾으러 간다)
+  juiceLow: 25,           // 이하이면 경고 (CPU 는 보급소를 찾는다)
   juiceEmptySpeed: 0.65,  // 바닥나면: 이동 배율, 스킬/대시 불가
   juiceEmptyDmg: 0.75,    //            공격 피해 배율
   juiceHeadMul: 1.4,      // 머리 파손 시 쥬스 소모 배율

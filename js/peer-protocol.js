@@ -1,7 +1,7 @@
 // Local installation identity, not an authenticated account or a public directory.
-// v2 requires energy/part state and current action presentation. Reject older apps
-// at the invitation boundary instead of starting a match with rejected snapshots.
-export const PEER_VERSION = 2;
+// v4 shares the sculpted island coast with collision and navigation. Reject older
+// field layouts at invitation time; v3 already introduced AP and cockpit facing.
+export const PEER_VERSION = 4;
 export const MAX_WIRE_BYTES = 48 * 1024;
 export const MAX_CODE_LENGTH = 70000;
 const STORE = 'rr-peer-profile-v1';

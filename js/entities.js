@@ -97,7 +97,7 @@ function addMark(f, color, size, player) {
 }
 // 공격으로 치지 않는 기술: 배리어를 깨지 않는다
 const NON_ATTACK = new Set(['barrierCast', 'rollDodge', 'backFlip', 'smokeStep', 'blinkStep', 'brace', 'burst', 'summon']);
-// 부위가 부서지면 숨기는 리그 그룹 (models.js createRobot 가 이미 노출한다). 팔은 팔뚝부터, 다리는 왼쪽 정강이부터 떨어진다
+// Damaged groups keep dangling from these joints after their shell breaks.
 const PART_NODES = { armL: ['foreL'], armR: ['foreR'], head: ['earL', 'earR'], legs: ['shinL'] };
 
 // 떨어져 나가는 부위: 보이는 메시만 같은 지오메트리/재질로 복사한다 (userData 복사 없이)
@@ -105,14 +105,22 @@ function snapshotPiece(node) {
   const g = new THREE.Group();
   node.updateWorldMatrix(true, true);
   const inv = tM.copy(node.matrixWorld).invert();
+  let shell = null, shellVolume = -1;
   node.traverseVisible((o) => {
     if (!o.isMesh) return;
-    const m = new THREE.Mesh(o.geometry, o.material);
-    tM2.multiplyMatrices(inv, o.matrixWorld).decompose(m.position, m.quaternion, m.scale);
+    const box = o.geometry.boundingBox || (o.geometry.computeBoundingBox(), o.geometry.boundingBox);
+    const size = box.getSize(tA);
+    const volume = size.x * size.y * size.z;
+    if (volume > shellVolume) { shell = o; shellVolume = volume; }
+  });
+  if (shell) {
+    const m = new THREE.Mesh(shell.geometry, shell.material);
+    tM2.multiplyMatrices(inv, shell.matrixWorld).decompose(m.position, m.quaternion, m.scale);
     m.castShadow = true;
     g.add(m);
-  });
+  }
   node.matrixWorld.decompose(g.position, g.quaternion, g.scale);
+  g.scale.multiplyScalar(0.46);
   return g;
 }
 
@@ -209,6 +217,7 @@ class Fighter {
   }
 
   applyPose(dt, snap, plant) {
+    if (this.clearBrokenMotionOffsets) this.clearBrokenMotionOffsets();
     if (!snap) {
       // 회전 기술이 끝난 뒤 여러 바퀴를 되감지 않도록 가까운 각도로 접는다
       for (const k of ['hry', 'hx']) { const v = this.pose[k]; if (v > Math.PI || v < -Math.PI) this.pose[k] = v - Math.round(v / (Math.PI * 2)) * Math.PI * 2; }
@@ -1003,6 +1012,33 @@ export class Robot extends Fighter {
     this.juiceWarned = false;
     this.denyT = -99;
     this.debris = [];
+    this.damageNodes = {};
+    this.damageFxAt = {};
+    this.damageClock = 0;
+    this.damageApplied = [];
+    this.damageDetails = {};
+    this.damageDetailGeo = {
+      joint: new THREE.TorusGeometry(0.16, 0.035, 6, 12),
+      cable: new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0.08), new THREE.Vector3(0.12, -0.18, 0.12),
+        new THREE.Vector3(-0.09, -0.36, 0.1), new THREE.Vector3(0.06, -0.54, 0.06),
+      ]), 8, 0.026, 5, false),
+    };
+    this.damageDetailMat = new THREE.MeshStandardMaterial({ color: 0x42edff, emissive: 0x00bfe8, emissiveIntensity: 1.5, metalness: 0.25, roughness: 0.28 });
+    for (const part of PARTS) for (const name of PART_NODES[part]) {
+      const node = rig[name];
+      if (node) {
+        this.damageNodes[name] = { position: node.position.clone(), quaternion: node.quaternion.clone(), scale: node.scale.clone() };
+        const joint = new THREE.Mesh(this.damageDetailGeo.joint, this.damageDetailMat);
+        joint.rotation.x = Math.PI / 2;
+        joint.position.set(0, 0, 0.12);
+        const cable = new THREE.Mesh(this.damageDetailGeo.cable, this.damageDetailMat);
+        joint.visible = cable.visible = false;
+        joint.castShadow = cable.castShadow = true;
+        node.add(joint, cable);
+        (this.damageDetails[part] ||= []).push(joint, cable);
+      }
+    }
     this.resetParts();
     this.state = 'falling';
     this.stateT = 0;
@@ -1043,10 +1079,19 @@ export class Robot extends Fighter {
   // ---------- 부위 파괴 ----------
   // parts: 부위별 남은 내구도, partMax: 최대치, broken: 부서진 부위 비트마스크 (robot-systems.js PART_BIT)
   resetParts() {
+    this.clearBrokenMotionOffsets();
+    this.clearDebris();
     this.partMax = partMaxHp(this.maxArmor);
     this.parts = { ...this.partMax };
     this.broken = 0;
-    for (const k of PARTS) for (const n of PART_NODES[k]) if (this.rig[n]) this.rig[n].visible = true;
+    for (const k of PARTS) for (const n of PART_NODES[k]) if (this.rig[n]) {
+      const node = this.rig[n], rest = this.damageNodes[n];
+      node.visible = true;
+      if (rest) { node.position.copy(rest.position); node.quaternion.copy(rest.quaternion); node.scale.copy(rest.scale); }
+    }
+    for (const pieces of Object.values(this.damageDetails)) for (const piece of pieces) piece.visible = false;
+    this.damageFxAt = {};
+    this.damageClock = 0;
     this.mods = robotMods(0, this.juice, this.mods);
   }
 
@@ -1065,22 +1110,29 @@ export class Robot extends Fighter {
     return true;
   }
 
-  // 부서진 부위 숨기기. fly: 조각이 튀어 나가는 연출
+  // 부서진 부위도 리그에 남겨 두어 매달린 파츠가 계속 보이게 한다.
   detachPart(part, fly) {
+    for (const piece of this.damageDetails[part] || []) piece.visible = true;
     for (const k of PART_NODES[part]) {
       const node = this.rig[k];
-      if (!node || !node.visible) continue;
+      if (!node) continue;
       if (fly) this.flyOff(node);
-      node.visible = false;
+      node.visible = true;
     }
   }
 
   // 네트워크 스냅샷으로 받은 broken 반영: fly 면 새로 부서진 부위를 날려 보내고, 없어진 비트는 다시 보인다
   syncBroken(prev, fly = true) {
+    this.clearBrokenMotionOffsets();
     for (const k of PARTS) {
       const on = (this.broken & PART_BIT[k]) !== 0;
       if (on) this.detachPart(k, fly && !(prev & PART_BIT[k]));
-      else for (const n of PART_NODES[k]) if (this.rig[n]) this.rig[n].visible = true;
+      else for (const n of PART_NODES[k]) if (this.rig[n]) {
+        const node = this.rig[n], rest = this.damageNodes[n];
+        node.visible = true;
+        if (rest) { node.position.copy(rest.position); node.quaternion.copy(rest.quaternion); node.scale.copy(rest.scale); }
+      }
+      for (const piece of this.damageDetails[k] || []) piece.visible = on;
     }
     this.mods = robotMods(this.broken, this.juice, this.mods);
   }
@@ -1126,6 +1178,59 @@ export class Robot extends Fighter {
     this.debris.length = 0;
   }
 
+  clearBrokenMotionOffsets() {
+    for (const d of this.damageApplied || []) {
+      d.node.rotation.x -= d.x; d.node.rotation.y -= d.y; d.node.rotation.z -= d.z;
+    }
+    if (this.damageApplied) this.damageApplied.length = 0;
+  }
+
+  applyBrokenMotion(dt = 0, presentationTime) {
+    this.clearBrokenMotionOffsets();
+    const broken = this.broken;
+    if (!broken) return;
+    const time = Number.isFinite(presentationTime) ? presentationTime : Number.isFinite(this.g.time) ? this.g.time : (this.damageClock += dt);
+    const moving = clamp(this.moveAmt, 0, 1.3);
+    const phase = time * (8 + moving * 5) + this.id * 0.173;
+    const sway = Math.sin(phase), twitch = Math.sin(phase * 2.31);
+    this.damageDetailMat.emissiveIntensity = 1.1 + (0.5 + 0.5 * Math.sin(time * 27 + this.id)) * 1.2;
+    const r = this.rig;
+    const add = (node, x = 0, y = 0, z = 0) => {
+      if (!node) return;
+      node.rotation.x += x; node.rotation.y += y; node.rotation.z += z;
+      this.damageApplied.push({ node, x, y, z });
+    };
+    if (broken & PART_BIT.armL) add(r.foreL, 0, twitch * 0.11, 0.62 + sway * 0.16);
+    if (broken & PART_BIT.armR) add(r.foreR, 0, -twitch * 0.11, -0.62 - sway * 0.16);
+    if (broken & PART_BIT.head) {
+      add(r.earL, 0, twitch * 0.08, 0.38 + sway * 0.18);
+      add(r.earR, 0, -twitch * 0.08, -0.38 - sway * 0.18);
+      add(r.head, 0, 0, Math.sin(phase * 0.5) * (0.025 + moving * 0.035));
+    }
+    if (broken & PART_BIT.legs) {
+      add(r.shinL, 0.48 + sway * (0.12 + moving * 0.2), 0, twitch * 0.06);
+      add(r.hips, 0, 0, Math.sin(phase * 0.5) * (0.025 + moving * 0.06));
+    }
+    if (moving > 0.08) {
+      if (broken & PART_BIT.armL) add(r.torso, 0, 0, Math.sin(phase * 0.5) * 0.025);
+      if (broken & PART_BIT.armR) add(r.torso, 0, 0, -Math.sin(phase * 0.5) * 0.025);
+    }
+
+    const pulsePeriod = this.g.phase === 'fight' ? 0.31 : 0.48;
+    const pulse = Math.floor((time + this.id * 0.037) / pulsePeriod);
+    for (const part of PARTS) {
+      for (const piece of this.damageDetails[part] || []) piece.visible = !!(broken & PART_BIT[part]);
+      if (!(broken & PART_BIT[part]) || this.damageFxAt[part] === pulse) continue;
+      this.damageFxAt[part] = pulse;
+      const node = r[part === 'armL' ? 'foreL' : part === 'armR' ? 'foreR' : part === 'head' ? 'head' : 'shinL'];
+      if (!node) continue;
+      node.getWorldPosition(tA);
+      tA.y += part === 'head' ? 0.35 : 0.12;
+      this.g.fx.sparkle(tA, pulse % 3 ? 0x66eaff : 0xffd45c);
+      if (pulse % 2 === 0) this.g.fx.trailPuff(tA, 0x8ceeff, 0.42);
+    }
+  }
+
   // ---------- 당근쥬스 ----------
   useJuice(n) { if (n > 0) this.juice = Math.max(0, this.juice - n); }
   addJuice(n) {
@@ -1168,19 +1273,21 @@ export class Robot extends Fighter {
       this.juiceEmpty = mods.empty;
       if (mods.empty) {
         g.ui.callout(this.pos, '쥬스 바닥!', me ? 'bad' : 'sk', this.height + 1);
-        if (me) g.ui.toast('🥕 당근쥬스가 바닥났어요! 당근을 먹거나 공격을 맞히면 다시 차요');
+        if (me) g.ui.toast('🥕 쥬스가 바닥났어요. 확정 피해로 AP를 모아 판매대에서 20 AP로 구매하거나 당근밭에서 직접 갈아 채우세요.');
       } else g.ui.callout(this.pos, '쥬스 충전!', 'good', this.height + 1);
     }
     if (this.juice < RULES.juiceLow && !this.juiceWarned) {
       this.juiceWarned = true;
-      if (me && !mods.empty) g.ui.toast('🥕 당근쥬스 부족: 스킬을 아끼거나 당근을 먹어요');
+      if (me && !mods.empty) g.ui.toast('🥕 쥬스 부족: 확정 피해로 AP를 모아 판매대에서 20 AP로 구매하거나 당근밭에서 직접 갈아 채우세요.');
     } else if (this.juice > RULES.juiceLow + 10) this.juiceWarned = false;
   }
 
   setEyes(v) {
     this.eyeLevel += (v - this.eyeLevel) * 0.2;
-    for (const e of this.rig.eyes) e.material.emissiveIntensity = this.eyeLevel;
-    if (this.rig.chestCore) this.rig.chestCore.material.emissiveIntensity = this.eyeLevel * (0.8 + Math.sin(this.g.time * 6) * 0.25);
+    this.rig.animateFace?.(this.g.time + this.id * .83);
+    // Dark embroidered eyes stay dark even during powered attacks.
+    for (const e of this.rig.eyes) e.material.emissiveIntensity = Math.min(.14, this.eyeLevel * .045);
+    if (this.rig.chestCore) this.rig.chestCore.material.emissiveIntensity = this.eyeLevel * (.12 + Math.sin(this.g.time * 3) * .025);
   }
 
   doAct(name) {
@@ -1204,12 +1311,13 @@ export class Robot extends Fighter {
       if (this.pos.y <= this.landY) { this.pos.y = this.landY; this.gh = this.landY; this.spinYaw = 0; this.onGround = true; this.state = 'idle'; this.stateT = 0; g.robotLanded(this); }
       Object.assign(this.tp, RFALL);
       this.applyPose(dt, false, false);
+      this.applyBrokenMotion(dt);
       this.setEyes(2);
       this.syncRoot();
       return;
     }
     this.frozen = false;
-    if (this.hs > 0) { this.hs -= realDt; this.frozen = true; this.syncRoot(); return; }
+    if (this.hs > 0) { this.hs -= realDt; this.frozen = true; this.applyBrokenMotion(dt); this.syncRoot(); return; }
     if (this.exposedT > 0 && Math.random() < 0.4) { tA.copy(this.pos).setY(this.pos.y + this.height * (0.4 + Math.random() * 0.5)); this.g.fx.trailPuff(tA, 0xffe070, 0.8); }
 
     if (this.state === 'idle') {
@@ -1226,6 +1334,7 @@ export class Robot extends Fighter {
       Object.assign(this.tp, this.stateT < 0.5 ? RFALL : KNEEL);
       if (this.stateT < 0.12) { Object.assign(this.tp, KNEEL); Object.assign(this.pose, KNEEL); }
       this.applyPose(dt, false, this.onGround);
+      this.applyBrokenMotion(dt);
       this.setEyes(0.25 + (Math.sin(g.time * 3) > 0.9 ? 0.6 : 0));
       this.syncRoot();
       if (this.idleT <= 0) g.destroyRobot(this, 'timeout');
@@ -1250,9 +1359,29 @@ export class Robot extends Fighter {
     const mods = robotMods(this.broken, this.juice, this.mods);
     if (fighting) this.juiceNotice(mods);
 
+    if (pilot.supplyHeld && pilot.supplyId >= 0) {
+      this.act = null;
+      this.dashT = 0;
+      if (this.beam) { this.beam.stop(); this.beam = null; }
+      this.moveAmt = 0;
+      this.vel.x *= Math.exp(-dt * 12); this.vel.z *= Math.exp(-dt * 12);
+      this.physics(dt);
+      const p = clamp(pilot.supplyProgress || 0, 0, 1), crank = Math.sin(g.time * 12 + this.id * 0.31);
+      Object.assign(this.tp, RSTANCE);
+      this.tp.tx = 0.16 + p * 0.2 + Math.sin(g.time * 4) * 0.04;
+      this.tp.alx = -0.85 + crank * 0.12; this.tp.arx = -0.9 - crank * 0.12;
+      this.tp.flx = -0.25 + crank * 0.18; this.tp.frx = -0.25 - crank * 0.32;
+      this.tp.alz = 0.18; this.tp.arz = -0.18;
+      this.applyPose(dt, false, this.onGround);
+      this.applyBrokenMotion(dt);
+      this.setEyes(2.2 + p * 0.5);
+      this.syncRoot();
+      return;
+    }
+
     // 하차: E 길게
     if (!i.act) pilot.needRelease = false;
-    if (i.act && !pilot.needRelease && fighting) {
+    if (i.act && !pilot.supplyHeld && !pilot.needRelease && fighting) {
       pilot.ejectHold += dt;
       if (pilot.ejectHold > EJECT_HOLD) { g.eject(pilot, false); return; }
     } else pilot.ejectHold = 0;
@@ -1292,7 +1421,7 @@ export class Robot extends Fighter {
           this.vel.z += clamp(wz - this.vel.z, -30 * dt, 30 * dt);
           if (d.hits && Math.random() < 0.5) g.fx.dust(this.pos, 1, 1.4);
         } else if (a.name === 'laser') {
-          if (inMag > 0.2) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 1.6));
+          if (inMag > 0.2 && !i.cockpitDriving) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 1.6));
           this.vel.x *= 0.8; this.vel.z *= 0.8;
           g.updateLaser(this, dt, a);
         } else if (a.name === 'stomp') {
@@ -1307,7 +1436,7 @@ export class Robot extends Fighter {
         } else if (!(d.lunge && a.t >= d.lunge[0] && a.t <= d.lunge[1])) {
           this.vel.x *= Math.exp(-dt * 8); this.vel.z *= Math.exp(-dt * 8);
           if (d.next === 'blaster' || !d.lunge) {
-            if (inMag > 0.2) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 5));
+            if (inMag > 0.2 && !i.cockpitDriving) this.facing = angLerp(this.facing, Math.atan2(i.mx, i.mz), 1 - Math.exp(-dt * 5));
           }
         }
         if (d.boost) this.thrust(1.3);
@@ -1328,7 +1457,7 @@ export class Robot extends Fighter {
         const accel = this.onGround ? 58 : this.padT > 0 ? 3 : 22;
         this.vel.x += clamp(wx * sp - this.vel.x, -accel * dt, accel * dt);
         this.vel.z += clamp(wz * sp - this.vel.z, -accel * dt, accel * dt);
-        if (inMag > 0.15) this.facing = angLerp(this.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 13));
+        if (inMag > 0.15 && !i.cockpitDriving) this.facing = angLerp(this.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 13));
         if (i.jump && this.onGround) {
           this.vel.y = this.stats.jump * mods.jump; this.onGround = false;
           g.sound('dash', this.pos, 1, 0.6);
@@ -1338,7 +1467,7 @@ export class Robot extends Fighter {
         } else if (i.dash && this.cds.dash <= 0) {
           const dx = inMag > 0.2 ? i.mx / inMag : Math.sin(this.facing);
           const dz = inMag > 0.2 ? i.mz / inMag : Math.cos(this.facing);
-          this.facing = Math.atan2(dx, dz);
+          if (!i.cockpitDriving) this.facing = Math.atan2(dx, dz);
           const ds = this.type === 'bolt' ? 34 : 26;
           this.vel.x = dx * ds; this.vel.z = dz * ds;
           this.dashT = 0.3; this.cds.dash = this.type === 'bolt' ? 0.7 : 1.1;
@@ -1430,12 +1559,16 @@ export class Robot extends Fighter {
       if (this.dashT > 0) { tp.tx = 0.6; tp.alx = 0.7; tp.arx = 0.7; tp.ex = -1.2; tp.llx = -0.3; tp.lrx = 0.5; tp.slx = 0.6; tp.srx = 0.9; }
     }
     this.applyPose(dt, snap, plant);
+    this.applyBrokenMotion(dt);
   }
 
   dispose() {
     this.g.scene.remove(this.rig.root);
     this.g.scene.remove(this.ring);
+    this.clearBrokenMotionOffsets();
     this.clearDebris();
+    for (const pieces of Object.values(this.damageDetails)) for (const piece of pieces) piece.removeFromParent();
+    this.damageDetailGeo.joint.dispose(); this.damageDetailGeo.cable.dispose(); this.damageDetailMat.dispose();
     this.ringMat.dispose();
     this.rig.dispose();
     if (this.beam) { this.beam.stop(); this.beam = null; }

@@ -80,10 +80,9 @@ export function skillBlock(type, slot, cd, juice, mask) {
   return '';
 }
 
-// 쥬스 변화: 탑승 중(전투)에는 천천히 줄고, 빈 로봇은 천천히 다시 찬다
+// Fuel is prepared at a station; parking never creates juice.
 export function stepJuice(juice, max, dt, riding, fighting, mask) {
   if (riding) { if (fighting) juice -= RULES.juiceDrain * dt * (mask & PART_BIT.head ? RULES.juiceHeadMul : 1); }
-  else juice += RULES.juiceIdleRegen * dt;
   return clamp(juice, 0, max);
 }
 
@@ -114,7 +113,6 @@ export function comboDamageMul(type, mask) {
   for (const p of list) if (isBroken(mask, p)) n++;
   return Math.max(RULES.partComboMin, 1 - n * RULES.partComboLoss);
 }
-
 
 
 

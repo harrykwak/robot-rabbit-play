@@ -2,6 +2,7 @@
 //   .f 채운 면(흰색 + 잉크 선) / .l 흰 굵은 선(동작선) / .k 잉크 세부 선
 const svg = (body) => '<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">' + body + '</svg>';
 export const ICONS = {
+  supply: svg('<path class="f" d="M8 11h16l-2 18H10z"/><path class="l" d="M6 10h20M18 10l2-7h6"/><path class="k" d="M12 18h8M12 23h7"/>'),
   fist: svg('<path class="l" d="M4 7l3 3M2 16h4M4 25l3-3"/><path class="f" d="M11 9h11a5 5 0 0 1 5 5v5a6 6 0 0 1-6 6h-6a5 5 0 0 1-5-5v-8a3 3 0 0 1 1-3z"/><path class="k" d="M16 9v5M21 9.5v4.5M10 17h5"/>'),
   kick: svg('<path class="l" d="M2 12h4M2 18h4"/><path class="f" d="M9 4h7v10l9 3.5a3.5 3.5 0 0 1 2.5 3.3V26H9z"/><path class="k" d="M9 22h18.5"/>'),
   shot: svg('<path class="l" d="M4 27l8-8M3 20l5-5M11 29l4-4"/><circle class="f" cx="20" cy="12" r="7"/><path class="k" d="M17 9.5a3.5 3.5 0 0 1 3-1.5"/>'),

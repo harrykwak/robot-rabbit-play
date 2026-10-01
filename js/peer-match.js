@@ -42,12 +42,12 @@ export class RemoteCtrl {
 }
 
 // v1.4: cd1/cd2/cd2Max (skill HUD), hitsTaken (break burst), bubbleT (Dori barrier), exposedT (robot weak point)
-const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT','koT','ejectHold'];
+const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln','dashCd','respawnT','kos','falls','dmgDealt','outOrder','gh','shieldT','cd1','cd2','cd2Max','hitsTaken','bubbleT','koT','ejectHold','attackPoints','supplyId','supplyProgress'];
 // v1.5: juice/maxJuice (carrot juice energy), broken (destroyed parts bitmask, robot-systems.js PART_BIT)
 const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT','juice','maxJuice','broken'];
 const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaternion.toArray().map(round),s:mesh.scale.toArray().map(round),visible:mesh.visible});
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
-  action:f.act?.name??null,spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
+  facing:round(f.facing),action:f.act?.name??null,spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
 const numbers = (o,keys)=>Object.fromEntries(keys.map(k=>[k,round(o[k]||0)]));
 export function captureSnapshot(game,{matchId,seq,onInvalid}) {
   const state={v:PEER_VERSION,matchId,seq,time:round(game.time),timeLeft:round(game.timeLeft),phase:game.phase,introStep:game.introStep ?? -1,
@@ -65,7 +65,7 @@ export function captureSnapshot(game,{matchId,seq,onInvalid}) {
 }
 const validRoot = r=>r && vector(r.p,3) && vector(r.q,4,1.01) && Math.abs(Math.hypot(...r.q)-1)<.01 && vector(r.s,3,200) && r.s.every(v=>v>=0) && bool(r.visible);
 const validFighter = f=>validRoot(f) && vector(f.pos,3) && vector(f.pose,KEYS.length,1000) && num(f.hipY,-100,100) && typeof f.state==='string' && /^[a-zA-Z]{1,24}$/.test(f.state)
-  && num(f.spinYaw) && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
+  && num(f.facing,-100000,100000) && num(f.spinYaw) && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
 const validAction = (name, table)=>name===null||(typeof name==='string'&&Object.hasOwn(table,name));
 export function validateSnapshot(s,matchId) {
   try {
@@ -75,6 +75,7 @@ export function validateSnapshot(s,matchId) {
     const rid=id=>id===null||ids.has(id), hid=id=>id===null||integer(id,0,3);
     if(!s.humans.every((h,i)=>h.id===i&&validFighter(h)&&HNUM.every(k=>num(h[k],-1000,1000000))&&integer(h.stock,0,3)&&num(h.hp,0,h.maxHp)&&num(h.maxHp,1,1000)
       && validAction(h.action,HUMAN_ACTS)&&bool(h.dead)&&bool(h.out)&&rid(h.riding)&&rid(h.boardTarget)&&h.combo&&['n','dmg','best'].every(k=>num(h.combo[k],0,1000000)))) return false;
+    if(!s.humans.every(h=>num(h.attackPoints,0,999)&&integer(h.supplyId,-1,1)&&num(h.supplyProgress,0,1)))return false;
     if(!s.robots.every(r=>integer(r.id,100,1000000)&&ROBOT_ORDER.includes(r.type)&&validFighter(r)&&RNUM.every(k=>num(r[k],-1000,10000))&&num(r.armor,0,r.maxArmor)&&num(r.maxArmor,1,10000)
       && num(r.maxJuice,1,1000)&&num(r.juice,0,r.maxJuice)&&integer(r.broken,0,PART_ALL)
       && validAction(r.action,ROBOT_ACTS)&&hid(r.owner)&&hid(r.pilot)&&r.cds&&['k','l','dash'].every(k=>num(r.cds[k],-7200,1000))&&validRoot(r.ring))) return false;
@@ -126,6 +127,7 @@ export class PeerReplica {
       if(!first&&wasRiding!==x.riding&&x.riding!==null) audio.sfx('board');
     }
     g.time=s.time;g.timeLeft=s.timeLeft;g.phase=s.phase;
+    this.visualTime=first?s.time:Math.max(s.time,this.visualTime??s.time);
     if(s.phase==='intro'&&g.introStep!==s.introStep&&s.introStep>=0){g.ui.banner(['3','2','1'][s.introStep]||'FIGHT!','ready');audio.sfx('countdown');}
     g.introStep=s.introStep;
     if(previousPhase==='intro'&&s.phase==='fight'){g.ui.banner('FIGHT!','go');audio.sfx('go');}
@@ -139,7 +141,8 @@ export class PeerReplica {
     return true;
   }
   fighter(f,s,snap) {
-    f.pos.fromArray(s.pos);f.onGround=s.onGround;f.state=s.state;
+    f.clearBrokenMotionOffsets?.();
+    f.pos.fromArray(s.pos);f.onGround=s.onGround;f.state=s.state;f.facing=s.facing;
     f.spinYaw=s.spinYaw;
     f.act=s.action===null?null:{name:s.action,def:(f.kind==='robot'?ROBOT_ACTS:HUMAN_ACTS)[s.action]};
     for(let i=0;i<KEYS.length;i++)f.pose[KEYS[i]]=s.pose[i];
@@ -171,14 +174,19 @@ export class PeerReplica {
   }
   update(dt) {
     const a=1-Math.exp(-dt*30);
+    this.visualTime=Math.min(this.game.time+.15,(this.visualTime??this.game.time)+dt);
     for(const [f,t]of this.targets){
       f.rig.root.position.lerp(t.p,a);f.rig.root.quaternion.slerp(t.q,a);
+      if(f.kind==='robot'){
+        f.applyBrokenMotion?.(dt,this.visualTime);
+        f.rig.animateFace?.(this.visualTime+f.id*.83);
+      }
       f.syncMark();
       // Keep the mark on the ground while its fighter interpolates between packets.
       if(f.mark?.visible)f.mark.position.y=f.gh-f.rig.root.position.y+.05;
     }
     for(const r of this.game.robots)if(r.debris?.length)r.updateDebris(dt);
-    const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.updateCamera(dt);
+    const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.juiceStations?.present(this.visualTime);g.updateCamera(dt);
   }
   dispose() {
     for(const pool of Object.values(this.pools))for(const p of pool)p.mesh.material.dispose();
