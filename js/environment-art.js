@@ -36,6 +36,14 @@ export function createEnvironmentArt(st, id, parent = st.g) {
     geo.applyMatrix4(transform.matrix);
     const g = geo.index ? geo.toNonIndexed() : geo;
     if (g !== geo) geo.dispose();
+    // Preserve small camera-only occlusion bounds before welding the art. These
+    // never affect movement/navigation and avoid raycasting entire island draws.
+    if (cast && !distant) {
+      g.computeBoundingBox(); const size = g.boundingBox.getSize(new THREE.Vector3());
+      if (size.x > .45 && size.y > .45 && size.z > .3) {
+        (st.cameraBoxes ||= []).push({ node: parent, localBox: g.boundingBox.clone() });
+      }
+    }
     const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
     color.set(tint);
     for (let i = 0; i < pos.count; i++) {
@@ -338,6 +346,7 @@ export function createEnvironmentArt(st, id, parent = st.g) {
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: 0 });
       st.geos.push(g); st.mats.push(mat);
       const m = new THREE.Mesh(g, mat); m.castShadow = cast; m.receiveShadow = true;
+      m.userData.cameraProxied = true;
       m.name = `storybook-${id}-${cast ? 'sculpture' : 'planting'}`;
       parent.add(m); result.push(m); for (const source of geos) source.dispose();
     }

@@ -236,6 +236,7 @@ class Fighter {
   }
 
   syncRoot() {
+    if (this.kind === 'human') this.rig.animateFace?.(this.g.time + this.id * .37);
     const r = this.rig.root;
     r.position.copy(this.pos);
     r.rotation.y = this.facing + this.spinYaw;

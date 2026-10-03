@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { bakeVertexColored, renderStats } from './model-quality.js';
+import { pilotSurface, pilotCape } from './pilot-sculpt.js';
+const sculpt = part => G('pilot-'+part, () => pilotSurface(part), () => pilotSurface(part,true));
 
 // ---------------- 품질 설정 ----------------
 // low: 아웃라인(역 헐) 드로우 제거 + 저분할 지오메트리 + 본(그룹)별 정적 파트 병합
@@ -348,7 +350,7 @@ function faceTexture(f) {
   cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
   if (!x) return null;
-  const E = EYE_SHAPES[f.eyes] || EYE_SHAPES.sharp;
+  const E = { ...(EYE_SHAPES[f.eyes] || EYE_SHAPES.sharp), ...(f.blink ? { h: .4, lid: 1, lash: 3 } : {}) };
   const VY = 0.82; // 타원체가 세로로 길어 생기는 늘어짐 보정
   const ink = '#1d1522';
   const ES = 1.45; // 웹툰풍 큰 눈
@@ -466,9 +468,9 @@ export function createHuman(o = {}) {
   const L = o.look || {};
   const outfit = L.outfit || 'bomber', legsT = L.legs || 'slim';
   const inner = L.inner ?? 0xffffff, pants = L.pants ?? accent, shoe = L.shoe ?? 0xffffff, sole = L.sole ?? accent, socks = L.socks ?? 0xffffff;
-  const K = new Kit(0.012);
+  const K = new Kit(0.008, true);
   const root = new THREE.Group();
-  const hips = grp(root, 0, 0.98, 0);
+  const hips = grp(root, 0, 0.86, 0);
   const rig = { root, hips, height: 1.9, radius: 0.45 };
 
   // ----- 하체 -----
@@ -480,9 +482,9 @@ export function createHuman(o = {}) {
   }
   K.add(hips, rbox(0.32, 0.04, 0.21, 0.015), L.belt ?? 0x22252f, 0, 0.05, 0, 0, 0, 0, false);
   for (const s of [1, -1]) {
-    const leg = grp(hips, 0.085 * s, -0.07, 0);
-    const shin = grp(leg, 0, -0.42, 0);
-    const foot = grp(shin, 0, -0.4, 0);
+    const leg = grp(hips, 0.105 * s, -0.035, 0);
+    const shin = grp(leg, 0, -0.36, 0);
+    const foot = grp(shin, 0, -0.35, 0);
     if (legsT === 'shorts') {
       K.add(leg, rbox(0.155, 0.17, 0.17, 0.05), pants, 0, -0.06, 0);
       K.add(leg, rbox(0.115, 0.3, 0.125, 0.05), skin, 0, -0.27, 0, 0, 0, 0, false);
@@ -491,17 +493,17 @@ export function createHuman(o = {}) {
       K.add(leg, rbox(0.115, 0.42, 0.125, 0.05), skin, 0, -0.2, 0);
       K.add(shin, rbox(0.12, 0.36, 0.13, 0.05), socks, 0, -0.2, 0);
     } else if (legsT === 'cargo') {
-      K.add(leg, rbox(0.165, 0.44, 0.18, 0.05), pants, 0, -0.2, 0);
+      K.add(leg, sculpt('thigh'), pants, 0, 0, 0);
       K.add(leg, rbox(0.05, 0.13, 0.12, 0.02), shade2(pants), 0.085 * s, -0.24, 0, 0, 0, 0, false);
-      K.add(shin, rbox(0.15, 0.36, 0.165, 0.05), pants, 0, -0.17, 0);
+      K.add(shin, sculpt('shin'), pants, 0, 0, 0);
       K.add(shin, rbox(0.16, 0.06, 0.175, 0.02), shade2(pants), 0, -0.33, 0, 0, 0, 0, false);
     } else {
-      K.add(leg, rbox(0.145, 0.44, 0.16, 0.05), pants, 0, -0.2, 0);
-      K.add(shin, rbox(0.125, 0.4, 0.14, 0.05), pants, 0, -0.19, 0);
+      K.add(leg, sculpt('thigh'), pants, 0, 0, 0);
+      K.add(shin, sculpt('shin'), pants, 0, 0, 0);
     }
     // 하이탑 스니커즈
-    K.add(foot, rbox(0.165, 0.14, 0.28, 0.045), shoe, 0, -0.025, 0.04);
-    K.add(foot, rbox(0.175, 0.035, 0.295, 0.015), sole, 0, -0.09, 0.045, 0, 0, 0, false);
+    K.add(foot, sculpt('boot'), shoe, 0, 0, 0.01);
+    K.add(foot, rbox(0.226, 0.03, 0.374, 0.014), sole, 0, -0.092, 0.053, 0, 0, 0, false);
     K.add(foot, box(0.12, 0.025, 0.095), inner, 0, 0.042, 0.075, -0.18, 0, 0, false);
     rig[s > 0 ? 'legL' : 'legR'] = leg;
     rig[s > 0 ? 'shinL' : 'shinR'] = shin;
@@ -511,8 +513,8 @@ export function createHuman(o = {}) {
   // ----- 상체 -----
   const torso = grp(hips, 0, 0.03, 0);
   const wide = outfit === 'hoodie' || outfit === 'coat' ? 1.07 : 1;
-  const jz = 0.66, fz = 0.121 * wide; // 몸통 타원 비율, 가슴 앞면 z
-  K.add(torso, cyl(0.2 * wide, 0.16 * wide, 0.5, 12), body, 0, 0.27, 0).scale.set(1, 1, jz);
+  const fz = 0.178 * wide; // 몸통 타원 비율, 가슴 앞면 z
+  const jacket = K.add(torso, sculpt('jacket'), body); jacket.scale.x = wide * (style === 6 ? 1.17 : 1); jacket.name = 'tailored-jacket';
   K.add(torso, cyl(0.045, 0.05, 0.12, 8), skin, 0, 0.55, 0, 0, 0, 0, false);
   const front = (w, h, y, c, z = 0) => K.add(torso, rbox(w, h, 0.03, 0.01), c, 0, y, fz + z, -0.055, 0, 0, false);
   if (outfit === 'blazer') {
@@ -537,7 +539,7 @@ export function createHuman(o = {}) {
     for (const s of [1, -1]) K.add(torso, rbox(0.022, 0.46, 0.03, 0.01), 0xffffff, 0.09 * s, 0.28, fz - 0.02, -0.05, 0, 0.1 * s, false);
   } else if (outfit === 'utility') {
     front(0.1, 0.16, 0.42, inner);
-    K.add(torso, cyl(0.212, 0.172, 0.36, 12), accent, 0, 0.3, 0).scale.set(1, 1, 0.68);
+    K.add(torso, sculpt('vest'), accent).name = 'tailored-utility-vest';
     for (const s of [1, -1]) K.add(torso, rbox(0.08, 0.08, 0.03, 0.015), shade2(accent), 0.09 * s, 0.22, fz + 0.012, -0.06, 0, 0, false);
     K.add(torso, sph(0.12, 10, 8), body, 0, 0.5, -0.1).scale.set(1.3, 0.7, 0.8);
   } else if (outfit === 'vest') {
@@ -548,8 +550,9 @@ export function createHuman(o = {}) {
     front(0.1, 0.3, 0.34, inner);
     for (const y of [0.3, 0.2, 0.1]) for (const s of [1, -1]) K.add(torso, sph(0.013, 6, 4), 0xffd84a, 0.07 * s, y, fz, 0, 0, 0, false);
     // 뒷자락: 다리 앞쪽 동작과 부딪히지 않게 뒤/옆에만
-    K.add(hips, rbox(0.34, 0.5, 0.04, 0.02), body, 0, -0.24, -0.11, 0.12, 0, 0);
-    for (const s of [1, -1]) K.add(hips, rbox(0.04, 0.42, 0.18, 0.02), body, 0.165 * s, -0.2, -0.02, 0, 0, 0.1 * s);
+    const capeMat = K.m(body).clone(); capeMat.side = THREE.DoubleSide; K.all.push(capeMat);
+    rig.cape = K.add(torso, G('pilotCape', () => pilotCape(), () => pilotCape(true)), capeMat, 0, 0, 0, 0, 0, 0, false);
+    K.keep(rig.cape);
   } else {
     // bomber
     front(0.1, 0.32, 0.34, inner);
@@ -562,10 +565,10 @@ export function createHuman(o = {}) {
   K.add(torso, cone(0.011, 0.03, 4), 0x3fcf4a, 0.1, 0.43, fz - 0.003, 0, 0, 0, false);
   // Broad shoulder seams and a back patch remain legible from the gameplay camera.
   for (const s of [1, -1]) {
-    K.add(torso, box(0.17, 0.035, 0.022), inner, 0.095 * s, 0.425, -0.121 * wide, 0.05, 0, -0.16 * s, false);
+    K.add(torso, box(0.17, 0.035, 0.022), inner, 0.095 * s, 0.425, -0.153 * wide, 0.05, 0, -0.16 * s, false);
   }
-  K.add(torso, rbox(0.2, 0.22, 0.023, 0.035), accent, 0, 0.275, -0.117 * wide, 0.07, 0, 0, false);
-  K.add(torso, rabbitPatch(), inner, 0, 0.27, -0.135 * wide, 0.07, Math.PI, 0, false);
+  K.add(torso, rbox(0.2, 0.22, 0.023, 0.035), accent, 0, 0.275, -0.162 * wide, 0.07, 0, 0, false);
+  K.add(torso, rabbitPatch(), inner, 0, 0.27, -0.178 * wide, 0.07, Math.PI, 0, false);
   if (outfit === 'bomber' || outfit === 'coat') {
     for (const s of [1, -1]) K.add(torso, box(0.065, 0.17, 0.03), accent, 0.065 * s, 0.43, fz + 0.02, -0.1, 0, 0.36 * s, false);
   }
@@ -573,11 +576,12 @@ export function createHuman(o = {}) {
   // ----- 머리 -----
   const head = grp(torso, 0, 0.57, 0);
   // Enlarge the complete face/hair assembly without moving animation joints or hitboxes.
-  head.scale.set(1.18, 1.12, 1.14);
+  head.scale.set(1.62, 1.5, 1.48);
   const headM = K.add(head, sph(HR, 20, 14), skin, 0, HCY, HCZ);
   headM.scale.set(0.9, 1.1, 0.95);
   const brow = shade(hair, 0.55);
-  const tex = faceTexture({ eyes: L.eyes || 'sharp', eye: L.eye ?? 0x5a3a2a, mouth: L.mouth || 'smile', blush: !!L.blush, brow });
+  const faceStyle = { eyes: L.eyes || 'sharp', eye: L.eye ?? 0x5a3a2a, mouth: L.mouth || 'smile', blush: !!L.blush, brow };
+  const tex = faceTexture(faceStyle);
   let faceMat = null;
   if (tex) {
     faceMat = new THREE.MeshToonMaterial({ map: tex, transparent: true, alphaTest: 0.04, depthWrite: false, gradientMap: grad });
@@ -692,18 +696,18 @@ export function createHuman(o = {}) {
   // ----- 팔 -----
   const sleeve = outfit === 'vest' ? skin : body;
   for (const s of [1, -1]) {
-    const arm = grp(torso, 0.225 * s, 0.47, 0);
-    K.add(arm, sph(0.075, 10, 8), outfit === 'vest' ? accent : body, 0, 0, 0, 0, 0, 0, false);
-    K.add(arm, rbox(0.14, 0.3, 0.14, 0.045), sleeve, 0, -0.14, 0);
+    const arm = grp(torso, 0.27 * s, 0.43, 0);
+
+    K.add(arm, sculpt('sleeve'), sleeve, 0, 0, 0);
     if (outfit === 'track') K.add(arm, rbox(0.02, 0.3, 0.1, 0.008), 0xffffff, 0.072 * s, -0.14, 0, 0, 0, 0, false);
     if (outfit === 'bomber' && s > 0) K.add(arm, rbox(0.02, 0.06, 0.06, 0.008), 0xffd84a, 0.074, -0.08, 0, 0, 0, 0, false);
-    const fore = grp(arm, 0, -0.28, 0);
-    K.add(fore, rbox(0.12, 0.24, 0.12, 0.04), sleeve, 0, -0.1, 0);
+    const fore = grp(arm, 0, -0.26, 0);
+    K.add(fore, sculpt('forearm'), sleeve, 0, 0, 0);
     const cuff = outfit === 'vest' ? 0xffffff : outfit === 'coat' || outfit === 'tech' ? accent : outfit === 'blazer' ? inner : shade2(body);
-    K.add(fore, rbox(0.135, 0.05, 0.135, 0.015), cuff, 0, -0.21, 0, 0, 0, false);
+    K.add(fore, rbox(0.165, 0.05, 0.16, 0.015), cuff, 0, -0.21, 0, 0, 0, false);
     const hand = grp(fore, 0, -0.27, 0);
     if (L.hands === 'boxing') {
-      K.add(hand, sph(0.085, 12, 10), body, 0, -0.01, 0.01);
+      K.add(hand, sculpt('mitten'), body, 0, -0.01, 0.01);
       K.add(hand, cyl(0.07, 0.07, 0.05, 10), 0xffffff, 0, 0.06, 0, 0, 0, 0, false);
     } else {
       K.add(hand, sph(0.069, 10, 8), skin, 0, -0.01, 0.01).scale.set(1, 1.15, 1.05);
@@ -718,6 +722,20 @@ export function createHuman(o = {}) {
   rig.remote = createRemote();
   rig.remote.position.set(0, -0.02, 0.04);
   rig.handR.add(rig.remote);
+  for (const [color, material] of K.mats) material.roughness = color === skin ? .68 : color === hair ? .52 : .91;
+  rig.design = 'tailored-adventure-v19';
+  // A separate cloth joint adds a secondary beat without altering combat bones.
+  if (rig.cape) {
+    const mesh = rig.cape, joint = grp(torso); joint.add(mesh); rig.capeJoint = joint;
+    // Keep dynamic cloth separate from the static material bake.
+    rig.animateFace = time => { joint.rotation.x = Math.sin(time * 2.1) * .045; joint.rotation.z = Math.sin(time * 1.4) * .025; };
+  }
+  const animateCloth = rig.animateFace;
+  const blinkTexture = faceMat ? faceTexture({ ...faceStyle, blink: true }) : null;
+  rig.animateFace = time => {
+    animateCloth?.(time);
+    if (faceMat && Number.isFinite(time)) faceMat.map = ((time + style * .47) % 4.1 < .13) ? blinkTexture : tex;
+  };
   K.finish(rig);
   // 얼굴 데칼은 병합하지 않는 별도 재질이라 피격 플래시를 따로 전달한다
   if (faceMat) {

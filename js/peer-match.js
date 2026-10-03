@@ -181,6 +181,7 @@ export class PeerReplica {
         f.applyBrokenMotion?.(dt,this.visualTime);
         f.rig.animateFace?.(this.visualTime+f.id*.83);
       }
+      if(f.kind==='human') f.rig.animateFace?.(this.visualTime+f.id*.37);
       f.syncMark();
       // Keep the mark on the ground while its fighter interpolates between packets.
       if(f.mark?.visible)f.mark.position.y=f.gh-f.rig.root.position.y+.05;

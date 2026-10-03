@@ -971,6 +971,7 @@ export function createArena(scene) {
     scene.fog.color.set(palette.sky[1]);
     const def = BUILD[id]();
     art.garden(); art.finish();
+    A.cameraBoxes = st.cameraBoxes || [];
     buildContacts();
     A.stageId = id;
     for (const s of st.pads) if (s.padTo) s.padTo.y = gAt(s.padTo.x, s.padTo.z, 1e6, true) ?? 0;

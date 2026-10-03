@@ -17,8 +17,8 @@ import { normalizePreferences, touchEnabled, qualityProfile } from './preference
 import { controlLabel, formatControls } from './control-labels.js';
 import { FixedClock, RenderBudget, FrameStats, Interpolator } from './frame-budget.js';
 import { MISSIONS, loadProgress, saveProgress, missionStatus, isUnlocked, recordResult } from './campaign.js';
-import { PeerLobby } from './peer-lobby.js';
-import { PeerSession } from './peer-session.js';
+import { RoomLobby } from './room-lobby.js';
+import { RoomSession } from './room-session.js';
 import { initInstallUI } from './install.js';
 import { rabbitPortrait } from './rabbit-portraits.js';
 
@@ -127,18 +127,18 @@ addEventListener('resize', scheduleResize);
 window.visualViewport?.addEventListener('resize', scheduleResize);
 
 // ---------------- 화면 ----------------
-const screens = ['title', 'help', 'settings', 'select', 'campaign', 'peers', 'pause', 'result', 'mobile-help'];
+const screens = ['title', 'help', 'settings', 'select', 'campaign', 'rooms', 'pause', 'result', 'mobile-help'];
 const hud = document.getElementById('hud');
 const $ = (id) => document.getElementById(id);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 let mode = 'menu';
 let cur = 'title';           // 지금 보이는 화면
-const installUI = initInstallUI({ isInMatch: () => mode === 'game' || mode === 'paused' || cur === 'peers' });
+const installUI = initInstallUI({ isInMatch: () => mode === 'game' || mode === 'paused' || cur === 'rooms' });
 const subStack = [];          // 조작법/설정에서 돌아갈 화면
 function show(id) {
   installUI.refresh();
-  document.querySelector('#pause [data-action="restart"]').textContent = peerSession?.active ? '친구 대기실로' : '다시 시작';
-  document.querySelector('#result [data-action="toSelect"]').textContent = peerSession?.active ? '친구 대기실' : '캐릭터 선택';
+  document.querySelector('#pause [data-action="restart"]').textContent = currentSession()?.active ? '친구 대기실로' : '다시 시작';
+  document.querySelector('#result [data-action="toSelect"]').textContent = currentSession()?.active ? '친구 대기실' : '캐릭터 선택';
   frameStats.reset();
   cur = id;
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
@@ -170,31 +170,31 @@ let activeMission = null;
 let nextMission = null;
 let freeConfig = null;
 let choosingCampaignPilot = false;
-let peerSession;
-const peerLobby = new PeerLobby({
-  onMessage: message => peerSession?.receive(message),
-  onDisconnect: () => peerSession?.abort(undefined, false),
-  onStart: config => peerSession.start(config),
+let roomSession;
+const currentSession = () => roomSession;
+
+const roomLobby = new RoomLobby({
+  onInvite: () => openRooms(),
+  onMessage: message => roomSession?.receive(message),
+  onClosed: reason => { roomSession?.clear(); toMenu('rooms'); roomLobby.status(reason, true); },
+  onStart: message => roomSession?.start(message),
 });
-peerSession = new PeerSession({ game, lobby: peerLobby,
-  startGame: (config, role) => {
+roomSession = new RoomSession({ game, lobby: roomLobby,
+  startGame: (config, role, localIndex) => {
     clearMission(); startMatch(true, config);
-    if (role === 'guest') {
-      game.humans[0].isPlayer = false; game.humans[0].remote = true; game.humans[1].isPlayer = true;
-      game.player = game.humans[1];
-      ui.reset(); for (const h of game.humans) ui.addFighter(h);
-      touch.update(game.player);
-    }
+    for (const h of game.humans) { h.isPlayer = h.id === localIndex; h.remote = config.roster.some(p => p.slot === h.id) && !h.isPlayer; }
+    game.player = game.humans[localIndex];
+    ui.reset(); for (const h of game.humans) ui.addFighter(h);
+    touch.update(game.player);
   },
   showResult: res => game.onEnd(res),
   paused: note => { pauseGame(true); $('peer-pause-note').textContent = note; },
   resumed: () => resume(true),
-  aborted: reason => { toMenu('peers'); peerLobby.status(reason, true); },
+  aborted: reason => { toMenu('rooms'); roomLobby.status(reason); },
 });
-
-function openPeers() {
-  if (peerSession.active) { peerSession.returnToLobby(); return; }
-  clearMission(); toMenu('peers');
+function openRooms() {
+  if (roomSession.active) { roomSession.returnToLobby(); return; }
+  clearMission(); toMenu('rooms');
 }
 
 function clearMission() {
@@ -694,6 +694,10 @@ function applyRenderQuality() {
   arena.setQuality?.(profile.low);
   setModelQuality(profile.low);
   applyModelQuality(scene, profile.low);
+  // Paused frames still render after a quality change; hide freshly baked meshes now.
+  if (game.cockpitCamera.hidden.size && game.player?.riding) {
+    game.cockpitCamera.hideSelf(game.player.riding, game.player);
+  }
   renderBudget.reset();
   resizeView();
   syncPostprocessing();
@@ -802,9 +806,9 @@ function applyStage(id) {
 }
 
 function toMenu(screen) {
-  if (screen !== 'peers' && peerLobby.link) {
-    peerSession.clear(); peerLobby.disconnect();
-  }
+  if (screen !== 'rooms') $('room-password').value = '';
+  if(roomSession?.active && screen !== 'rooms') { roomSession.returnToLobby(); return; }
+  if(screen !== 'rooms' && roomLobby?.token) { roomLobby.perform(async()=>{await roomLobby.leave();toMenu(screen);});return; }
   if (screen === 'title' || screen === 'select') clearMission();
   input.resetInputs();
   if (mode === 'game' || mode === 'paused' || mode === 'result') game.clear();
@@ -857,7 +861,7 @@ function startMatch(skipGuide = false, peerConfig = null) {
 }
 
 game.onEnd = (res) => {
-  peerSession.localResult();
+  currentSession().localResult();
   mode = 'result';
   const win = res[0].h === game.player;
   const playerRank = res.findIndex(r => r.h === game.player);
@@ -879,7 +883,7 @@ game.onEnd = (res) => {
       if (outcome.evaluation.cleared) nextMission = MISSIONS[activeMission.index + 1]?.id || null;
       if (outcome.evaluation.cleared && !nextMission) message.textContent += ' · 모든 도전을 완주했어요!';
     } else message.textContent = '이번 경기는 기록에 반영되지 않았어요.';
-  } else message.textContent = peerSession.active ? '친구 대전을 마쳤어요. 대기실에서 준비하면 다시 함께 할 수 있어요.'
+  } else message.textContent = currentSession().active ? '친구 대전을 마쳤어요. 대기실에서 준비하면 다시 함께 할 수 있어요.'
     : win ? '멋진 승부였어요! 다른 로봇과 무대에도 도전해 보세요.' : '방어 스킬로 버티고, 당근이 차면 로봇을 호출해 보세요.';
   $('next-mission').classList.toggle('hidden', !nextMission);
   document.getElementById('result-title').textContent = win ? '승리!' : res.findIndex((r) => r.h === game.player) + 1 + '위';
@@ -904,12 +908,12 @@ game.onEnd = (res) => {
 };
 
 const actions = {
-  toPeers: openPeers,
+  toRooms: openRooms,
   toCampaign: openCampaign,
   chooseCampaignPilot: () => { choosingCampaignPilot = true; toMenu('select'); },
   nextMission: () => { if (nextMission) launchMission(nextMission); },
   finishSpectating: () => { if (mode === 'game' && game.player?.out) game.endMatch('player-out'); },
-  toSelect: () => { if (peerSession.active) { openPeers(); return; } choosingCampaignPilot = false; toMenu('select'); },
+  toSelect: () => { if (currentSession().active) { openRooms(); return; } choosingCampaignPilot = false; toMenu('select'); },
   toHelp: () => openSub('help'),
   toSettings: () => openSub('settings'),
   back,
@@ -920,11 +924,11 @@ const actions = {
   beginTouchMatch: () => { preferences.touchGuideSeen = true; savePreferences(); startMatch(true); },
   cancelTouchStart: () => activeMission ? openCampaign() : toMenu('select'),
   resume,
-  restart: () => peerSession.active ? openPeers() : startMatch(),
+  restart: () => currentSession().active ? openRooms() : startMatch(),
 };
 function resume(fromPeer = false) {
   if (contextLost) return;
-  if (peerSession.active && !fromPeer) { peerSession.setPaused(false); return; }
+  if (currentSession().active && !fromPeer) { currentSession().setPaused(false); return; }
   $('peer-pause-note').textContent = '';
   input.resetInputs();
   simulationClock.reset();
@@ -939,7 +943,7 @@ function resume(fromPeer = false) {
 }
 function pauseGame(fromPeer = false) {
   if (mode !== 'game') return;
-  if (peerSession.active && !fromPeer) { peerSession.setPaused(true); return; }
+  if (currentSession().active && !fromPeer) { currentSession().setPaused(true); return; }
   input.resetInputs();
   simulationClock.reset();
   mode = 'paused';
@@ -1021,7 +1025,7 @@ function frame(now = performance.now()) {
       touch.update(game.player);
       input.poll();
       if (input.intents.pause && game.phase !== 'end') pauseGame();
-      else { if (peerSession.active) peerSession.update(dt, input.intents); else game.update(dt, false); uiElapsed += dt; }
+      else { if (currentSession().active) currentSession().update(dt, input.intents); else game.update(dt, false); uiElapsed += dt; }
       input.endFrame();
       return mode === 'game';
     });
@@ -1041,7 +1045,7 @@ function frame(now = performance.now()) {
   const interpolating = mode === 'game';
   if (interpolating) { interp.apply(simulationClock.alpha); camera.updateMatrixWorld(); }
   if (mode === 'game') {
-    const spectating = !peerSession.active && !!game.player?.out && game.phase === 'fight';
+    const spectating = !currentSession().active && !!game.player?.out && game.phase === 'fight';
     if (spectating !== shownSpectating) { shownSpectating = spectating; $('finish-spectating').classList.toggle('hidden', !spectating); }
   }
   if (uiElapsed > 0 && mode !== 'menu') { ui.update(game, uiElapsed); uiElapsed = 0; }
@@ -1054,6 +1058,7 @@ function frame(now = performance.now()) {
     const sel = !document.getElementById('select').classList.contains('hidden');
     if (previewRobot) {
       previewRobot.animateFace?.(menuT);
+      previewHuman.animateFace?.(menuT);
       previewRobot.root.rotation.y = -0.35 + Math.sin(menuT * 0.6) * 0.22;
       previewRobot.earL.rotation.x = Math.sin(menuT * 2) * 0.15;
       previewRobot.earR.rotation.x = Math.sin(menuT * 2 + 0.6) * 0.15;
@@ -1119,10 +1124,10 @@ buildPreview();
 applyPreferences();
 renderKeyHints();
 applyHint(hintDefaultOpen());
-toMenu('title');
+toMenu(roomLobby.token || roomLobby.invite ? 'rooms' : 'title');
 document.getElementById('loading').classList.add('done');
 frame();
 window.NativeGame?.ready();
 
 // 디버그/QA 용 핸들
-window.__rr = { game, cfg, startMatch, toMenu, fx, THREE, input };
+window.__rr = { game, cfg, startMatch, toMenu, fx, THREE, input, roomLobby, roomSession, openRooms };

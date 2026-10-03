@@ -136,3 +136,5 @@ html.touch-mode #hud:has(.supply-panel.show) #toast { top:120px; }
   html #hud:has(.supply-panel.show) #toast,
   html.touch-mode #hud:has(.supply-panel.show) #toast { top:202px; }
 }
+/* Mounted view controls belong to the playfield, never a pause/menu overlay. */
+html:not(.in-match) #mounted-camera-toggle { display: none; }

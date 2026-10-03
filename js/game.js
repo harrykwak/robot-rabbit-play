@@ -25,6 +25,10 @@ export const INTRO_STEP = 0.55;
 
 // CPU 파일럿 고르기: 혼자 할 때는 무작위, 친구 대전은 두 기기가 같은 결과를 내도록 설정값으로 정한다
 export function pickOpponents(cfg, count, rand = Math.random) {
+  if(cfg.roster){
+    const taken=cfg.roster.map(p=>p.pilot), pool=PILOTS.map((p,i)=>i).filter(i=>!taken.includes(i));
+    return [...taken,...pool].slice(0,count);
+  }
   const taken = [cfg.pilot];
   if (cfg.peer) taken.push(cfg.peer.pilot);
   const pool = PILOTS.map((p, i) => i).filter((i) => !taken.includes(i));
@@ -107,7 +111,7 @@ export class Game {
   // ---------------- 매치 ----------------
   start(cfg) {
     this.clear();
-    this.peerMatch = !!cfg.peer;
+    this.peerMatch = !!cfg.peer || !!cfg.roster;
     this.stockCount = cfg.stock;
     this.diff = cfg.diff;
     const order = pickOpponents(cfg, 4);
@@ -117,8 +121,10 @@ export class Game {
       h.attackPoints = 0; h.supplyId = -1; h.supplyProgress = 0; h.supplyHeld = false;
       if (n === 0 && cfg.playerName) h.name = cfg.playerName;
       if (n === 1 && cfg.peer) { h.remote = true; h.name = cfg.peer.name; }
+      if(cfg.roster?.[n]) {h.remote=n!==0;h.name=cfg.roster[n].name;}
       if (n === 0 && cfg.autoplay) { h.ctrl = new AICtrl(this, h, DIFFICULTY[2]); h.autoplay = true; }
       h.robotType = n === 0 ? cfg.robot : n === 1 && cfg.peer ? cfg.peer.robot : types[n % types.length];
+      if(cfg.roster?.[n])h.robotType=cfg.roster[n].robot;
       const sp = this.arena.spawnPoints[n];
       h.pos.set(sp.x, sp.y || 0, sp.z);
       h.gh = sp.y || 0;
