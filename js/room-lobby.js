@@ -21,8 +21,8 @@ const labels = {
 };
 
 export class RoomLobby {
-  constructor({ onMessage, onClosed, onStart, onInvite }) {
-    Object.assign(this, { onMessage, onClosed, onStart, onInvite });
+  constructor({ onMessage, onClosed, onStart, onInvite, onBack }) {
+    Object.assign(this, { onMessage, onClosed, onStart, onInvite, onBack, flow: 'join' });
     Object.assign(this, { token: null, self: null, room: null, pending: [], online: false, controller: null, generation: 0, busy: false, inFlight: false });
     const invitation = invitationFrom(location.href);
     this.invite = invitation.room;
@@ -46,10 +46,9 @@ export class RoomLobby {
       this.invite = next; $('room-code').value = next; $('room-invited').hidden = false;
       this.onInvite?.(); this.status('초대 링크가 준비됐습니다. 참가를 요청해 주세요.');
     });
-    $('room-create').onclick = () => this.perform(() => this.create());
-    $('room-host').addEventListener('toggle', () => { if (!$('room-host').open) $('room-password').value = ''; });
+    $('room-entry').onsubmit = e => { e.preventDefault(); this.submit(); };
+    $('room-back').onclick = () => this.back();
     addEventListener('pagehide', () => { $('room-password').value = ''; });
-    $('room-join').onclick = () => this.perform(() => this.join());
     $('room-start').onclick = () => this.perform(() => this.action('start'));
     $('room-leave').onclick = () => this.perform(() => this.leave());
     $('room-close').onclick = () => this.perform(() => this.action('close'));
@@ -59,7 +58,7 @@ export class RoomLobby {
       if (!this.room) return;
       const link = this.invitation(); $('room-share-link').value = link;
       try { await navigator.clipboard.writeText(link); this.status('참가 링크를 복사했습니다. 친구의 요청을 승인해 주세요.'); }
-      catch { $('room-share-link').focus(); $('room-share-link').select(); this.status('아래 참가 링크를 복사해 친구에게 보내 주세요.'); }
+      catch { $('room-share-link').hidden = false; $('room-share-link').focus(); $('room-share-link').select(); this.status('아래 참가 링크를 복사해 친구에게 보내 주세요.'); }
     };
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
@@ -68,30 +67,52 @@ export class RoomLobby {
     this.render(); this.checkService();
   }
   get role() { return this.self?.role; }
+  open(flow = 'join') {
+    if (this.token) return;
+    this.flow = flow === 'create' ? 'create' : 'join';
+    $('room-password').value = ''; $('room-loadout').open = false;
+    for (const field of $('room-entry').querySelectorAll('[aria-invalid]')) field.removeAttribute('aria-invalid');
+    this.status(''); this.render();
+  }
+  back() {
+    if (this.busy) return;
+    $('room-password').value = '';
+    const finish = () => { this.invite = ''; $('room-code').value = ''; this.onBack?.(); };
+    if (this.token) { this.perform(async () => { await this.leave(); finish(); }); return; }
+    finish();
+  }
+  submit() {
+    if (this.busy || !this.available || this.token) return;
+    const fields = ['room-name', this.flow === 'create' ? 'room-password' : 'room-code'];
+    for (const id of fields) $(id).removeAttribute('aria-invalid');
+    const missing = fields.find(id => !$(id).value.trim());
+    if (missing) {
+      $(missing).setAttribute('aria-invalid', 'true'); $(missing).focus();
+      this.status(missing === 'room-name' ? '닉네임을 입력해 주세요.' : missing === 'room-code' ? '친구에게 받은 방 코드를 입력해 주세요.' : '방장 비밀번호를 입력해 주세요.', true); return;
+    }
+    this.perform(() => this.flow === 'create' ? this.create() : this.join());
+  }
   invitation() { return this.room ? invitationURL(location.href, this.room.id) : ''; }
   status(text, error = false) { $('room-status').textContent = text; $('room-status').classList.toggle('error', error); }
   async checkService() {
     if (this.probing) return;
     if (!this.endpoint) {
-      this.available = false; $('room-unavailable').hidden = false;
-      this.status('멀티플레이 서버 연결을 기다리고 있습니다.');
+      this.available = false; this.status('');
       $('room-service-message').textContent = '멀티플레이 서버가 아직 연결되지 않았습니다. 지금은 혼자 플레이할 수 있습니다.';
       $('room-service-retry').hidden = true; this.render(); return;
     }
-    this.probing = true; $('room-service-retry').disabled = true;
-    if (!this.token) this.status('온라인 방에 연결 중입니다. 처음 연결은 약 1분 걸릴 수 있습니다.');
+    this.probing = true; this.render();
+    $('room-service-message').textContent = '멀티플레이 연결 중… 처음 연결할 때는 최대 1분 정도 걸립니다.';
     try {
       const response = await fetch(this.endpoint + '/api/capabilities', { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(75000) });
       const caps = response.ok ? await response.json() : null;
       this.available = caps?.version === 1 && caps.capacity === 4 && caps.transport === 'https-sse' && caps.hostAuthentication === 'password';
       if (!this.available) throw new Error('unavailable');
-      if (!this.token) this.status(this.invite ? '초대 링크가 준비됐습니다. 이름을 정하고 참가를 요청해 주세요.' : '방을 열고 참가 링크를 친구에게 보내 주세요.');
+      if (!this.token) this.status('');
     } catch {
-      this.available = false; $('room-service-message').textContent = '온라인 방에 연결하지 못했습니다. 잠시 뒤 다시 확인해 주세요.';
-    } finally {
-      this.probing = false; $('room-service-retry').disabled = false;
-      $('room-unavailable').hidden = !!this.available; this.render();
-    }
+      this.available = false;
+      $('room-service-message').textContent = '멀티플레이 서버에 연결하지 못했습니다. 다시 연결하거나 혼자 플레이할 수 있습니다.';
+    } finally { this.probing = false; this.render(); }
   }
   async request(path, body) {
     if (!this.endpoint) throw new Error('온라인 방이 아직 준비되지 않았습니다.');
@@ -162,7 +183,7 @@ export class RoomLobby {
     if (message.type === 'room') {
       if (this.room?.state === 'playing' && message.room?.state === 'lobby') this.onMessage({ type: 'stop', reason: '로비로 돌아왔습니다.' });
       this.room = message.room; this.self = message.self; this.pending = message.pending;
-      this.status(this.self.status === 'pending' ? '참가 요청을 보냈습니다. 호스트 승인을 기다리고 있습니다.' : this.room?.state === 'playing' ? '호스트가 경기를 진행 중입니다.' : '승인된 참가자만 함께 플레이합니다.'); this.render();
+      this.status(''); this.render();
     } else if (message.type === 'closed' || message.type === 'removed') {
       const reason = labels[message.reason] || (message.type === 'closed' ? '방이 닫혔습니다.' : '로비에서 나왔습니다.');
       this.forget(); this.status(reason, true); this.onClosed(reason);
@@ -183,21 +204,49 @@ export class RoomLobby {
   }
   reconnect() { if (this.token) { this.controller?.abort(); clearTimeout(this.retry); this.retry = setTimeout(() => this.connect(), 250); } }
   render() {
-    const joined = !!this.token, host = this.role === 'host';
-    $('room-entry').hidden = joined; $('room-connected').hidden = !joined;
-    $('room-host').hidden = !this.available;
-    $('room-create').disabled = !this.available || this.busy; $('room-join').disabled = !this.available || this.busy;
-    $('room-number').textContent = this.room ? '초대 전용 방' : '';
-    $('room-state').textContent = this.room?.state === 'playing' ? '경기 중' : this.self?.status === 'pending' ? '승인 대기' : '참가 대기';
+    const joined = !!this.token, host = this.role === 'host', pendingSelf = this.self?.status === 'pending';
+    const creating = this.flow === 'create', ready = !!this.available;
+    $('title-online-status').textContent = ready ? '친구와 최대 4명 · 방장 승인 후 참가' : this.probing ? '멀티플레이 연결 확인 중 · 혼자 플레이 가능' : '멀티플레이 준비 중 · 혼자 플레이 가능';
+    $('room-title').textContent = joined ? pendingSelf ? '승인 기다리는 중' : '대기실' : creating ? '방 만들기' : '참가하기';
+    $('room-step').textContent = joined ? pendingSelf ? '참가 요청 전송 완료' : '친구와 함께 · 최대 4명' : '친구와 함께 · 최대 4명';
+    $('room-entry').hidden = joined || !ready;
+    $('room-unavailable').hidden = joined || ready;
+    $('room-service-retry').disabled = this.probing;
+    $('room-service-retry').hidden = !this.endpoint;
+    $('room-connected').hidden = !joined;
+    $('room-host').hidden = !creating || !ready;
+    $('room-join-fields').hidden = creating || !!this.invite;
+    $('room-invited').hidden = creating || !this.invite;
+    $('room-stage-field').hidden = !creating;
+    $('room-loadout').querySelector('summary').textContent = creating ? '캐릭터 · 전장 선택' : '캐릭터 선택';
+    $('room-entry-note').textContent = creating ? '방을 만든 뒤 친구에게 초대 링크를 보내세요.' : '방장이 승인하면 대기실에 들어갑니다.';
+    $('room-create').hidden = !creating; $('room-join').hidden = creating;
+    $('room-create').disabled = !ready || this.busy; $('room-join').disabled = !ready || this.busy;
+    $('room-create').textContent = this.busy ? '방 만드는 중…' : '방 만들기';
+    $('room-join').textContent = this.busy ? '요청 보내는 중…' : '참가 요청';
+    $('room-back').disabled = this.busy;
+    $('room-back').textContent = joined ? host ? '← 방 닫고 나가기' : '← 나가기' : '← 뒤로';
+    $('room-back').setAttribute('aria-label', joined ? host ? '방 닫고 메인 메뉴로' : '나가고 메인 메뉴로' : '메인 메뉴로 돌아가기');
+    $('room-number').textContent = this.room?.id || '';
+    $('room-state').textContent = pendingSelf ? '방장이 요청을 확인하고 있습니다.' : this.room?.state === 'playing' ? '게임 진행 중' : host ? '참가자 ' + (this.room?.players.length || 0) + ' / 4' : '방장이 게임을 시작하면 함께 입장합니다.';
     $('room-share').hidden = !host; $('room-share-link').value = host ? this.invitation() : '';
     $('room-start').hidden = !host; $('room-close').hidden = !host; $('room-leave').hidden = host;
-    $('room-start').disabled = this.busy || !this.online || this.room?.state !== 'lobby' || (this.room?.players.length || 0) < 2 || this.pending.length > 0 || this.room?.players.some(p => !p.online);
-    $('room-reconnect').hidden = this.online;
-    const list = $('room-roster'); list.replaceChildren();
+    $('room-leave').textContent = pendingSelf ? '요청 취소' : '나가기';
+    $('room-close').disabled = this.busy; $('room-leave').disabled = this.busy;
+    const reason = !this.online ? '연결을 복구하고 있습니다.' : this.room?.state !== 'lobby' ? '게임이 진행 중입니다.' : this.pending.length ? '참가 요청을 승인하거나 거절해 주세요.' : (this.room?.players.length || 0) < 2 ? '친구가 1명 이상 참가하면 시작할 수 있습니다.' : this.room?.players.some(p => !p.online) ? '참가자의 재연결을 기다리고 있습니다.' : '';
+    $('room-start').disabled = this.busy || !!reason;
+    $('room-start-reason').hidden = !host; $('room-start-reason').textContent = reason;
+    $('room-reconnect').hidden = this.online; $('room-reconnect').disabled = this.busy;
+    const list = $('room-roster'); list.replaceChildren(); list.hidden = pendingSelf;
     for (const p of this.room?.players || []) {
-      const item = document.createElement('li'); item.textContent = `${p.name}${p.role === 'host' ? ' · HOST' : ''}${p.id === this.self?.id ? ' · 나' : ''} — ${p.online ? '연결됨' : '재접속 대기'}`; list.append(item);
+      const item = document.createElement('li'), name = document.createElement('span'), state = document.createElement('small');
+      name.textContent = p.name + (p.id === this.self?.id ? ' (나)' : '');
+      state.textContent = !p.online ? '재연결 중' : p.role === 'host' ? '방장' : '준비 완료'; item.append(name, state); list.append(item);
     }
-    const pending = $('room-pending'); pending.replaceChildren(); $('room-pending-block').hidden = !host;
+    if (!pendingSelf) for (let n = this.room?.players.length || 0; n < 4; n++) {
+      const item = document.createElement('li'); item.className = 'vacant'; item.textContent = '빈 자리 · 게임에서는 CPU 참가'; list.append(item);
+    }
+    const pending = $('room-pending'); pending.replaceChildren(); $('room-pending-block').hidden = !host || !this.pending.length;
     for (const p of this.pending) {
       const item = document.createElement('li'), name = document.createElement('span'); name.textContent = p.name; item.append(name);
       for (const [type, label] of [['approve', '승인'], ['deny', '거절']]) {
@@ -206,6 +255,5 @@ export class RoomLobby {
       }
       pending.append(item);
     }
-    if (host && !this.pending.length) { const item = document.createElement('li'); item.textContent = '새 참가 요청이 없습니다.'; pending.append(item); }
   }
 }

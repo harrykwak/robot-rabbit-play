@@ -27,34 +27,9 @@
 .screen :is(.opts-grid select,.peer-panel input,.peer-panel select,.peer-panel textarea) { border: 1px solid #ffffff30; background: #0f162b; border-radius: 10px; }
 
 /* A left navigation column and an unobstructed live character stage. */
-#title { display: grid; grid-template-columns: minmax(300px, .85fr) 1.15fr; gap: 6vw; align-items: center; padding: 5vh max(5vw, env(safe-area-inset-left)) 8vh; background: linear-gradient(90deg,#10172cf0 0%,#141a3388 38%,transparent 75%); overflow: hidden; }
-#title .title-content { width: 100%; max-width: 420px; justify-self: end; display: flex; flex-direction: column; gap: 18px; }
-#title .logo { animation: none; text-align: left; margin: 0; }
-#title .logo h1 { font-size: clamp(64px,7.5vw,112px); align-items: flex-start; line-height: .9; margin-left: 0; font-style: normal; transform: none; letter-spacing: -.07em; }
-#title .logo h1 span { -webkit-text-stroke-width: .035em; transform: none; text-shadow: 0 .04em 0 #141a33; }
-#title .logo h1 .l2 { color: var(--menu-orange); background: none; -webkit-text-fill-color: var(--menu-orange); filter: none; }
-#title .logo-sub { border: 0; border-radius: 0; box-shadow: none; padding: 0; transform: none; background: none; color: var(--menu-teal); font-size: 10px; letter-spacing: .23em; margin-bottom: 18px; }
-#title .logo-ko { background: none; border: none; box-shadow: none; transform: none; text-shadow: none; color: var(--menu-cream); font-size: 13px; letter-spacing: .35em; margin-top: 18px; padding: 0; }
-#title .title-tagline { font-size: 15px; font-weight: 650; color: #e0e5ef; }
-#title .title-menu { display: grid; grid-template-columns: 1fr; min-width: 0; gap: 9px; margin: 0; }
-#title .title-menu .btn { width: 100%; justify-content: flex-start; text-align: left; gap: 13px; border-radius: 15px; }
-#title .title-menu .btn > span:last-child { margin-left: auto; }
-#title .title-menu .btn > span:first-child { margin-left: 0; }
-#title .title-menu .btn small { display: block; font-size: 11px; font-weight: 500; margin-top: 3px; opacity: .7; }
-#title .title-menu .title-play { min-height: 76px; padding: 14px 22px; font-size: 25px; border-color: #ffab64; box-shadow: 0 8px 28px #ff7a1a24; }
-#title .title-play > span:last-child { font-size: 34px; }
-#title .title-mode { min-height: 62px; background: #fff8ec; color: #141a33; border-color: #fff8ec; }
-#title .title-mode:hover { background: #ffffff; }
-#title .mode-symbol { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: #141a330a; color: #7c8498; font-size: 11px; letter-spacing: .08em; }
-#title .title-tools { display: flex; gap: 16px; }
-#title .title-tools .btn { min-height: 38px; padding: 4px 2px; background: none; border: none; box-shadow: none; color: #d0d7e5; font-size: 12px; gap: 6px; }
-#title .title-tools .btn span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #ffffff35; border-radius: 50%; }
-#title .title-showcase { position: relative; height: min(72vh,720px); align-self: center; border: 1px solid #fff8ec40; border-radius: 44% 44% 20px 20px; box-shadow: inset 0 0 60px #fff8ec10; pointer-events: none; }
 .showcase-kicker { position: absolute; left: 22px; top: 22px; font-size: 10px; font-weight: 850; letter-spacing: .18em; color: #fff8ec; text-shadow: 0 2px 8px #141a33; }
-#title .title-showcase .showcase-kicker { top: 12%; left: 50%; transform: translateX(-50%); white-space: nowrap; color: #141a33; text-shadow: none; }
 .showcase-caption { position: absolute; left: 0; right: 0; bottom: 22px; text-align: center; font-weight: 900; font-size: 18px; color: #fff8ec; text-shadow: 0 2px 10px #141a33; }
 .showcase-caption i { display: block; font-style: normal; font-size: 9px; letter-spacing: .24em; margin-top: 6px; color: #fff8ecb8; }
-#title .title-hint { bottom: 18px; left: 5vw; width: auto; max-width: 80vw; padding: 0; background: none; border: 0; transform: none; font-size: 11px; text-align: left; color: #d2d9e6; }
 
 /* Loadout: choices on the left, live preview and concise ability cards on the right. */
 #select { padding: max(18px,env(safe-area-inset-top)) max(22px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)); background: linear-gradient(90deg,#141a3350,transparent 75%); align-items: stretch; overflow: hidden; }
@@ -129,24 +104,6 @@
 @media (orientation: landscape) and (max-height: 600px) {
   .screen { padding: 12px max(18px,env(safe-area-inset-left)); }
   .screen .panel { padding: 18px; max-height: calc(100dvh - 24px); }
-  #title { grid-template-columns: minmax(290px,.9fr) 1.1fr; gap: 7vw; padding: 16px 7vw 28px; }
-  #title .title-content { max-width: 370px; gap: 9px; }
-  #title .logo { position: relative; }
-  #title .logo h1 { font-size: clamp(36px,10vh,60px); flex-direction: row; gap: 6px; margin: 0 0 2px; transform: none; }
-  #title .logo h1 .l1,#title .logo h1 .l2 { transform: none; }
-  #title .logo-sub { font-size: 8px; margin-bottom: 10px; }
-  #title .logo-ko { display: none; }
-  #title .title-tagline { font-size: 11px; }
-  #title .title-menu { gap: 6px; }
-  #title .title-menu .title-play { min-height: 52px; padding: 7px 16px; font-size: 20px; }
-  #title .title-menu .title-mode { min-height: 43px; padding: 5px 13px; font-size: 12px; gap: 9px; }
-  #title .title-menu .title-mode small { display: inline; margin-left: 8px; font-size: 9px; }
-  #title .title-menu .title-play small { font-size: 9px; margin-top: 1px; }
-  #title .mode-symbol { width: 24px; height: 24px; font-size: 9px; }
-  #title .title-tools { gap: 20px; }
-  #title .title-tools .btn { min-height: 27px; font-size: 10px; }
-  #title .title-showcase { height: 85vh; max-height: 440px; }
-  #title .title-hint { position: absolute; bottom: 8px; left: 7vw; margin: 0; font-size: 9px; }
   .showcase-caption { bottom: 12px; font-size: 13px; }
   #select { padding: 10px max(16px,env(safe-area-inset-left)); }
   #select .select-wrap { grid-template-columns: minmax(370px,1.35fr) minmax(220px,1fr); gap: 14px; }
@@ -184,22 +141,6 @@
 @media (orientation: portrait) and (max-width: 700px) {
   .screen { padding: max(12px,env(safe-area-inset-top)) 14px max(12px,env(safe-area-inset-bottom)); }
   .screen .panel { padding: 20px 16px; border-radius: 18px; }
-  #title { display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr; padding: max(24px,env(safe-area-inset-top)) 24px max(34px,env(safe-area-inset-bottom)); gap: 0; background: linear-gradient(0deg,#141a33 0%,#141a33f2 30%,#141a3300 76%); }
-  #title .title-content { display: contents; }
-  #title .logo { position: absolute; left: 26px; top: max(29px,env(safe-area-inset-top)); z-index: 1; }
-  #title .logo-sub { font-size: 8px; margin-bottom: 12px; letter-spacing: .13em; color: #141a33; }
-  #title .logo h1 { font-size: clamp(48px,16vw,68px); margin-left: 12px; }
-  #title .logo-ko { display: none; }
-  #title .title-tagline { position: absolute; bottom: 384px; left: 26px; font-size: 12px; }
-  #title .title-showcase { position: absolute; left: 18%; right: 12px; top: 180px; height: calc(100dvh - 582px); border-radius: 50% 50% 18px 18px; border-color: #fff8ec30; }
-  #title .title-showcase .showcase-kicker { display: none; }
-  #title .showcase-caption { bottom: 10px; font-size: 12px; }
-  #title .showcase-caption i { display: none; }
-  #title .title-menu { position: absolute; left: 24px; right: 24px; bottom: 88px; gap: 8px; }
-  #title .title-menu .title-play { min-height: 66px; font-size: 23px; }
-  #title .title-menu .title-mode { min-height: 60px; }
-  #title .title-tools { position: absolute; bottom: 40px; left: 24px; }
-  #title .title-hint { position: absolute; left: 24px; bottom: 16px; font-size: 9px; margin: 0; max-width: calc(100% - 48px); }
   #select { padding: max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)); overflow-y: auto; }
   #select .select-wrap { display: flex; flex-direction: column; justify-content: flex-start; gap: 12px; height: auto; min-height: 100%; margin: 0; }
   #select .select-panel { order: 2; max-height: none !important; overflow: visible !important; padding: 16px; gap: 10px; flex: none; }
@@ -230,12 +171,4 @@
   .screen .result-panel h2 { font-size: 36px; }
 }
 @media (orientation: portrait) and (max-height: 740px) {
-  #title .title-showcase { top: 150px; height: calc(100dvh - 466px); }
-  #title .logo h1 { font-size: 48px; }
-  #title .title-tagline { display: none; }
-  #title .title-menu { bottom: 76px; gap: 6px; }
-  #title .title-menu .title-mode { min-height: 50px; padding: 5px 15px; }
-  #title .title-menu .title-play { min-height: 58px; }
-  #title .title-tools { bottom: 34px; }
-  #title .title-hint { bottom: 12px; }
 }

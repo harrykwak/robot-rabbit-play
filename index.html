@@ -16,8 +16,8 @@
   <link rel="stylesheet" href="css/extra.css" />
   <link rel="stylesheet" href="css/combat.css" />
   <link rel="stylesheet" href="css/mobile.css" />
-  <link rel="stylesheet" href="css/rooms.css" />
   <link rel="stylesheet" href="css/menus.css" />
+  <link rel="stylesheet" href="css/game-menu.css" />
   <script type="importmap">
   { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -29,55 +29,46 @@
   <div id="world-ui"></div>
 
   <!-- 타이틀 -->
-  <section id="title" class="screen">
+  <section id="title" class="screen game-menu" aria-label="메인 메뉴">
     <div class="title-content">
-    <div class="logo">
-      <div class="logo-sub">SMALL PILOT. BIG TROUBLE.</div>
-      <h1><span class="l1">ROBOT</span><span class="l2">RABBIT</span></h1>
-      <div class="logo-ko">로봇 래빗</div>
+      <div class="logo"><div class="logo-ko">로봇 래빗</div><h1><span class="l1">ROBOT</span><span class="l2">RABBIT</span></h1></div>
+      <nav class="title-menu" aria-label="플레이 방식">
+        <button class="btn big title-play" data-action="quickStart"><span>혼자 플레이</span><span aria-hidden="true">▶</span></button>
+        <button class="btn" data-action="toCreateRoom"><span>방 만들기</span><span aria-hidden="true">＋</span></button>
+        <button class="btn" data-action="toJoinRoom"><span>참가하기</span><span aria-hidden="true">↗</span></button>
+      </nav>
+      <p id="title-online-status" class="menu-service">멀티플레이 연결 확인 중</p>
     </div>
-    <p class="title-tagline">작은 파일럿, 커다란 한 방.</p>
-    <div class="title-menu">
-      <button class="btn big title-play" data-action="quickStart"><span>바로 한 판<small>준비됐으면, 바로 출격!</small></span><span aria-hidden="true">↗</span></button>
-      <button class="btn title-mode" data-action="toCampaign"><span class="mode-symbol" aria-hidden="true">01</span><span>솔로 도전<small>여섯 번의 출격</small></span><span aria-hidden="true">›</span></button>
-      <button class="btn title-mode" data-action="toRooms"><span class="mode-symbol" aria-hidden="true">02</span><span>친구와 대전<small>함께하면 더 신나게</small></span><span aria-hidden="true">›</span></button>
-      <button class="btn title-mode" data-action="toSelect"><span class="mode-symbol" aria-hidden="true">03</span><span>자유 난투<small>나만의 조합으로</small></span><span aria-hidden="true">›</span></button>
-    </div>
-    <div class="title-tools"><button class="btn" data-action="toHelp"><span aria-hidden="true">?</span> 조작법</button><button class="btn" data-action="toSettings"><span aria-hidden="true">⚙</span> 설정</button></div>
-    </div>
-    <div class="title-showcase" id="title-showcase" aria-hidden="true"><span class="showcase-kicker">MEET YOUR NEXT MAIN</span><span class="showcase-caption">당근 충전. 토끼 출격.<i>READY TO RUMBLE</i></span></div>
-    <p class="title-hint" id="title-hint"></p>
+    <div class="title-showcase" id="title-showcase" aria-hidden="true"></div>
+    <nav class="title-tools" aria-label="더 보기"><button class="btn" data-action="toSelect">캐릭터 · 연습</button><button class="btn" data-action="toCampaign">도전</button><button class="btn" data-action="toHelp">조작법</button><button class="btn" data-action="toSettings">설정</button></nav>
+    <p class="title-hint" id="title-hint" hidden></p>
   </section>
 
-  <section id="rooms" class="screen hidden" aria-labelledby="room-title">
+  <section id="rooms" class="screen game-menu hidden" aria-labelledby="room-title">
+    <header class="room-heading"><button id="room-back" class="btn" type="button" aria-label="메인 메뉴로 돌아가기">← 뒤로</button><span>ROBOT RABBIT</span></header>
+    <div id="room-showcase" aria-hidden="true"></div>
     <div class="room-panel">
-      <p class="room-eyebrow">ROBOT RABBIT · PLAY WITH FRIENDS</p>
-      <h2 id="room-title">친구들과 로봇 아레나</h2>
-      <p class="room-note">최대 4명 · 호스트가 허용한 참가자만 입장합니다. 남은 자리는 CPU가 함께합니다.</p>
-      <p id="room-status" role="status" aria-live="polite">방을 열거나 친구가 보낸 참가 링크를 열어 주세요.</p>
-      <div id="room-unavailable" class="room-server-help" hidden><span id="room-service-message">온라인 방에 연결하고 있습니다.</span> <button id="room-service-retry" class="btn" type="button">연결 확인</button></div>
-      <div id="room-entry">
-        <p id="room-invited" class="room-invited" hidden>초대받은 방입니다. 참가 요청 후 호스트 승인을 기다려 주세요.</p>
-        <div class="room-grid">
-          <label>내 이름<input id="room-name" maxlength="16" autocomplete="nickname" /></label>
-          <label>파일럿<select id="room-pilot"></select></label>
-          <label>로봇<select id="room-robot"></select></label>
-        </div>
-        <details id="room-host" hidden><summary>방장으로 새 방 만들기</summary>
-          <div class="room-actions"><label>경기장<select id="room-stage"></select></label><label>방장 비밀번호<input id="room-password" type="password" maxlength="256" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="방장만 입력하세요" /></label><button id="room-create" class="btn big" type="button">방 만들기</button></div>
-          <p class="room-note">방장 비밀번호를 확인한 뒤 방이 열립니다. 친구에게는 참가 링크만 보내 주세요.</p>
-        </details><div class="room-divider"></div>
-        <div class="room-actions"><label>초대 코드<input id="room-code" maxlength="32" autocomplete="off" spellcheck="false" placeholder="초대 링크를 열면 자동 입력됩니다" /></label><button id="room-join" class="btn big" type="button">참가 요청</button></div>
-      </div>
+      <p id="room-step" class="room-eyebrow">친구와 함께 · 최대 4명</p>
+      <h2 id="room-title">참가하기</h2>
+      <p id="room-status" role="status" aria-live="polite"></p>
+      <div id="room-unavailable" hidden><p id="room-service-message"></p><button id="room-service-retry" class="btn" type="button">다시 연결</button><button class="btn big" data-action="quickStart">혼자 플레이</button></div>
+      <form id="room-entry" novalidate>
+        <p id="room-invited" hidden>초대 링크를 받았습니다. 이름을 입력해 주세요.</p>
+        <label>닉네임<input id="room-name" maxlength="16" autocomplete="nickname" required /></label>
+        <div id="room-join-fields"><label>방 코드<input id="room-code" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="친구에게 받은 코드" required /></label></div>
+        <div id="room-host" hidden><label>방장 비밀번호<input id="room-password" type="password" maxlength="256" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="방을 만들 때만 필요합니다" /></label></div>
+        <details id="room-loadout"><summary>캐릭터 · 전장 선택</summary><div class="room-loadout-fields"><label>파일럿<select id="room-pilot"></select></label><label>로봇<select id="room-robot"></select></label><label id="room-stage-field">전장<select id="room-stage"></select></label></div></details>
+        <button id="room-create" class="btn big" type="submit" hidden>방 만들기</button><button id="room-join" class="btn big" type="submit">참가 요청</button>
+        <p id="room-entry-note" class="room-note">방장이 승인하면 대기실에 들어갑니다.</p>
+      </form>
       <div id="room-connected" hidden>
-        <p><span id="room-state">참가 대기</span> · <strong id="room-number" class="room-code"></strong></p>
-        <div id="room-share" class="room-share" hidden><label>친구에게 보낼 링크<input id="room-share-link" readonly autocomplete="off" aria-label="친구에게 보낼 참가 링크" /></label><button id="room-copy" class="btn" type="button">참가 링크 복사</button></div>
-        <ul id="room-roster" aria-label="승인된 참가자"></ul>
-        <div id="room-pending-block"><h3>참가 승인 대기</h3><ul id="room-pending"></ul></div>
-        <div class="room-actions"><button id="room-start" class="btn big" type="button">함께 경기 시작</button><button id="room-reconnect" class="btn" type="button">재연결</button><button id="room-leave" class="btn" type="button">방 나가기</button><button id="room-close" class="btn" type="button">방 닫기</button></div>
+        <div id="room-share" hidden><div class="room-code-row"><span>친구를 초대하세요</span><button id="room-copy" class="btn" type="button">초대 링크 복사</button></div><details class="room-invite-code"><summary>코드로 초대</summary><strong id="room-number"></strong></details><input id="room-share-link" readonly autocomplete="off" aria-label="초대 링크" hidden /></div>
+        <p id="room-state"></p>
+        <ul id="room-roster" aria-label="참가자"></ul>
+        <div id="room-pending-block" hidden><h3>참가 요청</h3><ul id="room-pending"></ul></div>
+        <p id="room-start-reason" class="room-note"></p>
+        <div class="room-actions"><button id="room-start" class="btn big" type="button">게임 시작</button><button id="room-reconnect" class="btn" type="button">다시 연결</button><button id="room-leave" class="btn" type="button">나가기</button><button id="room-close" class="btn" type="button">방 닫기</button></div>
       </div>
-      <div class="room-footer"><button class="btn" data-action="toTitle">메인 메뉴</button></div>
-      <p class="room-note">별도 앱 없이 브라우저로 함께 플레이합니다. 호스트 탭을 열어 두세요. 방을 닫으면 참가 링크와 세션이 만료됩니다.</p>
     </div>
   </section>
 

@@ -174,7 +174,8 @@ let roomSession;
 const currentSession = () => roomSession;
 
 const roomLobby = new RoomLobby({
-  onInvite: () => openRooms(),
+  onInvite: () => openRooms('join'),
+  onBack: () => toMenu('title'),
   onMessage: message => roomSession?.receive(message),
   onClosed: reason => { roomSession?.clear(); toMenu('rooms'); roomLobby.status(reason, true); },
   onStart: message => roomSession?.start(message),
@@ -192,9 +193,9 @@ roomSession = new RoomSession({ game, lobby: roomLobby,
   resumed: () => resume(true),
   aborted: reason => { toMenu('rooms'); roomLobby.status(reason); },
 });
-function openRooms() {
+function openRooms(flow = 'join') {
   if (roomSession.active) { roomSession.returnToLobby(); return; }
-  clearMission(); toMenu('rooms');
+  clearMission(); roomLobby.open(flow); toMenu('rooms');
 }
 
 function clearMission() {
@@ -260,14 +261,14 @@ scene.add(showcaseContact);
 }
 let previewRobot = null, previewHuman = null, previewKey = '';
 const previewBounds = new THREE.Box3(), previewSize = new THREE.Vector3(), previewCenter = new THREE.Vector3();
-function buildPreview() {
-  const key = cfg.robot + cfg.pilot;
+function buildPreview(config = cfg) {
+  const key = config.robot + config.pilot;
   if (key === previewKey) return;
   previewKey = key;
   if (previewRobot) { showcase.remove(previewRobot.root); previewRobot.dispose(); }
   if (previewHuman) { showcase.remove(previewHuman.root); previewHuman.dispose(); }
-  const p = PILOTS[cfg.pilot];
-  previewRobot = createRobot(cfg.robot, { team: p.color });
+  const p = PILOTS[config.pilot];
+  previewRobot = createRobot(config.robot, { team: p.color });
   previewHuman = createHuman(p);
   previewRobot.root.position.set(0, 0, 0);
   previewHuman.root.position.set(2.8, 0, .6);
@@ -281,6 +282,7 @@ function buildPreview() {
   previewRobot.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   for (const e of previewRobot.eyes) e.material.emissiveIntensity = 0.08;
 }
+for (const id of ['room-pilot', 'room-robot']) $(id).addEventListener('change', () => buildPreview(roomLobby.profile()));
 
 // Small, crisp roster portraits share the 3D pilots' palette and signature headwear.
 function pilotPortrait(p) {
@@ -824,6 +826,7 @@ function toMenu(screen) {
   capturing = null;
   show(screen);
   audio.startMusic('menu');
+  buildPreview(screen === 'rooms' ? roomLobby.profile() : cfg);
   if (screen === 'select') renderSelect();
   $('select').querySelector('.opt-row').classList.toggle('hidden', choosingCampaignPilot);
   $('stage-desc').classList.toggle('hidden', choosingCampaignPilot);
@@ -908,7 +911,9 @@ game.onEnd = (res) => {
 };
 
 const actions = {
-  toRooms: openRooms,
+  toRooms: () => openRooms('join'),
+  toCreateRoom: () => openRooms('create'),
+  toJoinRoom: () => openRooms('join'),
   toCampaign: openCampaign,
   chooseCampaignPilot: () => { choosingCampaignPilot = true; toMenu('select'); },
   nextMission: () => { if (nextMission) launchMission(nextMission); },
@@ -920,7 +925,7 @@ const actions = {
   toTitle: () => toMenu('title'),
   startMatch: () => startMatch(),
   confirmSelection,
-  quickStart: () => { clearMission(); cfg.diff = 0; cfg.stock = 3; startMatch(); },
+  quickStart: () => { clearMission(); cfg.diff = 0; cfg.stock = 3; startMatch(true); },
   beginTouchMatch: () => { preferences.touchGuideSeen = true; savePreferences(); startMatch(true); },
   cancelTouchStart: () => activeMission ? openCampaign() : toMenu('select'),
   resume,
@@ -1036,6 +1041,7 @@ function frame(now = performance.now()) {
       if (cur === 'help' || cur === 'settings') back();
       else if (mode === 'paused') resume();
       else if (cur === 'select') toMenu('title');
+      else if (cur === 'rooms') roomLobby.back();
     }
     input.endFrame();
   }
@@ -1071,7 +1077,7 @@ function frame(now = performance.now()) {
     }
     // Fit the live duo into the actual menu stage, including portrait phones.
     // A projection offset composes the preview without moving the camera below terrain.
-    const frame = $(sel ? 'select-showcase' : 'title-showcase').getBoundingClientRect();
+    const frame = $(sel ? 'select-showcase' : cur === 'rooms' ? 'room-showcase' : 'title-showcase').getBoundingClientRect();
     if (frame.width > 0 && frame.height > 0) {
       const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov * .5));
       const heightFraction = frame.height / innerHeight;
