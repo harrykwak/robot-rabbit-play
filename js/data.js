@@ -206,10 +206,10 @@ export const ROBOT_STATS = {
     ],
   },
   cannon: {
-    tag: '원거리', speed: 9.4, armor: 310, jump: 14,
-    bars: { power: 3, speed: 3, range: 5, armor: 3 },
+    tag: '귀 타격', speed: 9.4, armor: 310, jump: 14,
+    bars: { power: 3, speed: 3, range: 3, armor: 3 },
     skills: [
-      { key: 'J', name: '캐럿 블래스터', desc: '양손 연사 에너지탄', parts: ['armL', 'armR'] },
+      { key: 'J', name: '귀 휘두르기', desc: '한쪽 귀를 낮게 휘둘러 타격하고 다른 귀는 얼굴 앞을 지킵니다', parts: ['head'] },
       { key: 'K', name: '당근 미사일', desc: '유도 당근 미사일 6발', cd: 5, juice: 22 },
       { key: 'L', name: '문 레이저', desc: '충전 후 눈에서 거대한 레이저', cd: 9, juice: 35, part: 'head' },
     ],
@@ -218,7 +218,7 @@ export const ROBOT_STATS = {
     tag: '광역', speed: 8.6, armor: 420, jump: 13.5,
     bars: { power: 5, speed: 2, range: 4, armor: 5 },
     skills: [
-      { key: 'J', name: '해머 스윙', desc: '거대한 당근 해머 2연타', parts: ['armR'] },
+      { key: 'J', name: '양손 해머', desc: '두 손으로 들어 올려 내려찍는 망치 2연타', parts: ['armL', 'armR'] },
       { key: 'K', name: '해머 스핀', desc: '해머를 휘두르며 회전 돌진', cd: 6, juice: 22, part: 'armR' },
       { key: 'L', name: '메가 슬램', desc: '대지를 가르는 초대형 내려찍기', cd: 8, juice: 30, part: 'armL' },
     ],

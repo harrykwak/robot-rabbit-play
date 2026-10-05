@@ -10,6 +10,7 @@ import * as input from './input.js';
 import { CAMERA_PITCH, cameraViewport, cameraSubject, fitSubject, frameCombat, cameraAim } from './camera-framing.js';
 import { CockpitCamera, prepareMountedInput } from './cockpit.js';
 import { JuiceStations, JUICE_SERVICE } from './juice-stations.js';
+import { contactAgainstTarget } from './robot-combat.js';
 
 const keyName = (a) => document.documentElement.classList.contains('touch-mode') && a === 'act' ? '호출 버튼' : input.actionLabel(a);
 
@@ -247,7 +248,8 @@ export class Game {
     return out;
   }
 
-  meleeSweep(att, h, idx, act) {
+  meleeSweep(att, h, idx, act, contactSegments) {
+    if (h.contact && !contactSegments?.length) return;
     const f = att.fwd(tA);
     // 파일럿 특성: 리치, 모으기 배율, 패리 후 강화
     let hd = h;
@@ -258,10 +260,15 @@ export class Game {
     }
     const cx = att.pos.x + f.x * hd.fwd, cz = att.pos.z + f.z * hd.fwd, cy = att.pos.y + hd.up;
     for (const t of this.targets(att)) {
-      const dx = t.pos.x - cx, dz = t.pos.z - cz;
-      const rr = hd.r + t.radius;
-      if (dx * dx + dz * dz > rr * rr) continue;
-      if (cy < t.pos.y - hd.r || cy > t.pos.y + t.height + hd.r) continue;
+      if (h.contact && att.act !== act) break;
+      const contactPoint = h.contact ? contactAgainstTarget(contactSegments, t) : null;
+      if (h.contact) { if (!contactPoint) continue; }
+      else {
+        const dx = t.pos.x - cx, dz = t.pos.z - cz;
+        const rr = hd.r + t.radius;
+        if (dx * dx + dz * dz > rr * rr) continue;
+        if (cy < t.pos.y - hd.r || cy > t.pos.y + t.height + hd.r) continue;
+      }
       const key = idx * 1000 + t.id;
       const last = act.hits.get(key);
       if (last !== undefined && (!hd.every || act.t - last < hd.every)) continue;
@@ -271,8 +278,10 @@ export class Game {
       if (l > 0.001) tDir.divideScalar(l); else tDir.copy(f);
       const rad = hd.radial !== undefined ? hd.radial : 0.25;
       tDir.set(f.x * (1 - rad) + tDir.x * rad, 0, f.z * (1 - rad) + tDir.z * rad).normalize();
-      tB.set((cx + t.pos.x) * 0.5, clamp(cy, t.pos.y + 0.3, t.pos.y + t.height * 0.85), (cz + t.pos.z) * 0.5);
+      if (contactPoint) tB.copy(contactPoint);
+      else tB.set((cx + t.pos.x) * 0.5, clamp(cy, t.pos.y + 0.3, t.pos.y + t.height * 0.85), (cz + t.pos.z) * 0.5);
       const ok = this.applyHit(att, t, hd, tDir, tB);
+      if (h.contact && att.act !== act) { att.syncRoot?.(); break; }
       if (ok && att.kind === 'human' && att.parryBuff > 0) att.parryBuff = 0;
       if (hd.bounce && att.kind === 'human') { att.vel.y = 9; att.vel.x *= -0.3; att.vel.z *= -0.3; att.act = null; att.setState('normal'); }
     }

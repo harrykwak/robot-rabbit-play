@@ -51,6 +51,7 @@ export function applyRig(rig, p, restHipsY, s) {
     rig.earL.rotation.x = p.ex;
     rig.earR.rotation.x = p.ex;
   }
+  rig.adjustPose?.(p);
 }
 
 // 자주 쓰는 포즈
@@ -67,4 +68,3 @@ export const P = {
   pilot: { hy: 0, hx: 0, tx: 0.15, alx: -1.2, flx: -0.6, arx: -1.2, frx: -0.6, llx: -1.5, slx: 1.5, lrx: -1.5, srx: 1.5 },
   victory: { tx: -0.1, nx: -0.2, arx: -3.0, arz: -0.2, frx: -0.2, alx: -0.2, alz: 0.3, flx: -1.2 },
 };
-

@@ -563,6 +563,8 @@ for (const [k, v] of Object.entries(QUICK)) if (HUMAN_ACTS[k]) quicken(HUMAN_ACT
 
 // ---------------- 로봇 ----------------
 const RS = { hy: -0.1, tx: 0.1, alx: -0.5, flx: -1.1, alz: 0.22, arx: -0.5, frx: -1.1, arz: -0.22, llx: -0.2, lrx: 0.15, slx: 0.3, srx: 0.25 };
+const HAMMER_HOLD = { ...RS, ty: -.65, alx: -1.1, arx: -1.1, alz: -1.5, arz: 1.5, flx: -.15, frx: -.15 };
+const EAR_READY = { ...RS, hy: -.0057, llx: -.2, lrx: -.2, slx: .2, srx: .2 };
 export const ROBOT_STANCE = RS;
 
 export const ROBOT_ACTS = {
@@ -575,7 +577,7 @@ export const ROBOT_ACTS = {
       [0.22, { hy: -0.12, tx: 0.25, ty: -0.6, alx: -1.58, flx: -0.08, arx: -0.9, frx: -1.9, arz: -0.3, llx: -0.5, lrx: 0.4, slx: 0.4, srx: 0.45 }],
       [0.42, RS],
     ],
-    hits: [{ t0: 0.07, t1: 0.17, fwd: 3.3, up: 3.0, r: 1.9, dmg: 13, kb: 12, lift: 6, stun: 0.5, power: 2, snd: 'robotPunch' }],
+    hits: [{ t0: 0.07, t1: 0.17, contact: 'fistL', fwd: 3.3, up: 3.0, r: 1.9, dmg: 13, kb: 12, lift: 6, stun: 0.5, power: 2, snd: 'robotPunch' }],
     lunge: [0, 0.12, 9],
   },
   tp2: {
@@ -587,7 +589,7 @@ export const ROBOT_ACTS = {
       [0.42, { hy: -0.22, ty: 0.7, tx: 0.3, arx: -1.6, frx: -0.05, alx: -0.8, flx: -2, alz: 0.4, llx: -0.65, lrx: 0.55, slx: 0.5, srx: 0.3 }],
       [0.68, RS],
     ],
-    hits: [{ t0: 0.18, t1: 0.29, fwd: 3.5, up: 3.0, r: 2.1, dmg: 18, kb: 27, lift: 13, launch: true, power: 3, snd: 'robotHeavy' }],
+    hits: [{ t0: 0.18, t1: 0.29, contact: 'fistR', fwd: 3.5, up: 3.0, r: 2.1, dmg: 18, kb: 27, lift: 13, launch: true, power: 3, snd: 'robotHeavy' }],
     lunge: [0.14, 0.26, 12],
   },
   rocket: {
@@ -624,7 +626,7 @@ export const ROBOT_ACTS = {
       [0.16, { tx: -0.25, lrx: -1.5, srx: 0.1, llx: 0.1, slx: 0.2, alz: 0.55, arz: -0.55, flx: -1.2, frx: -1.2 }],
       [0.3, RS],
     ],
-    hits: [{ t0: 0.04, t1: 0.13, fwd: 3.0, up: 2.4, r: 1.8, dmg: 9, kb: 9, lift: 4, stun: 0.45, power: 2, snd: 'robotPunch' }],
+    hits: [{ t0: 0.04, t1: 0.13, contact: 'footR', fwd: 3.0, up: 2.4, r: 1.8, dmg: 9, kb: 9, lift: 4, stun: 0.45, power: 2, snd: 'kick' }],
     lunge: [0, 0.1, 10],
   },
   bk2: {
@@ -635,7 +637,7 @@ export const ROBOT_ACTS = {
       [0.16, { tx: -0.25, llx: -1.5, slx: 0.1, lrx: 0.1, srx: 0.2, alz: 0.55, arz: -0.55, flx: -1.2, frx: -1.2 }],
       [0.3, RS],
     ],
-    hits: [{ t0: 0.04, t1: 0.13, fwd: 3.0, up: 2.4, r: 1.8, dmg: 9, kb: 9, lift: 4, stun: 0.45, power: 2, snd: 'robotPunch' }],
+    hits: [{ t0: 0.04, t1: 0.13, contact: 'footL', fwd: 3.0, up: 2.4, r: 1.8, dmg: 9, kb: 9, lift: 4, stun: 0.45, power: 2, snd: 'kick' }],
     lunge: [0, 0.1, 10],
   },
   bk3: {
@@ -646,7 +648,7 @@ export const ROBOT_ACTS = {
       [0.2, { hy: 0.35, hry: 6.283, tx: -0.3, lrx: -1.6, srx: 0.05, llx: 0.2, slx: 0.9, alz: 1.0, arz: -1.0 }],
       [0.6, { ...RS, hry: 6.283 }],
     ],
-    hits: [{ t0: 0.08, t1: 0.22, fwd: 2.6, up: 2.6, r: 2.4, dmg: 15, kb: 25, lift: 13, launch: true, power: 3, snd: 'robotHeavy', radial: 0.4 }],
+    hits: [{ t0: 0.08, t1: 0.22, contact: 'footR', fwd: 2.6, up: 2.6, r: 2.4, dmg: 15, kb: 25, lift: 13, launch: true, power: 3, snd: 'robotHeavy', radial: 0.4 }],
     lunge: [0, 0.15, 8],
   },
   drill: {
@@ -680,14 +682,19 @@ export const ROBOT_ACTS = {
 
   // --- 문 캐논 ---
   blaster: {
+    // Keep the established action ID; the primary is now a physical ear strike.
     dur: 0.5, chain: 0.42, next: 'blaster',
     frames: [
-      [0, RS],
-      [0.05, { tx: 0.1, alx: -1.57, arx: -1.57, flx: -0.02, frx: -0.02, alz: -0.05, arz: 0.05, llx: -0.4, lrx: 0.35, slx: 0.4, srx: 0.4 }],
-      [0.42, { tx: 0.1, alx: -1.57, arx: -1.57, flx: -0.02, frx: -0.02, alz: -0.05, arz: 0.05, llx: -0.4, lrx: 0.35, slx: 0.4, srx: 0.4 }],
-      [0.5, RS],
+      [0, EAR_READY],
+      [0.09, { ...EAR_READY, tx: .05, ty: -.15, ex: -.45 }],
+      [0.18, { ...EAR_READY, tx: .12, ty: .15, ex: .75 }],
+      // End the same visible sweep low enough to contact an on-foot pilot.
+      // Matching hip/knee angles keep both short feet planted in this crouch.
+      [0.30, { ...RS, hy: -.1566, tx: .34, ty: .12, nx: .30, ex: 1.45, llx: -1.1, lrx: -1.1, slx: 1.1, srx: 1.1 }],
+      [0.5, EAR_READY],
     ],
-    events: [[0.05, 'shotR'], [0.19, 'shotL'], [0.33, 'shotR']],
+    hits: [{ t0: .13, t1: .30, contact: 'earL', fwd: 2.4, up: 2.5, r: .56, dmg: 15, kb: 15, lift: 7, stun: .45, power: 2, snd: 'robotPunch' }],
+    lunge: [.08, .18, 1.5],
   },
   missiles: {
     dur: 0.95, chain: 0.95,
@@ -715,27 +722,26 @@ export const ROBOT_ACTS = {
   hs1: {
     dur: 0.72, chain: 0.34, next: 'hs2',
     frames: [
-      [0, RS],
-      [0.2, { hy: -0.2, ty: -1.2, tx: 0.05, arz: -1.45, arx: -0.5, frx: -0.2, alx: -0.9, flx: -1.4, llx: -0.4, lrx: 0.4, slx: 0.5, srx: 0.5 }],
-      [0.31, { hy: -0.28, ty: 1.15, tx: 0.25, arz: -1.4, arx: -1.25, frx: -0.1, alx: -0.6, flx: -1.4, llx: -0.6, lrx: 0.5, slx: 0.6, srx: 0.5 }],
-      [0.45, { hy: -0.28, ty: 1.1, tx: 0.25, arz: -1.35, arx: -1.2, frx: -0.1, alx: -0.6, flx: -1.4, llx: -0.6, lrx: 0.5, slx: 0.6, srx: 0.5 }],
-      [0.72, RS],
+      [0, HAMMER_HOLD],
+      [0.2, { ...HAMMER_HOLD, hy: -.1, tx: -.22, ty: -.35, arx: -2.8, alx: -2.8, llx: -.3, lrx: .3, slx: .4, srx: .4 }],
+      [0.31, { ...HAMMER_HOLD, hy: -.3, tx: .4, ty: -.85, arx: -1.10, alx: -1.10, llx: -.5, lrx: .4, slx: .6, srx: .4 }],
+      [0.45, { ...HAMMER_HOLD, hy: -.3, tx: .4, ty: -.85, arx: -1.10, alx: -1.10, llx: -.5, lrx: .4, slx: .6, srx: .4 }],
+      [0.72, HAMMER_HOLD],
     ],
-    hits: [{ t0: 0.22, t1: 0.34, fwd: 2.9, up: 2.2, r: 3.7, dmg: 16, kb: 21, lift: 9, launch: true, power: 2, snd: 'robotHeavy', radial: 0.5 }],
+    hits: [{ t0: 0.22, t1: 0.34, contact: 'hammer', fwd: 2.9, up: 2.2, r: 3.7, dmg: 16, kb: 21, lift: 9, launch: true, power: 2, snd: 'robotHeavy', radial: 0.5 }],
     lunge: [0.18, 0.3, 8],
   },
   hs2: {
     dur: 0.9, chain: 0.9,
     frames: [
-      [0, { ty: 0.8, arz: -1.2, arx: -1.0 }],
-      [0.27, { hy: 0.05, tx: -0.4, arx: -3.1, frx: -0.35, arz: -0.1, alx: -2.8, flx: -0.45, alz: 0.1, llx: -0.3, lrx: 0.3, slx: 0.3, srx: 0.3, ex: 0.4 }],
-      [0.37, { hy: -0.45, tx: 0.65, arx: -1.15, frx: 0, alx: -1.05, flx: -0.1, llx: -0.7, slx: 0.9, lrx: 0.55, srx: 0.7, ex: -0.3 }],
-      [0.6, { hy: -0.45, tx: 0.65, arx: -1.1, frx: 0, alx: -1.0, flx: -0.1, llx: -0.7, slx: 0.9, lrx: 0.55, srx: 0.7 }],
-      [0.9, RS],
+      [0, { ...HAMMER_HOLD, tx: .4, ty: -.85 }],
+      [0.27, { ...HAMMER_HOLD, hy: .05, tx: -.3, ty: -.35, arx: -3.05, alx: -3.05, llx: -.3, lrx: .3, slx: .3, srx: .3, ex: .4 }],
+      [0.37, { ...HAMMER_HOLD, hy: -.45, tx: .5, ty: -.9, arx: -1.0, alx: -1.0, llx: -.7, slx: .9, lrx: .55, srx: .7, ex: -.3 }],
+      [0.6, { ...HAMMER_HOLD, hy: -.45, tx: .5, ty: -.9, arx: -1.0, alx: -1.0, llx: -.7, slx: .9, lrx: .55, srx: .7 }],
+      [0.9, HAMMER_HOLD],
     ],
-    hits: [{ t0: 0.33, t1: 0.42, fwd: 4.4, up: 0.8, r: 2.6, dmg: 22, kb: 14, lift: 19, launch: true, power: 3, snd: 'robotHeavy' }],
+    hits: [{ t0: 0.33, t1: 0.42, contact: 'hammer', fwd: 4.4, up: 0.8, r: 2.6, dmg: 22, kb: 14, lift: 19, launch: true, power: 3, snd: 'robotHeavy' }],
     lunge: [0.25, 0.35, 6],
-    events: [[0.35, 'smash']],
   },
   hspin: {
     dur: 2.0, chain: 2.0, spin: 13, steer: 6.5,

@@ -147,6 +147,8 @@ export class PeerReplica {
     f.act=s.action===null?null:{name:s.action,def:(f.kind==='robot'?ROBOT_ACTS:HUMAN_ACTS)[s.action]};
     for(let i=0;i<KEYS.length;i++)f.pose[KEYS[i]]=s.pose[i];
     applyRig(f.rig,f.pose,f.restHips,f.sc);f.rig.hips.position.y=s.hipY;
+    if(f.kind==='robot')f.rig.presentMotion?.(f.pose,s.action,f.broken);
+    if(f.kind==='robot')f.rig.presentCombat?.(f.pose,s.action,f.broken);
     ['remote','handL','handR'].forEach((k,i)=>{if(f.rig[k])f.rig[k].visible=s.parts[i];});
     const root=f.rig.root;
     if(snap||!this.targets.has(f))setRoot(root,s);

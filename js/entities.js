@@ -6,6 +6,8 @@ import { makePose, blendInto, sample, applyRig, P } from './poses.js';
 import { ROBOT_STATS, RULES, DIFFICULTY } from './data.js';
 import { AICtrl } from './ai.js';
 import { PlayerCtrl } from './input.js';
+import { ROBOT_GAITS, applyRobotReadyPose } from './robot-presentation.js';
+import { attachRobotCombat, robotContactSegments, sweptRobotContacts } from './robot-combat.js';
 import { PARTS, PART_BIT, PART_NAME, PART_EFFECT, partMaxHp, robotMods, stepJuice, juiceCost, skillJuice, skillPart, skillBlock as blockOf } from './robot-systems.js';
 
 const tF = new THREE.Vector3();
@@ -190,6 +192,7 @@ class Fighter {
   startAct(name, table) {
     const def = table[name];
     this.act = { name, def, t: 0, hits: new Map(), ev: 0, buf: false, flags: {} };
+    if (this.kind === 'robot') this.rig.presentMotion?.(this.pose, name, this.broken);
     return this.act;
   }
 
@@ -197,6 +200,10 @@ class Fighter {
   stepAct(dt, onEvent) {
     const a = this.act;
     const d = a.def;
+    if (this.kind === 'robot' && d.hits?.some(hit => hit.contact)) {
+      this.contactTick = { action: a, from: a.t,
+        before: d.hits.map(hit => hit.contact ? robotContactSegments(this.rig, hit.contact) : null) };
+    }
     a.t += dt;
     if (d.events) {
       while (a.ev < d.events.length && d.events[a.ev][0] <= a.t) { onEvent(d.events[a.ev][1], a); a.ev++; }
@@ -210,6 +217,7 @@ class Fighter {
     if (d.hits) {
       for (let j = 0; j < d.hits.length; j++) {
         const h = d.hits[j];
+        if (h.contact && this.kind === 'robot') continue; // Resolve after this tick's pose/root.
         if (a.t < h.t0 || a.t > h.t1) continue;
         this.g.meleeSweep(this, h, j, a);
       }
@@ -233,9 +241,17 @@ class Fighter {
       const low = Math.min(a, b) - rig.root.position.y;
       rig.hips.position.y += this.footRest - low + Math.max(0, this.pose.hy) * this.sc;
     }
+    if (this.kind === 'robot') rig.presentMotion?.(this.pose, this.act?.name, this.broken);
+    if (this.kind === 'robot') rig.presentCombat?.(this.pose, this.act?.name, this.broken);
   }
 
   syncRoot() {
+    if (this.kind === 'robot') {
+      this.clearBrokenMotionOffsets?.();
+      this.rig.presentMotion?.(this.pose, this.act?.name, this.broken);
+      this.rig.presentCombat?.(this.pose, this.act?.name, this.broken);
+      this.applyBrokenMotion?.(0);
+    }
     if (this.kind === 'human') this.rig.animateFace?.(this.g.time + this.id * .37);
     const r = this.rig.root;
     r.position.copy(this.pos);
@@ -998,6 +1014,7 @@ export class Robot extends Fighter {
   constructor(g, type, owner, x, z) {
     const rig = createRobot(type, { team: owner.color });
     super(g, rig, 'robot');
+    attachRobotCombat(rig, type); // Includes the primitive-model fallback path.
     this.type = type;
     this.stats = ROBOT_STATS[type];
     this.moves = ROBOT_MOVES[type];
@@ -1299,6 +1316,7 @@ export class Robot extends Fighter {
 
   update(dt, realDt) {
     this.updateFlash(realDt);
+    this.contactTick = null;
     const g = this.g;
     if (this.debris.length) this.updateDebris(dt);
     this.stateT += dt;
@@ -1391,6 +1409,14 @@ export class Robot extends Fighter {
     let wx = 0, wz = 0;
     const inMag = Math.hypot(i.mx, i.mz);
     this.spinYaw *= 0.8;
+    // Finish contact attacks on the next tick: the hit frame and its replicated
+    // pose/action must describe the same swing, even at a combo boundary.
+    if (this.act?.contactFinish) {
+      const finished = this.act;
+      if (finished.buf && finished.def.next && finished.t >= finished.def.chain) this.doAct(finished.def.next);
+      else if (finished.t >= finished.def.dur) this.act = null;
+      else delete finished.contactFinish;
+    }
     if (this.stagger > 0) {
       this.stagger -= dt;
       this.vel.x *= Math.exp(-dt * 4); this.vel.z *= Math.exp(-dt * 4);
@@ -1442,7 +1468,9 @@ export class Robot extends Fighter {
         }
         if (d.boost) this.thrust(1.3);
         if (this.act === a) {
-          if (a.buf && d.next && a.t >= d.chain) { this.doAct(d.next); }
+          if (d.hits?.some(hit => hit.contact)) {
+            if ((a.buf && d.next && a.t >= d.chain) || a.t >= d.dur) a.contactFinish = true;
+          } else if (a.buf && d.next && a.t >= d.chain) { this.doAct(d.next); }
           else if (a.t >= d.dur) { this.act = null; if (this.beam) { this.beam.stop(); this.beam = null; } }
         }
       }
@@ -1488,6 +1516,20 @@ export class Robot extends Fighter {
     this.buildPose(dt);
     this.setEyes(3);
     this.syncRoot();
+    this.resolveContactHits();
+  }
+
+  resolveContactHits() {
+    const tick = this.contactTick; this.contactTick = null;
+    if (!tick || this.act !== tick.action || this.state !== 'active' || this.g.phase !== 'fight') return;
+    this.rig.root.updateMatrixWorld(true);
+    const a = tick.action;
+    for (let index = 0; index < a.def.hits.length; index++) {
+      if (this.act !== a) break;
+      const hit = a.def.hits[index]; if (!hit.contact) continue;
+      const segments = sweptRobotContacts(tick.before[index], robotContactSegments(this.rig, hit.contact), tick.from, a.t, hit);
+      if (segments.length) this.g.meleeSweep(this, hit, index, a, segments);
+    }
   }
 
   thrust(scale) {
@@ -1541,22 +1583,27 @@ export class Robot extends Fighter {
     else {
       Object.assign(tp, RSTANCE);
       const s = clamp(this.moveAmt, 0, 1.3);
+      const gait = ROBOT_GAITS[this.type] || ROBOT_GAITS.titan;
       if (s > 0.08) {
         const prev = Math.sin(this.walkPh);
-        this.walkPh += dt * (4.2 + 3.2 * s);
+        this.walkPh += dt * (4.2 + 3.2 * s) * gait.cadence;
         const ph = this.walkPh;
         const sn = Math.sin(ph);
         if ((prev < 0) !== (sn < 0)) this.g.robotStep(this, sn < 0 ? this.rig.footL : this.rig.footR);
-        tp.tx = 0.22 * s; tp.ty = sn * 0.12 * s;
-        tp.llx = -sn * 0.75 * s - 0.1; tp.lrx = sn * 0.75 * s - 0.1;
-        tp.slx = 0.25 + Math.max(0, Math.sin(ph - 1.4)) * 1.1 * s;
-        tp.srx = 0.25 + Math.max(0, -Math.sin(ph - 1.4)) * 1.1 * s;
-        tp.alx = sn * 0.6 * s - 0.4; tp.arx = -sn * 0.6 * s - 0.4;
+        tp.tx = gait.lean * s; tp.ty = sn * gait.sway * s;
+        tp.llx = -sn * gait.stride * s - 0.08; tp.lrx = sn * gait.stride * s - 0.08;
+        tp.slx = 0.18 + Math.max(0, Math.sin(ph - 1.4)) * .80 * s;
+        tp.srx = 0.18 + Math.max(0, -Math.sin(ph - 1.4)) * .80 * s;
+        tp.alx = sn * gait.swing * s - 0.25; tp.arx = -sn * gait.swing * s - 0.25;
+        tp.flx = -.45; tp.frx = -.45;
+        if (this.type === 'hammer') { tp.arx = -.60 - sn * .16 * s; tp.frx = -.55; }
+        if (this.type === 'cannon') { tp.alx -= .15; tp.arx -= .15; }
         tp.ex = -0.35 * s + Math.sin(ph * 2) * 0.08;
       } else {
-        const b = Math.sin(this.g.time * 2.5 + this.id) * 0.04;
-        tp.ex += Math.sin(this.g.time * 1.7 + this.id) * 0.12; tp.alx += b; tp.arx -= b;
+        tp.ex += Math.sin(this.g.time * 1.7 + this.id) * 0.12;
       }
+      applyRobotReadyPose(this.type, tp, s);
+      if (s <= .08) { const b = Math.sin(this.g.time * 2.5 + this.id) * .04; tp.alx += b; tp.arx -= b; }
       if (this.dashT > 0) { tp.tx = 0.6; tp.alx = 0.7; tp.arx = 0.7; tp.ex = -1.2; tp.llx = -0.3; tp.lrx = 0.5; tp.slx = 0.6; tp.srx = 0.9; }
     }
     this.applyPose(dt, snap, plant);

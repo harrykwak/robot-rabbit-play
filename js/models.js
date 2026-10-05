@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { bakeVertexColored, renderStats } from './model-quality.js';
 import { pilotSurface, pilotCape } from './pilot-sculpt.js';
+import { createCharacterAssetRig } from './character-assets.js';
 const sculpt = part => G('pilot-'+part, () => pilotSurface(part), () => pilotSurface(part,true));
 
 // ---------------- 품질 설정 ----------------
@@ -464,6 +465,28 @@ function strand(K, parent, a, b, w, color, outline = true, seg = 4) {
 }
 
 export function createHuman(o = {}) {
+  if (o.id === 'mimi' || o.style === 2) {
+    const authored = createCharacterAssetRig('rabbit');
+    if (authored) {
+      authored.remote = createRemote();
+      authored.remote.position.set(0, -0.02, 0.04);
+      authored.handR.add(authored.remote);
+      // createRemote shares its body/outline resources, but owns its button.
+      const buttons = [];
+      authored.remote.traverse(node => {
+        if (node.isMesh && node.material.isMeshBasicMaterial && !node.userData.rrOutline) buttons.push(node.material);
+      });
+      const dispose = authored.dispose;
+      let disposed = false;
+      authored.dispose = () => {
+        if (disposed) return;
+        disposed = true; dispose();
+        for (const material of buttons) material.dispose();
+      };
+      authored.setQuality(lowQuality);
+      return authored;
+    }
+  }
   const body = o.body ?? 0xff4d4d, accent = o.accent ?? 0x2b3a67, skin = o.skin ?? 0xffd3ae, hair = o.hair ?? 0x3a2418, style = o.style ?? 0;
   const L = o.look || {};
   const outfit = L.outfit || 'bomber', legsT = L.legs || 'slim';
@@ -750,10 +773,10 @@ function shade2(c) { const o = new THREE.Color(c); o.multiplyScalar(0.72); retur
 
 // ---------------- 토끼 로봇 ----------------
 export const ROBOT_INFO = {
-  titan: { name: '캐럿 타이탄', color: 0xeeb88e, desc: '살구빛 갈기와 포근한 크림 얼굴의 다정한 사자토끼 복서. 솜주먹 로켓 펀치와 점프 스톰프가 특기.' },
-  bolt: { name: '볼트 헤어', color: 0xa9d6c6, desc: '민트빛 털과 크림 목도리, 길게 선 귀의 경쾌한 산토끼. 드릴 이어 돌진과 토네이도 킥으로 달린다.' },
-  cannon: { name: '문 캐논', color: 0xc7b8dc, desc: '라벤더빛 털과 나른한 눈웃음, 폭신한 늘어진 귀의 달토끼. 씨앗 포드의 유도 당근과 문 레이저가 특기.' },
-  hammer: { name: '해머 버니', color: 0xb6c7a1, desc: '세이지빛 털과 크림 앞치마의 온순한 농장토끼. 커다란 당근 해머로 빙글 돌고 땅을 두드린다.' },
+  titan: { name: '캐럿 타이탄', color: 0xeeb88e, desc: '큰 주먹으로 거리를 좁혀 좌우 스트레이트를 꽂는 토끼 복서. 로켓 펀치와 점프 스톰프를 잇는다.' },
+  bolt: { name: '볼트 헤어', color: 0xa9d6c6, desc: '빠른 발놀림과 좌우 발차기, 회전킥으로 싸우는 토끼. 돌진과 토네이도 킥으로 빈틈을 노린다.' },
+  cannon: { name: '문 캐논', color: 0xc7b8dc, desc: '긴 귀를 휘둘러 낮은 상대까지 타격하고 반대 귀로 가드하는 토끼. 미사일과 문 레이저를 보조로 쓴다.' },
+  hammer: { name: '해머 버니', color: 0xb6c7a1, desc: '커다란 망치를 두 손으로 들어 올려 내려치는 토끼. 해머 스핀과 메가 슬램으로 강하게 밀어붙인다.' },
 };
 
 const PAL = {
@@ -931,6 +954,10 @@ const plushCarrotHammer = () => {
 };
 
 export function createRobot(type = 'titan', opts = {}) {
+  if (!opts.proceduralOnly) {
+    const authored = createCharacterAssetRig(type);
+    if (authored) { authored.setQuality(lowQuality); return authored; }
+  }
   const P = PAL[type] || PAL.titan, b = P.bulk;
   const team = opts.team ?? 0xffffff;
   const K = new Kit(0.012, true);

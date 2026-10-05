@@ -21,6 +21,11 @@ import { RoomLobby } from './room-lobby.js';
 import { RoomSession } from './room-session.js';
 import { initInstallUI } from './install.js';
 import { rabbitPortrait } from './rabbit-portraits.js';
+import { preloadCharacterAssets, characterAssetStatus } from './character-assets.js';
+
+// Character factories stay synchronous once the two prototype assets settle.
+// The loader reports each failure explicitly and preserves the existing model.
+await preloadCharacterAssets();
 
 const touchMedia = matchMedia('(pointer: coarse)');
 const hasTouch = () => touchMedia.matches || navigator.maxTouchPoints > 0;
@@ -154,12 +159,12 @@ function focusFirst(id) {
   const first = document.querySelector('#' + id + ' .btn.big') || document.querySelector('#' + id + ' .btn');
   if (first) first.focus({ preventScroll: true });
 }
-const cfg = { pilot: 0, robot: 'titan', diff: 1, stock: 3, stage: 'farm' };
+const cfg = { pilot: 1, robot: 'titan', diff: 1, stock: 3, stage: 'farm' };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem('rr-cfg') || '{}')); } catch { /* 저장값 무시 */ }
 if (!ROBOT_ORDER.includes(cfg.robot)) cfg.robot = 'titan';
 if (!STAGES.some((st) => st.id === cfg.stage)) cfg.stage = 'farm';
-if (!(cfg.pilot >= 0 && cfg.pilot < PILOTS.length)) cfg.pilot = 0;
-if (!Number.isInteger(cfg.pilot)) cfg.pilot = 0;
+if (!(cfg.pilot >= 0 && cfg.pilot < PILOTS.length)) cfg.pilot = 1;
+if (!Number.isInteger(cfg.pilot)) cfg.pilot = 1;
 if (![0, 1, 2].includes(cfg.diff)) cfg.diff = 1;
 if (![2, 3, 5].includes(cfg.stock)) cfg.stock = 3;
 cfg.autoplay = new URLSearchParams(location.search).has('auto');
@@ -180,6 +185,7 @@ const roomLobby = new RoomLobby({
   onClosed: reason => { roomSession?.clear(); toMenu('rooms'); roomLobby.status(reason, true); },
   onStart: message => roomSession?.start(message),
 });
+$('room-pilot').value = String(cfg.pilot);
 roomSession = new RoomSession({ game, lobby: roomLobby,
   startGame: (config, role, localIndex) => {
     clearMission(); startMatch(true, config);
@@ -1136,4 +1142,4 @@ frame();
 window.NativeGame?.ready();
 
 // 디버그/QA 용 핸들
-window.__rr = { game, cfg, startMatch, toMenu, fx, THREE, input, roomLobby, roomSession, openRooms };
+window.__rr = { game, cfg, startMatch, toMenu, fx, THREE, input, roomLobby, roomSession, openRooms, characterAssetStatus };

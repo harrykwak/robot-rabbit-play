@@ -2,7 +2,7 @@
 import { ROBOT_STATS, RULES } from './data.js';
 import { skillJuice } from './robot-systems.js';
 
-const RANGE = { titan: 4.2, bolt: 3.8, cannon: 12, hammer: 4.6 };
+const RANGE = { titan: 2.8, bolt: 2.6, cannon: 2.8, hammer: 3.1 };
 // 길찾기 캐시: 경과 시뮬레이션 시간 기준으로 재계산 빈도를 제한한다
 export const NAV = {
   replan: 0.2,     // 지상 재계산 주기(초)
@@ -423,11 +423,7 @@ export class AICtrl {
     }
     const fx = Math.sin(r.facing), fz = Math.cos(r.facing);
     const align = (fx * dx + fz * dz) / (dist || 1);
-    if (r.type === 'cannon') {
-      if (dist < 8) this.steer(-dx + dz * 0.6 * this.strafe, -dz - dx * 0.6 * this.strafe);
-      else if (dist > 16) this.steer(dx, dz);
-      else this.steer(dx * 0.1 + dz * 0.3 * this.strafe, dz * 0.1 - dx * 0.3 * this.strafe, 0.5);
-    } else if (hold) {
+    if (hold) {
       // 다른 CPU 가 이미 붙어 있다: 주위를 돌며 기다린다
       const k = dist < want + 5 ? -0.6 : 0.2;
       this.steer(dx * k - dz * 0.8 * this.strafe, dz * k + dx * 0.8 * this.strafe, 0.6);
@@ -453,9 +449,9 @@ export class AICtrl {
         if (ready('k') && dist < 7) return void (i.hvy = true);
       }
     }
-    const atkRange = ty === 'cannon' ? 22 : want + 1.3;
-    if (dist < atkRange && (ty !== 'cannon' || align > 0.8) && Math.random() < 0.5 + d.aggro * 0.5) i.atk = true;
+    const atkRange = want + .9;
+    if (dist < atkRange && align > .45 && Math.random() < 0.5 + d.aggro * 0.5) i.atk = true;
     if (t.pos.y > 3 && dist < 6 && Math.random() < 0.3) i.jump = true;
-    if (dist > 14 && ty !== 'cannon' && r.mods.dash && r.juice > RULES.juiceLow && Math.random() < 0.2) i.dash = true;
+    if (dist > 14 && r.mods.dash && r.juice > RULES.juiceLow && Math.random() < 0.2) i.dash = true;
   }
 }
