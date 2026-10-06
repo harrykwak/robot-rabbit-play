@@ -1200,6 +1200,22 @@ export class Game {
     this.ui.removeRobot(r);
   }
 
+  // An expired/left network guest forfeits only their own slot. Do not award a
+  // kill, create a CPU replacement or end everybody else's current round.
+  removeRemotePlayer(h) {
+    if (!this.peerMatch || !h || h.isPlayer || h.out) return false;
+    if (h.riding) this.eject(h, false);
+    this.endShield(h, false); h.cancelAct(); h.boardTarget = null; h.boardT = 0;
+    if (h.combo.n) this.comboEnd(h);
+    for (const other of this.humans) if (other.combo.target === h && other.combo.n) this.comboEnd(other);
+    for (const robot of this.robots) if (robot.owner === h) robot.owner = null;
+    h.stock = 0; h.hp = 0; h.dead = true; h.out = true; h.state = 'dead';
+    h.respawnT = 0; h.outOrder = ++this.outSeq; h.vel.set(0, 0, 0);
+    h.rig.root.visible = false; if (h.mark) h.mark.visible = false;
+    this.ui.toast(h.name + '님이 퇴장했습니다. 경기는 계속됩니다.');
+    return true;
+  }
+
   kill(h, reason) {
     if (h.dead) return;
     if (h.riding) return;

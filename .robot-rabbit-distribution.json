@@ -1,7 +1,7 @@
 {
   "application": "robot-rabbit",
   "format": 1,
-  "version": "1.8.4",
+  "version": "1.8.5",
   "files": [
     ".nojekyll",
     "THIRD_PARTY_NOTICES.md",
@@ -47,6 +47,7 @@
     "js/install.js",
     "js/juice-station-models.js",
     "js/juice-stations.js",
+    "js/local-prediction.js",
     "js/main.js",
     "js/model-quality.js",
     "js/models.js",

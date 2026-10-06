@@ -49,7 +49,7 @@ const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaterni
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
   facing:round(f.facing),action:f.act?.name??null,spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
 const numbers = (o,keys)=>Object.fromEntries(keys.map(k=>[k,round(o[k]||0)]));
-export function captureSnapshot(game,{matchId,seq,onInvalid}) {
+export function captureSnapshot(game,{matchId,seq,onInvalid,inputAcks}) {
   const state={v:PEER_VERSION,matchId,seq,time:round(game.time),timeLeft:round(game.timeLeft),phase:game.phase,introStep:game.introStep ?? -1,
     humans:game.humans.map(h=>({...fighterState(h),...numbers(h,HNUM),id:h.id,dead:h.dead,out:h.out,riding:h.riding?.id??null,boardTarget:h.boardTarget?.id??null,
       combo:{n:h.combo.n,dmg:round(h.combo.dmg),best:h.combo.best}})),
@@ -60,6 +60,7 @@ export function captureSnapshot(game,{matchId,seq,onInvalid}) {
     shields:game.shields.map(s=>({...rootState(s.mesh),color:s.h.color,alpha:round(Math.min(1,s.mesh.material.uniforms.alpha.value))})),
     rings:game.fx.rings.filter(r=>r.on&&r.m.visible).map(r=>({...rootState(r.m),color:r.m.material.color.toArray().map(round),alpha:round(r.m.material.opacity)})),
     beams:game.robots.map(r=>r.beam?.snapshot?.()).filter(Boolean).map(b=>({...b,from:b.from.map(round),to:b.to.map(round)}))};
+  if(inputAcks!==undefined)state.inputAcks=Array.isArray(inputAcks)?[...inputAcks]:inputAcks;
   if (validateSnapshot(state,matchId)) return state;
   onInvalid?.(state); return null;
 }
@@ -70,6 +71,7 @@ const validAction = (name, table)=>name===null||(typeof name==='string'&&Object.
 export function validateSnapshot(s,matchId) {
   try {
     if(!s || s.v!==PEER_VERSION || s.matchId!==matchId || !integer(s.seq) || !num(s.time,0,7200) || !num(s.timeLeft,-1,7200) || !['intro','fight','end'].includes(s.phase) || !integer(s.introStep,-1,3)) return false;
+    if(s.inputAcks!==undefined&&(!Array.isArray(s.inputAcks)||s.inputAcks.length!==4||!s.inputAcks.every(v=>integer(v,-1))))return false;
     if(!Array.isArray(s.humans)||s.humans.length!==4 || !Array.isArray(s.robots)||s.robots.length>12) return false;
     const ids=new Set(s.robots.map(r=>r.id)); if(ids.size!==s.robots.length) return false;
     const rid=id=>id===null||ids.has(id), hid=id=>id===null||integer(id,0,3);
@@ -91,9 +93,14 @@ export function validateSnapshot(s,matchId) {
 }
 
 function setRoot(mesh,s) { mesh.position.fromArray(s.p); mesh.quaternion.fromArray(s.q).normalize(); mesh.scale.fromArray(s.s); mesh.visible=s.visible; }
+const HISTORY_LIMIT = 8, MAX_EXTRAPOLATION = .08, MAX_EXTRAPOLATION_DISTANCE = .6;
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const angleDelta = (from, to) => Math.atan2(Math.sin(to-from), Math.cos(to-from));
 export class PeerReplica {
-  constructor(game,{matchId,localIndex=1}) {
+  constructor(game,{matchId,localIndex=1,now=()=>performance.now()}) {
     this.game=game; this.matchId=matchId; this.localIndex=localIndex; this.seq=-1; this.targets=new Map(); this.pools={};
+    this.now=now;this.bufferDelay=.1;this.interval=.05;this.jitter=0;this.playbackTime=null;this.latestTime=null;this.receivedAt=null;
+    this.samplePosition=new THREE.Vector3();this.sampleQuaternion=new THREE.Quaternion();
     // Game.start builds player 0 before the guest switches control to player 1.
     // Reassign the two existing shared textures to the actual local player.
     const playerMark=game.humans.find(h=>h.markPlayer)?.mark?.material.map;
@@ -105,7 +112,17 @@ export class PeerReplica {
   }
   accept(s) {
     if(s?.seq<=this.seq||!validateSnapshot(s,this.matchId))return false;
+    this.clearLocalOffset();
     const g=this.game, first=this.seq<0, previousPhase=g.phase;
+    const arrival=this.now()/1000, gap=this.latestTime===null?0:s.time-this.latestTime;
+    const reset=first||gap>.5||gap<0||s.phase==='end'||s.time-this.playbackTime>.5;
+    if(reset)this.playbackTime=s.time-this.bufferDelay;
+    else if(gap>0){
+      this.interval+=(gap-this.interval)*.15;
+      this.jitter+=(Math.abs(arrival-this.receivedAt-gap)-this.jitter)*.15;
+      this.bufferDelay=clamp(this.interval*1.2+this.jitter*2,.08,.15);
+    }
+    this.latestTime=s.time;this.receivedAt=arrival;
     this.seq=s.seq;
     // Detach pilots before removing a robot, so a robot disposer cannot own their rigs.
     for(const h of g.humans) if(h.rig.root.parent!==g.scene && (s.humans[h.id].riding!==h.riding?.id || !s.robots.some(r=>r.id===h.riding?.id&&r.type===h.riding.type))) g.scene.attach(h.rig.root);
@@ -116,13 +133,13 @@ export class PeerReplica {
       const prevBroken=r.broken;
       Object.assign(r,Object.fromEntries(RNUM.map(k=>[k,x[k]])),{state:x.state,owner:x.owner===null?null:g.humans[x.owner],pilot:x.pilot===null?null:g.humans[x.pilot],cds:{...x.cds}});
       if(fresh||prevBroken!==r.broken)r.syncBroken(prevBroken,!first&&!fresh);
-      this.fighter(r,x,first); setRoot(r.ring,x.ring); r.setEyes(x.eyeLevel);
+      this.fighter(r,x,reset); setRoot(r.ring,x.ring); r.setEyes(x.eyeLevel);
     }
     for(const x of s.humans) {
-      const h=g.humans[x.id], wasRiding=h.riding?.id??null, oldHp=h.hp, oldStock=h.stock;
+      const h=g.humans[x.id], wasRiding=h.riding?.id??null, oldHp=h.hp, oldStock=h.stock, oldDead=h.dead, oldOut=h.out;
       Object.assign(h,Object.fromEntries(HNUM.map(k=>[k,x[k]])),{state:x.state,dead:x.dead,out:x.out,combo:{...h.combo,...x.combo},riding:g.robots.find(r=>r.id===x.riding)||null,boardTarget:g.robots.find(r=>r.id===x.boardTarget)||null});
       if(h.riding && h.rig.root.parent!==h.riding.rig.cockpit) h.riding.rig.cockpit.add(h.rig.root);
-      this.fighter(h,x,first||wasRiding!==x.riding);
+      this.fighter(h,x,reset||wasRiding!==x.riding||oldStock!==x.stock||oldDead!==x.dead||oldOut!==x.out);
       if(!first&&x.hp<oldHp&&x.stock===oldStock) { g.fx.hit(h.pos,this.up,1,h.color); if(h.isPlayer) {g.ui.flash(.15);audio.sfx('punch');} }
       if(!first&&wasRiding!==x.riding&&x.riding!==null) audio.sfx('board');
     }
@@ -138,6 +155,7 @@ export class PeerReplica {
     this.visuals('shields',s.shields,()=> 'shield');
     this.visuals('rings',s.rings,()=> 'ring');
     this.visuals('beams',s.beams,()=> 'beam');
+    this.localPresentationAck?.(s.inputAcks?.[this.localIndex],s);
     return true;
   }
   fighter(f,s,snap) {
@@ -155,9 +173,88 @@ export class PeerReplica {
     root.scale.fromArray(s.s);root.visible=s.visible;
     // Reuse one target per fighter; 20Hz snapshots would otherwise allocate a Vector3+Quaternion each.
     let t=this.targets.get(f);
-    if(!t)this.targets.set(f,t={p:new THREE.Vector3(),q:new THREE.Quaternion()});
+    const local=f.kind==='human'?f.id===this.localIndex:f.pilot?.id===this.localIndex;
+    if(!t)this.targets.set(f,t={p:new THREE.Vector3(),q:new THREE.Quaternion(),displayPos:f.pos.clone(),history:[],parent:root.parent,local,facing:s.facing});
+    if(snap||t.parent!==root.parent||t.local!==local||t.p.distanceToSquared(this.samplePosition.fromArray(s.p))>64||t.history.at(-1)?.state.visible!==s.visible){
+      t.history.length=0;setRoot(root,s);
+      t.displayPos.copy(f.pos);t.facing=s.facing;
+      if(local)this.onLocalPresentationReset?.();
+    }
+    t.parent=root.parent;t.local=local;
+    const sample={time:this.latestTime??this.game.time,state:s};
+    if(t.history.at(-1)?.time===sample.time)t.history[t.history.length-1]=sample;
+    else t.history.push(sample);
+    if(t.history.length>HISTORY_LIMIT)t.history.shift();
     t.p.fromArray(s.p);t.q.fromArray(s.q).normalize();
     f.syncMark();
+  }
+  presentFighter(f,t,dt) {
+    const history=t.history;if(!history.length)return;
+    // The local pilot and their robot never pay the remote interpolation delay.
+    const time=t.local?this.latestTime+Math.max(0,this.now()/1000-this.receivedAt):(this.playbackTime??history.at(-1).time);
+    let a=history[0],b=a;
+    for(let i=1;i<history.length;i++){
+      b=history[i];if(time<=b.time)break;a=b;
+    }
+    let u=a===b?0:clamp((time-a.time)/(b.time-a.time),0,1);
+    // Positions may coast for at most 80ms / 0.6m. Never extrapolate attack
+    // poses or ownership, and never run guest physics or combat prediction.
+    let extrapolation=0;
+    if(time>history.at(-1).time&&history.length>1){
+      b=history.at(-1);a=history.at(-2);u=1;
+      const span=b.time-a.time;
+      if(span>0&&!(t.local&&this.localPresentationOffset)&&a.state.onGround===b.state.onGround&&a.state.state===b.state.state){
+        const distance=Math.max(
+          Math.hypot(b.state.p[0]-a.state.p[0],b.state.p[1]-a.state.p[1],b.state.p[2]-a.state.p[2]),
+          Math.hypot(b.state.pos[0]-a.state.pos[0],b.state.pos[1]-a.state.pos[1],b.state.pos[2]-a.state.pos[2]));
+        extrapolation=Math.min(MAX_EXTRAPOLATION, time-b.time)/span;
+        if(distance>0)extrapolation=Math.min(extrapolation,MAX_EXTRAPOLATION_DISTANCE/distance);
+      }
+    }
+    const sa=a.state,sb=b.state,root=f.rig.root;
+    if(t.local){
+      const alpha=1-Math.exp(-Math.max(0,dt)*45);
+      for(let i=0;i<3;i++)this.samplePosition.setComponent(i,sa.p[i]+(sb.p[i]-sa.p[i])*(u+extrapolation));
+      root.position.lerp(this.samplePosition,alpha);
+      for(let i=0;i<3;i++)this.samplePosition.setComponent(i,sa.pos[i]+(sb.pos[i]-sa.pos[i])*(u+extrapolation));
+      f.pos.copy(t.displayPos.lerp(this.samplePosition,alpha));
+      root.quaternion.slerp(this.sampleQuaternion.fromArray(sb.q).normalize(),alpha);
+      f.facing=t.facing+=angleDelta(t.facing,sb.facing)*alpha;
+    }else{
+      root.position.fromArray(sa.p).lerp(this.samplePosition.fromArray(sb.p),u+extrapolation);
+      f.pos.fromArray(sa.pos).lerp(this.samplePosition.fromArray(sb.pos),u+extrapolation);t.displayPos.copy(f.pos);
+      root.quaternion.fromArray(sa.q).normalize().slerp(this.sampleQuaternion.fromArray(sb.q).normalize(),u);
+      f.facing=sa.facing+angleDelta(sa.facing,sb.facing)*u;
+    }
+    root.scale.fromArray(sa.s).lerp(this.samplePosition.fromArray(sb.s),u);
+    // Discrete action changes cannot blend a new attack's parameters with the
+    // previous action. Statistics remain the latest authoritative values.
+    const poseA=sa.action===sb.action?sa:(u<1?sa:sb),poseB=sa.action===sb.action?sb:poseA;
+    f.clearBrokenMotionOffsets?.();
+    for(let i=0;i<KEYS.length;i++)f.pose[KEYS[i]]=poseA.pose[i]+(poseB.pose[i]-poseA.pose[i])*u;
+    applyRig(f.rig,f.pose,f.restHips,f.sc);f.rig.hips.position.y=poseA.hipY+(poseB.hipY-poseA.hipY)*u;
+    if(f.kind==='robot'){
+      f.rig.presentMotion?.(f.pose,poseA.action,f.broken);
+      f.rig.presentCombat?.(f.pose,poseA.action,f.broken);
+    }
+  }
+  clearLocalOffset() {
+    const applied=this.localOffsetApplied;if(!applied)return;
+    applied.actor.rig.root.position.sub(applied.delta);applied.actor.pos.sub(applied.delta);
+    if(applied.pilot!==applied.actor)applied.pilot.pos.sub(applied.delta);
+    this.localOffsetApplied=null;
+  }
+  applyLocalOffset(dt) {
+    if(!this.localPresentationOffset)return;
+    const pilot=this.game.humans[this.localIndex],actor=pilot?.riding||pilot;
+    if(!actor||actor.rig.root.parent!==this.game.scene||!actor.rig.root.visible||pilot.dead||pilot.out)return;
+    const value=this.localPresentationOffset(dt,actor);
+    if(!value||![value.x,value.y,value.z].every(Number.isFinite))return;
+    const delta=this.predictionDelta??=new THREE.Vector3();delta.set(value.x,0,value.z).clampLength(0,1.2);
+    if(delta.lengthSq()===0)return;
+    actor.rig.root.position.add(delta);actor.pos.add(delta);
+    if(pilot!==actor)pilot.pos.add(delta);
+    this.localOffsetApplied={actor,pilot,delta};actor.syncMark();
   }
   visuals(key,items,typeOf) {
     const pool=this.pools[key] ||= [];
@@ -175,10 +272,15 @@ export class PeerReplica {
     for(let i=items.length;i<pool.length;i++)pool[i].mesh.visible=false;
   }
   update(dt) {
-    const a=1-Math.exp(-dt*30);
+    this.clearLocalOffset();
+    if(this.latestTime!==null){
+      const desired=this.latestTime+Math.max(0,this.now()/1000-this.receivedAt)-this.bufferDelay;
+      const rate=clamp(1+(desired-this.playbackTime)*2,.9,1.1);
+      this.playbackTime=Math.min(this.latestTime+MAX_EXTRAPOLATION,this.playbackTime+Math.max(0,Math.min(dt,.1))*rate);
+    }
     this.visualTime=Math.min(this.game.time+.15,(this.visualTime??this.game.time)+dt);
     for(const [f,t]of this.targets){
-      f.rig.root.position.lerp(t.p,a);f.rig.root.quaternion.slerp(t.q,a);
+      this.presentFighter(f,t,dt);
       if(f.kind==='robot'){
         f.applyBrokenMotion?.(dt,this.visualTime);
         f.rig.animateFace?.(this.visualTime+f.id*.83);
@@ -189,9 +291,11 @@ export class PeerReplica {
       if(f.mark?.visible&&!f.mark.userData.rrProjectedGround)f.mark.position.y=f.gh-f.rig.root.position.y+.05;
     }
     for(const r of this.game.robots)if(r.debris?.length)r.updateDebris(dt);
-    const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.juiceStations?.present(this.visualTime);g.updateCamera(dt);
+    const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.juiceStations?.present(this.visualTime);
+    this.applyLocalOffset(dt);g.updateCamera(dt);
   }
   dispose() {
+    this.clearLocalOffset();
     for(const pool of Object.values(this.pools))for(const p of pool)p.mesh.material.dispose();
     for(const geometry of Object.values(this.geometries))geometry.dispose();
     this.group.removeFromParent();this.targets.clear();

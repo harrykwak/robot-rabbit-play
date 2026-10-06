@@ -2,8 +2,11 @@ import { PILOTS, ROBOT_ORDER, STAGES } from './data.js';
 import { ROBOT_INFO } from './models.js';
 import { ROOM_RELAY_ORIGIN } from './room-config.js';
 import { relayOrigin, invitationFrom, invitationURL } from './room-links.js';
+import { ROOM_RECONNECT_GRACE_MS } from './room-protocol.js';
 const $ = id => document.getElementById(id);
 const storageKey = 'rr-browser-room-v1';
+const MAX_GAME_REQUESTS = 4;
+const MOMENTARY_INPUTS = ['jump','atk','hvy','dash','actP','grdP'];
 const labels = {
   'host-password-invalid': '방장 비밀번호를 확인해 주세요.',
   'host-auth-busy': '방장 인증 중입니다. 잠시 뒤 다시 시도해 주세요.',
@@ -17,6 +20,11 @@ const labels = {
   'denied': '호스트가 참가 요청을 거절했습니다.', 'reconnect-expired': '재접속 대기 시간이 끝났습니다.',
   'admission-rate-limit': '요청이 많습니다. 잠시 뒤 다시 시도해 주세요.',
   'already-connected': '이 세션이 다른 연결에서 사용 중입니다.',
+  'session-required': '서버에서 이전 세션을 찾지 못했습니다. 서버 재시작 또는 세션 만료일 수 있습니다. 방을 새로 만들거나 새 초대로 참가해 주세요.',
+  'host-disconnected': '방장 연결이 끊겨 경기를 멈추고 로비로 돌아왔습니다. 방은 최대 2분간 유지됩니다. 방장이 돌아오면 다시 시작해 주세요.',
+  'host-left': '방장이 나가서 방이 닫혔습니다. 새 초대 링크로 참가해 주세요.',
+  'server-stopped': '서버가 재시작되어 방이 닫혔습니다. 잠시 후 새 방과 초대 링크를 만들어 주세요.',
+  'request-expired': '참가 요청 대기 시간이 끝났습니다. 초대 링크로 다시 신청해 주세요.',
   'capacity-reached': '현재 새 방을 열 수 없습니다. 잠시 뒤 다시 시도해 주세요.',
 };
 
@@ -24,6 +32,9 @@ export class RoomLobby {
   constructor({ onMessage, onClosed, onStart, onInvite, onBack }) {
     Object.assign(this, { onMessage, onClosed, onStart, onInvite, onBack, flow: 'join' });
     Object.assign(this, { token: null, self: null, room: null, pending: [], online: false, controller: null, generation: 0, busy: false, inFlight: false });
+    Object.assign(this, { offlineSince: null, retryAttempts: 0, connecting: false, notice: '', wakeStream: null });
+    this.gameRequests = new Set();
+    this.networkStats = { since: Date.now(), sentAt: [], rtt: [], skipped: 0, errors: 0 };
     const invitation = invitationFrom(location.href);
     this.invite = invitation.room;
     // Fragments never reach the static host or relay; copied links contain no host authority.
@@ -49,6 +60,13 @@ export class RoomLobby {
     $('room-entry').onsubmit = e => { e.preventDefault(); this.submit(); };
     $('room-back').onclick = () => this.back();
     addEventListener('pagehide', () => { $('room-password').value = ''; });
+    // Give queued heartbeats time to arrive after a throttled/frozen tab wakes.
+    const wake = () => {
+      this.wakeStream?.();
+      if (this.token && !this.online && !this.connecting) this.reconnect();
+    };
+    addEventListener('online', wake);
+    document.addEventListener?.('visibilitychange', () => { if (!document.hidden) wake(); });
     $('room-start').onclick = () => this.perform(() => this.action('start'));
     $('room-leave').onclick = () => this.perform(() => this.leave());
     $('room-close').onclick = () => this.perform(() => this.action('close'));
@@ -114,14 +132,15 @@ export class RoomLobby {
       $('room-service-message').textContent = '멀티플레이 서버에 연결하지 못했습니다. 다시 연결하거나 혼자 플레이할 수 있습니다.';
     } finally { this.probing = false; this.render(); }
   }
-  async request(path, body) {
+  async request(path, body, { signal } = {}) {
     if (!this.endpoint) throw new Error('온라인 방이 아직 준비되지 않았습니다.');
     const headers = { 'Content-Type': 'application/json' }; if (this.token) headers.Authorization = 'Bearer ' + this.token;
     // POST responses are no-store at the relay. Leave the request cache mode at
     // default so the browser may reuse its bounded CORS preflight grant.
     let response;
     try {
-      response = await fetch(this.endpoint + path, { method: 'POST', headers, body: JSON.stringify(body), credentials: 'omit', signal: AbortSignal.timeout(8000) });
+      const timeout = AbortSignal.timeout(8000);
+      response = await fetch(this.endpoint + path, { method: 'POST', headers, body: JSON.stringify(body), credentials: 'omit', signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     } catch {
       throw new Error('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
@@ -130,7 +149,11 @@ export class RoomLobby {
       throw new Error('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-    if (!response.ok) throw new Error(Object.hasOwn(labels, value.error) ? labels[value.error] : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    if (!response.ok) {
+      const error = new Error(Object.hasOwn(labels, value.error) ? labels[value.error] : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      if (response.status === 409 && ['stale-input', 'stale-state'].includes(value.error)) error.code = value.error;
+      throw error;
+    }
     return value;
   }
   async perform(task) {
@@ -152,31 +175,51 @@ export class RoomLobby {
       || !/^[A-F0-9]{32}$/.test(reply?.room?.id) || !Array.isArray(reply.room.players)) {
       throw new Error('참가 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
-    this.token = reply.token; this.self = reply.self; this.room = reply.room; this.offlineSince = 0;
+    this.token = reply.token; this.self = reply.self; this.room = reply.room; this.offlineSince = null; this.notice = '';
     try { sessionStorage.setItem(storageKey, JSON.stringify({ endpoint: this.endpoint, page: location.origin + location.pathname, token: this.token })); } catch { /* Optional storage. */ }
     this.connect(); this.render();
   }
   async connect() {
     if (!this.token || !this.endpoint) return;
+    if (this.offlineSince !== null && Date.now() - this.offlineSince >= ROOM_RECONNECT_GRACE_MS) {
+      this.forget(); this.onClosed(labels['reconnect-expired']); return;
+    }
     const generation = ++this.generation; this.controller?.abort();
-    const controller = new AbortController(); this.controller = controller; this.status('로비 연결 중입니다…');
-    let deadline, timedOut = false;
-    const arm = delay => { clearTimeout(deadline); deadline = setTimeout(() => { timedOut = true; controller.abort(); }, delay); };
-    arm(12000);
+    clearTimeout(this.retry);
+    const controller = new AbortController(); this.controller = controller; this.connecting = true; this.resetGameRequests();
+    this.status('로비 연결 중입니다…');
+    let deadline, timedOut = false, reader;
+    const current = () => generation === this.generation && !controller.signal.aborted;
+    const arm = delay => {
+      clearTimeout(deadline); const due = Date.now() + delay;
+      deadline = setTimeout(() => {
+        if (!current()) return;
+        // Delayed callbacks after suspension are not proof of network loss.
+        // This extra read window never extends the server's reservation limit.
+        if (Date.now() - due > 2000) { arm(delay); return; }
+        timedOut = true; controller.abort();
+      }, delay);
+    };
+    const wakeStream = () => { if (current()) arm(15000); };
+    this.wakeStream = wakeStream; arm(20000);
     try {
       const response = await fetch(this.endpoint + '/api/events', { headers: { Authorization: 'Bearer ' + this.token }, signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+      if (!current()) { await response.body?.cancel(); return; }
       if (!response.ok) {
-        const e = await response.json();
-        if (response.status === 401) { this.forget(); this.onClosed(labels[e.error] || e.error); return; }
-        if (response.status === 409) { this.online = false; this.status(labels[e.error] || e.error, true); this.render(); return; }
-        throw new Error(labels[e.error] || e.error);
+        let e; try { e = await response.json(); } catch { e = {}; }
+        if (!current()) return;
+        const reason = Object.hasOwn(labels, e?.error) ? labels[e.error] : '로비 연결을 복구하고 있습니다.';
+        if (response.status === 401) { this.forget(); this.onClosed(reason); return; }
+        // The old stream may still be draining through a proxy. Retry 409 with
+        // the same bearer; never replace a live duplicate or bypass approval.
+        throw new Error(reason);
       }
-      this.online = true; this.offlineSince = 0; this.render();
-      arm(8000);
-      const reader = response.body.getReader(), decoder = new TextDecoder(); let buffered = '';
+      arm(15000);
+      reader = response.body.getReader(); const decoder = new TextDecoder(); let buffered = '';
       while (generation === this.generation) {
         const { value, done } = await reader.read(); if (done) break;
-        arm(8000);
+        if (!current()) return;
+        arm(15000);
         buffered += decoder.decode(value, { stream: true }); let end;
         while ((end = buffered.indexOf('\n\n')) >= 0) {
           const event = buffered.slice(0, end); buffered = buffered.slice(end + 2);
@@ -187,37 +230,92 @@ export class RoomLobby {
       if (generation === this.generation && this.token) throw new Error('disconnected');
     } catch (e) {
       if (generation !== this.generation || (e.name === 'AbortError' && !timedOut)) return;
-      this.online = false; this.onMessage({ type: 'transport-offline' }); this.offlineSince ||= Date.now();
-      if (Date.now() - this.offlineSince >= 30000) { this.forget(); this.onClosed(labels['reconnect-expired']); return; }
-      this.status('연결 중단 — 30초 동안 자리를 보관하며 다시 연결합니다.', true); this.render();
-      clearTimeout(this.retry); this.retry = setTimeout(() => this.connect(), 1200);
-    } finally { clearTimeout(deadline); }
+      this.scheduleReconnect();
+    } finally {
+      clearTimeout(deadline); reader?.releaseLock();
+      if (this.wakeStream === wakeStream) this.wakeStream = null;
+      if (generation === this.generation) this.connecting = false;
+    }
+  }
+  scheduleReconnect(delay) {
+    this.online = false; this.onMessage({ type: 'transport-offline' }); this.offlineSince ??= Date.now();
+    if (Date.now() - this.offlineSince >= ROOM_RECONNECT_GRACE_MS) {
+      this.forget(); this.onClosed(labels['reconnect-expired']); return;
+    }
+    const retryDelay = delay ?? Math.min(5000, 1200 * 2 ** Math.min(this.retryAttempts++, 3));
+    this.status('연결이 끊겼습니다. 최대 2분간 승인된 자리를 유지하며 다시 연결합니다.', true); this.render();
+    clearTimeout(this.retry); this.retry = setTimeout(() => this.connect(), retryDelay);
   }
   receive(message) {
     if (message.type === 'heartbeat') return;
     if (message.type === 'room') {
-      if (this.room?.state === 'playing' && message.room?.state === 'lobby') this.onMessage({ type: 'stop', reason: '로비로 돌아왔습니다.' });
+      if (this.room?.state === 'playing' && message.room?.state === 'lobby') this.onMessage({ type: 'stop', reason: this.notice || '로비로 돌아왔습니다.' });
       this.room = message.room; this.self = message.self; this.pending = message.pending;
-      this.status(''); this.render();
+      this.status(this.notice); this.render();
     } else if (message.type === 'closed' || message.type === 'removed') {
       const reason = labels[message.reason] || (message.type === 'closed' ? '방이 닫혔습니다.' : '로비에서 나왔습니다.');
       this.forget(); this.status(reason, true); this.onClosed(reason);
-    } else if (message.type === 'welcome') { this.self = message.self; this.inputSeq = message.inputSeq; this.render(); }
-    else if (message.type === 'start') this.onStart(message);
+    } else if (message.type === 'welcome') {
+      this.self = message.self; this.inputSeq = message.inputSeq; this.online = true;
+      this.offlineSince = null; this.retryAttempts = 0; this.onMessage({ type: 'transport-online' }); this.render();
+    } else if (message.type === 'stop') {
+      this.notice = Object.hasOwn(labels, message.reason) ? labels[message.reason] : '방장이 경기를 중단했습니다. 로비에서 다시 시작할 수 있습니다.';
+      this.onMessage({ ...message, reason: this.notice }); this.status(this.notice);
+    } else if (message.type === 'start') { this.notice = ''; this.onStart(message); }
     else this.onMessage(message);
   }
   action(type, target) { return this.request('/api/action', target ? { type, target } : { type }); }
   send(packet) {
-    if (!this.online || !this.token || this.inFlight) return false;
-    this.inFlight = true; this.request('/api/game', packet).catch(e => this.status(e.message, true)).finally(() => { this.inFlight = false; }); return true;
+    if (!this.online || !this.token) return false;
+    // A newer movement packet must not overtake an attack/jump edge. Ordinary
+    // movement stays pipelined; an edge waits only for its bounded HTTP reply.
+    if (packet.type === 'input' && this.inputFence) { this.networkStats.skipped++; return false; }
+    if (this.gameRequests.size >= MAX_GAME_REQUESTS) { this.networkStats.skipped++; return false; }
+    const generation = this.generation, controller = new AbortController(), started = performance.now();
+    this.gameRequests.add(controller); this.inFlight = true;
+    if (packet.type === 'input' && MOMENTARY_INPUTS.some(key => packet.input?.[key])) this.inputFence = controller;
+    const stats = this.networkStats; stats.sentAt.push(Date.now()); if (stats.sentAt.length > 180) stats.sentAt.shift();
+    // No queue: the next tick supplies current data. A bounded pipeline avoids
+    // limiting a 20/30 Hz stream to one packet per HTTP round trip.
+    this.request('/api/game', packet, { signal: controller.signal }).then(() => {
+      if (generation !== this.generation) return;
+      stats.rtt.push(performance.now() - started); if (stats.rtt.length > 60) stats.rtt.shift();
+    }).catch(e => {
+      if (generation === this.generation && !['stale-input', 'stale-state'].includes(e.code)) {
+        stats.errors++; this.status(e.message, true);
+      }
+    }).finally(() => {
+      this.gameRequests.delete(controller); this.inFlight = this.gameRequests.size > 0;
+      if (this.inputFence === controller) this.inputFence = null;
+    }); return true;
+  }
+  resetGameRequests() {
+    this.inputFence = null;
+    for (const controller of this.gameRequests) controller.abort();
+    this.gameRequests.clear(); this.inFlight = false;
+  }
+  diagnostics() {
+    const stats = this.networkStats, now = Date.now(), rtt = [...stats.rtt].sort((a, b) => a - b);
+    return { online: this.online, pendingGameRequests: this.gameRequests.size, maxGameRequests: MAX_GAME_REQUESTS,
+      sendHz: stats.sentAt.filter(t => t >= now - 5000).length / (Math.max(1000, Math.min(5000, now - stats.since)) / 1000),
+      requestRttMedianMs: rtt.length ? Math.round(rtt[Math.floor((rtt.length - 1) * .5)]) : null,
+      requestRttP95Ms: rtt.length ? Math.round(rtt[Math.floor((rtt.length - 1) * .95)]) : null,
+      skippedSends: stats.skipped, requestErrors: stats.errors, reconnectAttempts: this.retryAttempts };
   }
   async leave() { if (this.token) await this.action('leave'); this.forget(); this.onClosed('로비에서 나왔습니다.'); }
   forget() {
     ++this.generation; this.controller?.abort(); clearTimeout(this.retry);
+    this.resetGameRequests();
     this.token = null; this.self = null; this.room = null; this.pending = []; this.online = false;
+    this.offlineSince = null; this.retryAttempts = 0; this.connecting = false; this.inFlight = false; this.wakeStream = null; this.notice = '';
     try { sessionStorage.removeItem(storageKey); } catch { /* Optional storage. */ } this.render();
   }
-  reconnect() { if (this.token) { this.controller?.abort(); clearTimeout(this.retry); this.retry = setTimeout(() => this.connect(), 250); } }
+  reconnect() {
+    if (!this.token) return;
+    ++this.generation; this.controller?.abort(); this.connecting = false; this.wakeStream = null;
+    this.resetGameRequests();
+    this.scheduleReconnect(250);
+  }
   render() {
     const joined = !!this.token, host = this.role === 'host', pendingSelf = this.self?.status === 'pending';
     const creating = this.flow === 'create', ready = !!this.available;

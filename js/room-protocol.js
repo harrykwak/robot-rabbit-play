@@ -2,6 +2,7 @@
 import { PILOTS, ROBOT_ORDER, STAGES } from './data.js';
 export const ROOM_VERSION = 1;
 export const MAX_PLAYERS = 4; // Arena capacity; transport and identities use a roster, not a peer pair.
+export const ROOM_RECONNECT_GRACE_MS = 120000; // Finite reservation; approval and bearer stay unchanged.
 export const INPUT_BUTTONS = ['jump','atk','hvy','dash','actP','grdP','atkD','hvyD','grd','act'];
 export const exact = (value, keys) => !!value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value,k));
