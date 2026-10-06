@@ -945,6 +945,29 @@ html.touch-mode #hud .skills { display: none; }
   #touch-controls.left-handed .touch-jump { left: auto; right: calc(var(--m-sar) + 12px + var(--stick) - var(--tj)); }
 }
 
+/* A fixed six-button arc; touch.js computes safe-area/scale-aware positions once
+   per resize. Hidden context actions retain their empty place in this arc. */
+#touch-controls {
+  padding: var(--m-sat) var(--m-sar) var(--m-sab) var(--m-sal);
+}
+#touch-controls .touch-actions {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+}
+#touch-controls .touch-actions .touch-btn,
+#touch-controls .touch-stick {
+  position: absolute; left: var(--touch-x); top: var(--touch-y); right: auto; bottom: auto;
+  width: var(--touch-size); height: var(--touch-size); margin: 0;
+}
+#touch-controls .touch-stick::before { inset: -8px; }
+#touch-controls .touch-btn[data-touch-action="dash"] .touch-icon,
+#touch-controls .touch-btn[data-touch-action="jump"] .touch-icon { width: 42%; height: 42%; }
+#touch-controls .touch-btn[data-touch-action="dash"] .touch-label,
+#touch-controls .touch-btn[data-touch-action="jump"] .touch-label { font-size: 10px; line-height: 1.1; }
+#touch-controls .touch-btn[data-touch-action="atk"] { border-width: 3px; }
+@media (orientation: portrait) {
+  #touch-controls .touch-status { bottom: calc(var(--touch-zone) + 6px); }
+}
+
 /* ---------------- 선택 화면: 파일럿 카드 v2 (8명 · 클래스·역할 · 스킬 1/2) ----------------
    카드 = 얼굴 | 이름 + 역할 칩 / 스킬 1·2 이름. 한 줄 소개(desc)는 오른쪽 상세 패널에만 둔다. */
 .pilot-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }

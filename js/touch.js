@@ -2,7 +2,36 @@ import * as input from './input.js';
 import { RULES } from './data.js';
 import { ICONS, skillIcon } from './touch-icons.js';
 
-// 조작: 왼쪽 스틱(같은 방향으로 두 번 튕기면 대시) + 스틱 옆 점프 / 오른쪽 아래 큰 흰 공격 + 아이콘 스킬 둘 + 특수 칸
+// Large attack in the center, dash/jump beside it, skills/context in an upper arc.
+// A dedicated dash keeps moving + dashing possible without a second stick gesture.
+
+export function touchLayout(width, height, { scale = 1, leftHanded = false, safe = {} } = {}) {
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const k = clamp(Number.isFinite(scale) ? scale : 1, .85, 1.15);
+  const inset = key => Math.max(0, Number(safe[key]) || 0);
+  const edge = 12, left = inset('left') + edge, right = width - inset('right') - edge;
+  const bottom = height - inset('bottom') - edge, narrow = width <= 360;
+  const button = Math.max(48, (narrow ? 48 : 52) * k);
+  const attack = Math.max(76, (narrow ? 80 : 92) * k);
+  const stickSize = Math.max(96, (narrow ? 104 : 120) * k);
+  const orbit = (attack + button) / 2 + 12;
+  const cx = leftHanded ? left + orbit + button / 2 : right - orbit - button / 2;
+  const cy = bottom - attack / 2;
+  const box = (x, y, size) => ({ x: x - size / 2, y: y - size / 2, size });
+  const buttons = {
+    atk: box(cx, cy, attack), dash: box(cx - orbit, cy, button), jump: box(cx + orbit, cy, button),
+    hvy: box(cx - orbit * .72, cy - orbit * .72, button),
+    act: box(cx, cy - orbit, button), grd: box(cx + orbit * .72, cy - orbit * .72, button),
+  };
+  const stick = { x: leftHanded ? right - stickSize : left, y: bottom - stickSize, size: stickSize };
+  // Include the stick's forgiving 8px hit rim. Move only the stick upward when
+  // a narrow portrait, large preference or safe inset makes the controls meet.
+  for (const b of Object.values(buttons).sort((a, b) => b.y - a.y)) {
+    if (stick.x - 8 < b.x + b.size + 6 && stick.x + stick.size + 8 > b.x - 6
+      && stick.y - 8 < b.y + b.size + 6 && stick.y + stick.size + 8 > b.y - 6) stick.y = b.y - stick.size - 14;
+  }
+  return { buttons, stick, zone: height - Math.min(stick.y - 8, ...Object.values(buttons).map(b => b.y)) };
+}
 
 // 호출 칸의 기본 표기. game.contextAction 이 label/hint 를 주면 그걸 쓴다 (나중에 다른 필살기로 교체 가능)
 const SPECIAL = {
@@ -37,16 +66,16 @@ export function createTouchControls({ onPause = () => {} } = {}) {
   const menu = make('button', 'touch-menu'); menu.type = 'button'; menu.setAttribute('aria-label', '일시정지 메뉴'); menu.title = '일시정지';
   menu.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4.5" y="3.5" width="4" height="13" rx="1.6"/><rect x="11.5" y="3.5" width="4" height="13" rx="1.6"/></svg>';
   const buttons = new Map();
-  // 점프는 스틱 옆(root), 나머지는 오른쪽 무리: 큰 흰 공격 + 아이콘 스킬 둘 + 필요할 때만 뜨는 특수 칸
-  const names = { jump: '점프', atk: '공격', hvy: '스킬 1', grd: '스킬 2', act: '호출' };
+  const names = { atk: '공격', dash: '대시', jump: '점프', hvy: '스킬 1', act: '호출', grd: '스킬 2' };
   for (const [action, name] of Object.entries(names)) {
     const btn = make('button', 'touch-btn'); btn.type = 'button'; btn.dataset.touchAction = action;
     btn.setAttribute('aria-label', name); btn.setAttribute('aria-pressed', 'false');
     const b = { btn, label: null, sub: make('span', 'touch-sub'), icon: null, iconKey: '', ids: new Set(), cd: -1, hold: -1, ready: true, max: 0 };
-    if (action === 'jump' || action === 'hvy' || action === 'grd') {
+    if (action === 'dash' || action === 'jump' || action === 'hvy' || action === 'grd') {
       b.icon = make('span', 'touch-icon');
       b.icon.setAttribute('aria-hidden', 'true');
       btn.append(b.icon, b.sub);
+      if (action === 'dash' || action === 'jump') { b.label = make('span', 'touch-label', name); btn.append(b.label); }
     } else {
       b.label = make('span', 'touch-label', name);
       btn.append(b.label, b.sub);
@@ -56,11 +85,12 @@ export function createTouchControls({ onPause = () => {} } = {}) {
       b.glyph.innerHTML = ICONS[action === 'atk' ? 'fist' : 'call'];
       btn.append(b.glyph);
     }
-    if (action !== 'jump') group.append(btn);
+    group.append(btn);
     buttons.set(action, b);
   }
   const setIcon = (b, key) => { if (b.icon && b.iconKey !== key) { b.iconKey = key; b.icon.innerHTML = ICONS[key] || ''; b.btn.dataset.icon = key; } };
   setIcon(buttons.get('jump'), 'jump');
+  setIcon(buttons.get('dash'), 'dash');
   buttons.get('jump').btn.classList.add('touch-jump');
   setIcon(buttons.get('hvy'), skillIcon(1, FOOT_SKILLS[0]));
   setIcon(buttons.get('grd'), skillIcon(2, FOOT_SKILLS[1]));
@@ -68,10 +98,19 @@ export function createTouchControls({ onPause = () => {} } = {}) {
   special.btn.classList.add('touch-special');
   special.btn.hidden = true; special.btn.setAttribute('aria-hidden', 'true'); special.btn.tabIndex = -1;
   let specialKind = null;
-  // 순서: 스틱 → 점프 → 오른쪽 무리 (점프가 스틱의 넓힌 히트 영역 위에 온다)
-  root.append(stick, buttons.get('jump').btn, group, menu, status); document.body.append(root);
+  root.append(stick, group, menu, status); document.body.append(root);
 
   let enabled = false, active = false, stickId = null, center = { x: 0, y: 0 }, radius = 1;
+  let scale = 1, leftHanded = false;
+  function layout() {
+    const style = typeof getComputedStyle === 'function' ? getComputedStyle(root) : {};
+    const safe = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(key => [key, parseFloat(style['padding' + key[0].toUpperCase() + key.slice(1)]) || 0]));
+    const rect = root.getBoundingClientRect();
+    const next = touchLayout(rect.width || globalThis.innerWidth || 390, rect.height || globalThis.innerHeight || 844, { scale, leftHanded, safe });
+    const place = (el, box) => { el.style.setProperty('--touch-x', box.x + 'px'); el.style.setProperty('--touch-y', box.y + 'px'); el.style.setProperty('--touch-size', box.size + 'px'); };
+    place(stick, next.stick); for (const [action, b] of buttons) place(b.btn, next.buttons[action]);
+    root.style.setProperty('--touch-zone', next.zone + 'px');
+  }
   const usable = () => enabled && active;
   const capture = (el, id) => { try { el.setPointerCapture(id); } catch { /* cancelled pointer */ } };
   const release = (el, id) => { try { if (el.hasPointerCapture(id)) el.releasePointerCapture(id); } catch { /* detached pointer */ } };
@@ -141,10 +180,12 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     }
     input.clearTouch();
   }
-  const display = () => { root.hidden = !usable(); if (root.hidden) reset(); };
+  const display = () => { root.hidden = !usable(); if (root.hidden) reset(); else layout(); };
   addEventListener('rr-input-reset', reset);
   addEventListener('blur', reset);
-  addEventListener('resize', reset);
+  const resize = () => { reset(); layout(); };
+  addEventListener('resize', resize);
+  globalThis.visualViewport?.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
 
   // ---- 표시 갱신: 값이 바뀔 때만 DOM 을 건드린다 ----
@@ -251,7 +292,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     setEnabled(value) { enabled = !!value; display(); },
     setActive(value) { active = !!value; display(); },
     reset, update,
-    setHandedness(value) { root.classList.toggle('left-handed', !!value); reset(); },
-    setScale(value) { const scale = Number.isFinite(value) ? Math.max(.85, Math.min(1.15, value)) : 1; root.style.setProperty('--touch-scale', scale); document.documentElement.style.setProperty('--touch-scale', scale); reset(); },
+    setHandedness(value) { leftHanded = !!value; root.classList.toggle('left-handed', leftHanded); reset(); layout(); },
+    setScale(value) { scale = Number.isFinite(value) ? Math.max(.85, Math.min(1.15, value)) : 1; root.style.setProperty('--touch-scale', scale); document.documentElement.style.setProperty('--touch-scale', scale); reset(); layout(); },
   };
 }

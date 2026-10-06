@@ -20,7 +20,8 @@ export function attachRobotCombat(rig, type) {
   const weapon = find('weapon'), weaponRest = weapon?.quaternion.clone();
   const supportAxis = weapon && grip ? weapon.worldToLocal(grip.getWorldPosition(new THREE.Vector3())).normalize() : null;
   const hammerDown = [new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, .8, -.8)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, -.8, .8))];
-  const hammerUp = [new THREE.Quaternion().setFromEuler(new THREE.Euler(-2.8, -1.3, -1.4)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-2.8, 1.3, 1.4))];
+  const hammerCarry = new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, .8, -1.0));
+  const hammerUp = [new THREE.Quaternion().setFromEuler(new THREE.Euler(-2.8, -1.3, -1.4)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, -.8, .8))];
   const delta = new THREE.Quaternion(), target = new THREE.Vector3(), end = new THREE.Vector3();
   const from = new THREE.Vector3(), toward = new THREE.Vector3(), inverse = new THREE.Matrix4();
   let hadGrip = false;
@@ -85,7 +86,10 @@ export function attachRobotCombat(rig, type) {
     // Slerp a front-of-body arc instead of interpolating Euler angles through
     // the chest. Long separated grips allow the original short arm lengths.
     const raised = action ? smooth(1.1, 2.8, -pose.arx) : 0;
-    rig.armL.quaternion.copy(hammerDown[0]).slerp(hammerUp[0], raised);
+    // The right hand anchors the shaft while the left lifts the mallet. Tilt
+    // the resting carry slightly upward, but retain the full low downstroke.
+    const carrying = action ? 1 - smooth(.1, .4, pose.tx) : 1;
+    rig.armL.quaternion.copy(hammerDown[0]).slerp(hammerCarry, carrying).slerp(hammerUp[0], raised);
     rig.armR.quaternion.copy(hammerDown[1]).slerp(hammerUp[1], raised);
     rig.foreR.rotation.set(-.15, 0, 0); rig.foreL.rotation.set(-.15, 0, 0);
     if (supportAxis) {

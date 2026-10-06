@@ -160,6 +160,9 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (isEl(e.target, 'HTMLInputElement') || isEl(e.target, 'HTMLSelectElement') || isEl(e.target, 'HTMLTextAreaElement') || e.target?.isContentEditable) return;
+  // C changes mounted view. Do not also feed its walking skill-2 alias (or a
+  // remapped action) into combat. Key-binding capture above still takes priority.
+  if (e.code === 'KeyC' && ridePlayer?.riding) { down.delete(e.code); pressed.delete(e.code); return; }
   // A key held through reset must be released before it can drive the next match.
   if (e.repeat && !down.has(e.code)) return;
   if (GAME_KEYS.has(e.code)) {
@@ -271,6 +274,7 @@ function releaseRearm(action) {
 let ridePlayer = null, rideState = false;
 export function syncRiding(player) {
   const riding = !!(player && player.riding);
+  if (riding) { down.delete('KeyC'); pressed.delete('KeyC'); }
   if (player !== ridePlayer) { ridePlayer = player || null; rideState = riding; return false; }
   if (riding === rideState) return false;
   rideState = riding;

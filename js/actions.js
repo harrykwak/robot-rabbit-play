@@ -723,7 +723,7 @@ export const ROBOT_ACTS = {
     dur: 0.72, chain: 0.34, next: 'hs2',
     frames: [
       [0, HAMMER_HOLD],
-      [0.2, { ...HAMMER_HOLD, hy: -.1, tx: -.22, ty: -.35, arx: -2.8, alx: -2.8, llx: -.3, lrx: .3, slx: .4, srx: .4 }],
+      [0.2, { ...HAMMER_HOLD, hy: -.1, tx: -.40, ty: -.35, arx: -2.8, alx: -2.8, llx: -.3, lrx: .3, slx: .4, srx: .4 }],
       [0.31, { ...HAMMER_HOLD, hy: -.3, tx: .4, ty: -.85, arx: -1.10, alx: -1.10, llx: -.5, lrx: .4, slx: .6, srx: .4 }],
       [0.45, { ...HAMMER_HOLD, hy: -.3, tx: .4, ty: -.85, arx: -1.10, alx: -1.10, llx: -.5, lrx: .4, slx: .6, srx: .4 }],
       [0.72, HAMMER_HOLD],
@@ -735,7 +735,7 @@ export const ROBOT_ACTS = {
     dur: 0.9, chain: 0.9,
     frames: [
       [0, { ...HAMMER_HOLD, tx: .4, ty: -.85 }],
-      [0.27, { ...HAMMER_HOLD, hy: .05, tx: -.3, ty: -.35, arx: -3.05, alx: -3.05, llx: -.3, lrx: .3, slx: .3, srx: .3, ex: .4 }],
+      [0.27, { ...HAMMER_HOLD, hy: .05, tx: -.40, ty: -.35, arx: -3.05, alx: -3.05, llx: -.3, lrx: .3, slx: .3, srx: .3, ex: .4 }],
       [0.37, { ...HAMMER_HOLD, hy: -.45, tx: .5, ty: -.9, arx: -1.0, alx: -1.0, llx: -.7, slx: .9, lrx: .55, srx: .7, ex: -.3 }],
       [0.6, { ...HAMMER_HOLD, hy: -.45, tx: .5, ty: -.9, arx: -1.0, alx: -1.0, llx: -.7, slx: .9, lrx: .55, srx: .7 }],
       [0.9, HAMMER_HOLD],

@@ -14,8 +14,13 @@ export function mountedFov(aspect, first) {
 }
 // This controller changes only local camera layers, never authoritative visibility.
 export class CockpitCamera {
-  constructor() {
-    this.hidden = new Map(); this.robot = null; this.mode = 'chase'; this.pitch = .22;
+  constructor(options = {}) {
+    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .22;
+    try {
+      this.storage = Object.hasOwn(options, 'storage') ? options.storage : globalThis.localStorage;
+      const saved = JSON.parse(this.storage?.getItem('rr-camera') || 'null');
+      if (saved?.version === 1 && ['first', 'chase'].includes(saved.mounted)) this.mode = saved.mounted;
+    } catch { this.storage = null; }
     this.ray = new THREE.Raycaster(); this.anchor = new THREE.Vector3(); this.desired = new THREE.Vector3();
     this.target = new THREE.Vector3(); this.direction = new THREE.Vector3(); this.origin = new THREE.Vector3();
     this.position = new THREE.Vector3(); this.hits = []; this.obstacles = []; this.clearance = Infinity; this.fallback = false;
@@ -34,11 +39,14 @@ export class CockpitCamera {
   }
   label() {
     if (!this.button) return;
-    this.button.textContent = this.mode === 'chase' ? '넓은 추적 시점 · C' : '깨끗한 1인칭 · C';
-    this.button.title = '탑승 시점 전환. 좁은 곳에서는 자동으로 안전한 시야를 확보합니다.';
+    this.button.textContent = this.mode === 'chase' ? '3인칭 · C' : '1인칭 · C';
+    this.button.title = '탑승 시점 전환. 선택한 시점은 다음 플레이에도 유지됩니다.';
     this.button.setAttribute('aria-pressed', String(this.mode === 'first'));
   }
-  toggle() { this.mode = this.mode === 'chase' ? 'first' : 'chase'; this.ready = false; this.label(); }
+  toggle() {
+    this.mode = this.mode === 'chase' ? 'first' : 'chase'; this.ready = false; this.label();
+    try { this.storage?.setItem('rr-camera', JSON.stringify({ version: 1, mounted: this.mode })); } catch { /* private storage may be unavailable */ }
+  }
   restoreVisibility() { for (const [o, mask] of this.hidden) o.layers.mask = mask; this.hidden.clear(); }
   restore() { this.restoreVisibility(); this.robot = null; this.ready = false; if (this.button) this.button.hidden = true; }
   reset(camera) {
@@ -98,7 +106,10 @@ export class CockpitCamera {
     if (this.button) this.button.hidden = false;
     if (this.button) this.button.style.top = camera.aspect < 1 ? '204px' : '78px';
     const f = robot.facing, sx = Math.sin(f), sz = Math.cos(f), root = robot.rig.root.position;
-    this.anchor.set(root.x, root.y + (robot.rig.eyeHeight ?? 5.13), root.z);
+    // The authored eye anchor follows this actual posed head, including the
+    // rig scale/hip planting. A root-height approximation can miss it by a metre.
+    if (robot.rig.viewpoint) robot.rig.viewpoint.getWorldPosition(this.anchor);
+    else this.anchor.set(root.x + sx*(robot.rig.eyeForward ?? .5), root.y + (robot.rig.eyeHeight ?? 5.13), root.z + sz*(robot.rig.eyeForward ?? .5));
     let first = this.mode === 'first';
     if (!first) {
       const back = camera.aspect < 1 ? 16 : 12.5;
@@ -117,14 +128,13 @@ export class CockpitCamera {
     }
     if (first) {
       this.hideSelf(robot,pilot);
-      // Stable eye stays inside collision radius, independent of animation recoil.
-      const forward = Math.min(robot.radius*.65, robot.rig.eyeForward ?? .5);
-      camera.position.set(root.x+sx*forward,this.anchor.y,root.z+sz*forward);
+      camera.position.copy(this.anchor);
       let pitch=.22, distance=24;
       for (const target of game.targets(robot)) {
         const dx=target.pos.x-robot.pos.x, dz=target.pos.z-robot.pos.z, d=Math.hypot(dx,dz);
         if(d<1 || d>=distance || (dx*sx+dz*sz)/d<.82) continue;
-        distance=d; pitch=THREE.MathUtils.clamp(Math.atan2(camera.position.y-target.pos.y-target.height*.5,d),-.2,.64);
+        const eyeDistance=Math.hypot(target.pos.x-camera.position.x,target.pos.z-camera.position.z);
+        distance=d; pitch=THREE.MathUtils.clamp(Math.atan2(camera.position.y-target.pos.y-target.height*.5,eyeDistance),-.45,1.15);
       }
       this.pitch+=(pitch-this.pitch)*(1-Math.exp(-Math.min(dt,.1)*5));
       camera.lookAt(camera.position.x+sx*20,camera.position.y-Math.tan(this.pitch)*20,camera.position.z+sz*20);
