@@ -186,7 +186,7 @@ export class PeerReplica {
       if(f.kind==='human') f.rig.animateFace?.(this.visualTime+f.id*.37);
       f.syncMark();
       // Keep the mark on the ground while its fighter interpolates between packets.
-      if(f.mark?.visible)f.mark.position.y=f.gh-f.rig.root.position.y+.05;
+      if(f.mark?.visible&&!f.mark.userData.rrProjectedGround)f.mark.position.y=f.gh-f.rig.root.position.y+.05;
     }
     for(const r of this.game.robots)if(r.debris?.length)r.updateDebris(dt);
     const g=this.game;g.fx.update(dt,dt);g.arena.update(dt,g.time);g.juiceStations?.present(this.visualTime);g.updateCamera(dt);

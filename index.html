@@ -53,16 +53,16 @@
       <p id="room-status" role="status" aria-live="polite"></p>
       <div id="room-unavailable" hidden><p id="room-service-message"></p><button id="room-service-retry" class="btn" type="button">다시 연결</button><button class="btn big" data-action="quickStart">혼자 플레이</button></div>
       <form id="room-entry" novalidate>
-        <p id="room-invited" hidden>초대 링크를 받았습니다. 이름을 입력해 주세요.</p>
+        <p id="room-invited" hidden>초대 링크를 받았습니다. 이름을 입력해 신청하면 방장이 확인합니다.</p>
         <label>닉네임<input id="room-name" maxlength="16" autocomplete="nickname" required /></label>
         <div id="room-join-fields"><label>방 코드<input id="room-code" maxlength="32" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="친구에게 받은 코드" required /></label></div>
-        <div id="room-host" hidden><label>방장 비밀번호<input id="room-password" type="password" maxlength="256" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="방을 만들 때만 필요합니다" /></label></div>
+        <div id="room-host" hidden><label>방장 비밀번호<input id="room-password" type="password" maxlength="256" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="room-host-note" placeholder="나만 사용하는 방장 비밀번호" /></label><p id="room-host-note" class="room-note">이 비밀번호를 아는 사람만 방을 만들 수 있습니다. 친구에게는 초대 링크만 보내세요.</p></div>
         <details id="room-loadout"><summary>캐릭터 · 전장 선택</summary><div class="room-loadout-fields"><label>파일럿<select id="room-pilot"></select></label><label>로봇<select id="room-robot"></select></label><label id="room-stage-field">전장<select id="room-stage"></select></label></div></details>
         <button id="room-create" class="btn big" type="submit" hidden>방 만들기</button><button id="room-join" class="btn big" type="submit">참가 요청</button>
         <p id="room-entry-note" class="room-note">방장이 승인하면 대기실에 들어갑니다.</p>
       </form>
       <div id="room-connected" hidden>
-        <div id="room-share" hidden><div class="room-code-row"><span>친구를 초대하세요</span><button id="room-copy" class="btn" type="button">초대 링크 복사</button></div><details class="room-invite-code"><summary>코드로 초대</summary><strong id="room-number"></strong></details><input id="room-share-link" readonly autocomplete="off" aria-label="초대 링크" hidden /></div>
+        <div id="room-share" hidden><div class="room-code-row"><span>친구를 초대하세요</span><button id="room-copy" class="btn" type="button">친구 초대 링크 복사</button></div><details class="room-invite-code"><summary>코드로 초대</summary><strong id="room-number"></strong></details><input id="room-share-link" readonly autocomplete="off" aria-label="초대 링크" hidden /></div>
         <p id="room-state"></p>
         <ul id="room-roster" aria-label="참가자"></ul>
         <div id="room-pending-block" hidden><h3>참가 요청</h3><ul id="room-pending"></ul></div>

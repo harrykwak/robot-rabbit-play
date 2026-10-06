@@ -22,6 +22,7 @@ import { RoomSession } from './room-session.js';
 import { initInstallUI } from './install.js';
 import { rabbitPortrait } from './rabbit-portraits.js';
 import { preloadCharacterAssets, characterAssetStatus } from './character-assets.js';
+import { RearView } from './rear-view.js';
 
 // Character factories stay synchronous once the two prototype assets settle.
 // The loader reports each failure explicitly and preserves the existing model.
@@ -87,6 +88,8 @@ const fx = new FX(scene, camera, document.getElementById('overlay'));
 const ui = new UI(camera);
 ui.robotInfo = ROBOT_INFO;
 const game = new Game({ scene, camera, fx, ui, arena });
+const rearView = new RearView(renderer, scene, game.cockpitCamera);
+game.rearView = rearView;
 game.robotInfo = ROBOT_INFO;
 game.reducedMotion = preferences.reducedMotion;
 fx.reducedMotion = preferences.reducedMotion;
@@ -745,7 +748,7 @@ $('opt-hint').addEventListener('change', (e) => { hintSt.on = e.target.checked; 
 const hintSt = { n: 0, on: null };
 try { Object.assign(hintSt, JSON.parse(localStorage.getItem('rr-hint') || '{}')); } catch { /* 저장값 무시 */ }
 function saveHint() { try { localStorage.setItem('rr-hint', JSON.stringify(hintSt)); } catch { /* 저장 실패 무시 */ } }
-function hintDefaultOpen() { return typeof hintSt.on === 'boolean' ? hintSt.on : hintSt.n < 3; }
+function hintDefaultOpen() { return hintSt.on === true; }
 function applyHint(open) {
   $('keyhint').classList.toggle('collapsed', !open);
   $('kh-toggle').setAttribute('aria-expanded', String(open));
@@ -1101,6 +1104,7 @@ function frame(now = performance.now()) {
   renderer.info.reset();
   if (composer) composer.render();
   else renderer.render(scene, camera);
+  rearView.render(now,game,mode==='game',innerWidth,innerHeight,renderBudget.thermal);
   if (interpolating) interp.restore();
   if (interpolating) camera.updateMatrixWorld();
   frameStats.record(now, performance.now() - cpuStart, renderer.info.render.calls, renderer.info.render.triangles,

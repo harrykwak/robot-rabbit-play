@@ -1,5 +1,6 @@
 // HUD, 이름표, 데미지 숫자, 배너
 import * as THREE from 'three';
+import { visibleEnemyAnchor } from './enemy-visibility.js';
 import { RULES, ROBOT_STATS } from './data.js';
 import { controlLabel, formatControls } from './control-labels.js';
 import { PARTS, PART_BIT, PART_NAME, skillJuice } from './robot-systems.js';
@@ -33,8 +34,6 @@ const STACK = { dmg: [38, 20], call: [130, 25] }; // 겹침 판정 상자(px). �
 const DMG_RANK = { '': 0, mid: 1, robot: 2, big: 3 };
 const MERGE_T = 0.32;      // 같은 자리 연타 피해는 한 숫자로 합친다
 const MERGE_D2 = 1.6 * 1.6;
-const NAME_NEAR2 = 11 * 11; // 이 거리 안(또는 최근 교전)의 상대만 이름을 보여 준다
-const TAG_GAP = [70, 19];   // 이름표끼리 겹치면 위로 민다
 function setShown(el, cache, on) { if (cache.shown !== on) { cache.shown = on; el.style.display = on ? '' : 'none'; } }
 function setClass(el, cache, key, cls, on) { if (cache[key] !== on) { cache[key] = on; el.classList.toggle(cls, on); } }
 function place(el, cache, x, y, suffix = '') {
@@ -81,11 +80,11 @@ export class UI {
     this.hud = $('#hud');
     this.supplyPanel = document.createElement('div');
     this.supplyPanel.className = 'supply-panel';
-    this.supplyPanel.innerHTML = '<b class="ap-balance"></b><span class="supply-route"></span><span class="supply-help"></span><div class="supply-meter"><i></i></div>';
+    this.supplyPanel.innerHTML = '<span class="supply-progress-label"></span><div class="supply-meter"><i></i></div>';
     this.hud.appendChild(this.supplyPanel);
     this.reticle = document.createElement('div');
     this.reticle.className = 'cockpit-reticle';
-    this.reticle.innerHTML = '<i></i><span>RABBIT VISION</span>';
+    this.reticle.innerHTML = '<i></i>';
     this.hud.appendChild(this.reticle);
     this.comboEndT = 0;
     this.hintEl = document.createElement('div');
@@ -143,45 +142,22 @@ export class UI {
   }
 
   addFighter(h) {
-    const me = !!h.isPlayer;
-    const c = document.createElement('div');
-    c.className = me ? 'hud-me' : 'hud-chip';
-    c.style.setProperty('--c', hex(h.color));
-    c.setAttribute('role', 'group');
-    const meter = (cls, label) => '<div class="hbar ' + cls + '" role="meter" aria-label="' + label + '" aria-valuemin="0" aria-valuemax="100"><i class="lag"></i><i class="fill"></i></div>';
-    if (me) {
-      // 내 카드: 아바타(탑승 중이면 로봇 부위 도식) | 이름·로봇·목숨 / 체력(또는 로봇 내구도) / 당근 게이지(또는 쥬스)
-      c.innerHTML = '<div class="me-avatar"><span class="me-initial" aria-hidden="true"></span><span class="me-bot" role="img">' + BOT + '</span></div>' +
-        '<div class="me-body"><div class="me-row"><span class="me-name"></span><span class="me-robot"></span><span class="lives" role="img"></span></div>' +
-        meter('hp', '체력') + meter('armor', '로봇 내구도') +
-        '<div class="me-sub">' + meter('gauge', '당근 게이지') + meter('juice', '당근쥬스') + '<span class="jnum" aria-hidden="true"></span><span class="gmax" aria-hidden="true">MAX</span></div></div>' +
-        '<div class="me-state" aria-live="polite"></div>';
-      c.querySelector('.me-initial').textContent = [...h.name][0] || '?';
-      c.querySelector('.me-name').textContent = h.name;
-      this.cardsEl.prepend(c);
-    } else {
-      c.innerHTML = '<div class="chip-row"><span class="chip-dot" aria-hidden="true"></span><span class="chip-name"></span><span class="lives" role="img"></span><span class="chip-state"></span></div>' + meter('hp', '체력');
-      c.querySelector('.chip-name').textContent = h.name;
-      if (!this.oppsEl) { this.oppsEl = document.createElement('div'); this.oppsEl.className = 'hud-opps'; this.cardsEl.appendChild(this.oppsEl); }
-      this.oppsEl.appendChild(c);
+    const me=!!h.isPlayer;
+    if(me){
+      const c=document.createElement('div');c.className='hud-me';c.setAttribute('role','group');c.setAttribute('aria-label','내 체력과 로봇 상태');
+      const meter=(cls,label)=>'<div class="hbar '+cls+'" role="meter" aria-label="'+label+'" aria-valuemin="0" aria-valuemax="100"><i class="lag"></i><i class="fill"></i></div>';
+      c.innerHTML='<div class="me-avatar"><span class="me-initial" aria-hidden="true"><svg viewBox="0 0 20 22"><circle cx="10" cy="6" r="4"/><path d="M3 21v-5a7 7 0 0 1 14 0v5z"/></svg></span><span class="me-bot" role="img">'+BOT+'</span></div>'+
+        '<div class="me-body"><div class="me-row"><span class="lives" role="img"></span></div>'+meter('hp','내 체력')+meter('armor','로봇 내구도')+
+        '<div class="me-sub">'+meter('gauge','호출 게이지')+meter('juice','당근 주스')+'<span class="jnum" aria-hidden="true"></span><span class="gmax" aria-hidden="true">MAX</span></div></div><div class="me-state" aria-live="polite"></div>';
+      this.cardsEl.prepend(c);const q=sel=>c.querySelector(sel);
+      this.cards.set(h,{el:c,me:true,maxStock:Math.max(1,h.stock|0),lives:q('.lives'),hp:q('.hp'),fill:q('.hp .fill'),lag:q('.hp .lag'),state:q('.me-state'),armor:q('.armor'),afill:q('.armor .fill'),gauge:q('.gauge'),gfill:q('.gauge .fill'),juice:q('.juice'),jfill:q('.juice .fill'),jnum:q('.jnum'),bot:q('.me-bot'),last:{}});
     }
-    c.setAttribute('aria-label', (me ? '나: ' : h.remote ? '친구: ' : 'CPU: ') + h.name);
-    const q = (s) => c.querySelector(s);
-    this.cards.set(h, {
-      el: c, me, maxStock: Math.max(1, h.stock | 0), lives: q('.lives'),
-      hp: q('.hp'), fill: q('.hp .fill'), lag: q('.hp .lag'), state: q(me ? '.me-state' : '.chip-state'),
-      armor: q('.armor'), afill: q('.armor .fill'), gauge: q('.gauge'), gfill: q('.gauge .fill'),
-      juice: q('.juice'), jfill: q('.juice .fill'), jnum: q('.jnum'), bot: q('.me-bot'), rname: q('.me-robot'), last: {},
-    });
-    const tag = document.createElement('div');
-    tag.className = 'ntag' + (me ? ' me' : '');
-    tag.style.setProperty('--c', hex(h.color));
-    tag.innerHTML = '<span class="ntag-name"></span><div class="ntag-hp"><i></i></div><div class="board"><i></i><span></span></div>';
-    tag.querySelector('.ntag-name').textContent = me ? '나' : h.name;
+    const tag=document.createElement('div');tag.className='ntag'+(me?' me':'');tag.style.display='none';tag.dataset.actor=String(h.id);
+    if(!me)tag.dataset.enemyHealth='true';
+    tag.innerHTML='<div class="ntag-hp" role="meter" aria-label="적 체력" aria-valuemin="0" aria-valuemax="100"><i></i></div><div class="board"><i></i><span></span></div>';
+    if(me)tag.querySelector('.ntag-hp').style.display='none';
     this.world.appendChild(tag);
-    // 이름표 체력바는 width 대신 scaleX 로 줄인다 (레이아웃 없이 합성만)
-    const thp = tag.querySelector('.ntag-hp > i');
-    this.tags.set(h, { el: tag, hp: thp, board: tag.querySelector('.board'), bfill: tag.querySelector('.board > i'), blabel: tag.querySelector('.board > span'), c: { shown: true, x: null, y: null, bf: -1, far: null, bot: null } });
+    this.tags.set(h,{el:tag,hp:tag.querySelector('.ntag-hp > i'),board:tag.querySelector('.board'),bfill:tag.querySelector('.board > i'),blabel:tag.querySelector('.board > span'),c:{shown:false,x:null,y:null,bf:-1,bot:null}});
   }
 
   addRobot() {}
@@ -209,31 +185,13 @@ export class UI {
     }
     setClass(this.timerEl, this.dom, 'timerLow', 'low', tl <= 30);
     const W = innerWidth, H = innerHeight;
-    const me = g.player, meAt = me ? (me.riding || me).pos : null;
+    const me = g.player;
     const riding = !!me?.riding && !me.dead && !me.out && g.phase !== 'end';
     this.reticle.classList.toggle('show', riding);
     this.reticle.classList.toggle('damaged', riding && !!(me.riding.broken & PART_BIT.head));
-    this.supplyPanel.classList.toggle('show', !!me && !me.dead && !me.out);
-    if (me) {
-      this.supplyPanel.querySelector('.ap-balance').textContent = Math.floor(me.attackPoints || 0) + ' AP';
-      const supply = g.juiceStations?.context(me);
-      const route = this.supplyPanel.querySelector('.supply-route');
-      const help = this.supplyPanel.querySelector('.supply-help');
-      this.supplyPanel.classList.toggle('working', me.supplyProgress > 0);
-      this.supplyPanel.querySelector('.supply-meter i').style.transform = 'scaleX(' + (me.supplyProgress || 0) + ')';
-      if (supply) {
-        route.textContent = supply.label + ' · ' + supply.hint;
-        help.textContent = me.supplyProgress > 0 ? Math.round(me.supplyProgress * 100) + '% · 계속 누르세요' : !supply.ready ? '보급 불가 · 하차 버튼 사용 가능' : document.documentElement.classList.contains('touch-mode') ? '멈춰서 주스 보급 버튼을 길게' : controlLabel('act') + ' · 멈춰서 길게';
-      } else if (riding) {
-        route.textContent = (g.juiceStations?.stations || []).map(s => {
-          const dx = s.pos.x - meAt.x, dz = s.pos.z - meAt.z;
-          const angle = Math.atan2(dx, dz) - me.riding.facing;
-          const arrow = Math.cos(angle) < -.6 ? '뒤' : Math.sin(angle) > .2 ? '←' : Math.sin(angle) < -.2 ? '→' : '↑';
-          return (s.kind === 'shop' ? '판매대 ' : '당근밭 ') + arrow + ' ' + Math.round(Math.hypot(dx, dz)) + 'm';
-        }).join(' · ');
-        help.textContent = '좌우 회전 · 앞뒤 이동';
-      } else { route.textContent = '어택 포인트 · 공격 적중으로 획득'; help.textContent = '탑승 후 판매대 20 AP / 당근밭 무료'; }
-    }
+    const supplying=!!me&&!me.dead&&!me.out&&me.supplyProgress>0;
+    this.supplyPanel.classList.toggle('show',supplying);this.supplyPanel.classList.toggle('working',supplying);
+    if(supplying){this.supplyPanel.querySelector('.supply-progress-label').textContent='충전 '+Math.round(me.supplyProgress*100)+'%';this.supplyPanel.querySelector('.supply-meter i').style.transform='scaleX('+me.supplyProgress+')'}
     const tagsOn = this.tagList; tagsOn.length = 0;
     for (const [h, c] of this.cards) {
       const L = c.last;
@@ -249,7 +207,6 @@ export class UI {
         this.set(null, L, 'g', Math.round(gv), (v) => meterTo(c.gauge, c.gfill, null, v));
         this.set(null, L, 'gf', gv >= 100, (v) => c.el.classList.toggle('gauge-full', v));
         if (r) {
-          this.set(null, L, 'rn', r.type, () => { c.rname.textContent = this.robotInfo[r.type] ? this.robotInfo[r.type].name : r.type; });
           this.set(null, L, 'ra', Math.round(armor), (v) => meterTo(c.armor, c.afill, null, v));
           const jv = Math.round(Math.max(0, r.juice || 0) / (r.maxJuice || 100) * 100);
           this.set(null, L, 'jv', jv, (v) => {
@@ -269,63 +226,34 @@ export class UI {
       else if (h.dead) st = c.me ? '부활 대기' : '부활';
       else if (c.me) {
         if (h.state === 'boarding') st = '탑승 중…';
-        else if (h.shieldT > 0) st = '배리어';
-        else if (!r && h.robot && h.robot.state === 'idle') st = '로봇 대기';
-        else if (h.gauge >= RULES.gaugeMax && !h.robot) st = '호출 가능';
       }
       this.set(null, L, 'st', st, (v) => { c.state.textContent = v; });
       this.set(null, L, 'out', !!h.out, (v) => c.el.classList.toggle('out', v));
       this.set(null, L, 'dead', !!h.dead && !h.out, (v) => c.el.classList.toggle('dead', v));
       this.set(null, L, 'sh', h.shieldT > 0, (v) => c.el.classList.toggle('shielded', v));
       // 이름표: 위치만 계산해 두고, 겹침을 푼 다음 한꺼번에 붙인다
-      const tag = this.tags.get(h), tc = tag.c;
-      const e = r || h;
-      if (!h.dead && !h.out) {
-        // 렌더 보간된 루트 위치를 따라가야 이름표가 몸과 따로 흔들리지 않는다
-        const at = e.rig && e.rig.root.parent ? e.rig.root.position : e.pos;
-        tV.set(at.x, at.y + e.height + (r ? 0.6 : 0.4), at.z).project(this.camera);
-        const x = (tV.x + 1) / 2 * W, y = (1 - tV.y) / 2 * H;
-        const vis = !(riding && h === me) && tV.z >= -1 && tV.z < 1 && x > -60 && x < W + 60 && y > -60 && y < H + 60;
-        const boarding = h.state === 'boarding' && h.boardTarget;
-        if (vis) {
-          // 가까운 상대 · 방금 주고받은 상대 · 탑승 시도 중만 이름을 보여 주고, 나머지는 얇은 체력선만
-          let near = !!h.isPlayer || !!boarding || !me;
-          if (!near) {
-            const dx = e.pos.x - meAt.x, dz = e.pos.z - meAt.z;
-            near = dx * dx + dz * dz < NAME_NEAR2 ||
-              (h.lastHitBy === me && g.time - h.lastHitT < 3) || (me.lastHitBy === h && g.time - me.lastHitT < 3);
-          }
-          setClass(tag.el, tc, 'far', 'far', !near);
-          tagsOn.push({ tag, x, y, w: boarding ? 100 : h.isPlayer ? 34 : near ? TAG_GAP[0] : 36, h: boarding ? 39 : near || h.isPlayer ? TAG_GAP[1] : 7 });
-        } else setShown(tag.el, tc, false);
-        this.set(null, L, 'thp', Math.round(r ? armor : hp), (v) => { tag.hp.style.transform = 'scaleX(' + v / 100 + ')'; });
-        setClass(tag.el, tc, 'bot', 'bot', !!r);
-        this.set(null, L, 'bd', !!boarding, (v) => tag.board.classList.toggle('show', v));
-        if (boarding) {
-          const enemy = !h.isPlayer;
-          this.set(null, L, 'be', enemy, (v) => { tag.board.classList.toggle('enemy', v); tag.blabel.textContent = v ? '탑승 중… 막아요!' : '탑승 중…'; });
-          const bf = Math.round(Math.min(100, h.boardT / h.boardNeed * 100));
-          if (tc.bf !== bf) { tc.bf = bf; tag.bfill.style.width = bf + '%'; }
-        }
-      } else setShown(tag.el, tc, false);
     }
-    // 이름표 겹침 풀기: 화면 아래(카메라에 가까운) 것부터 자리를 잡고, 겹치는 위쪽 것을 더 위로 민다
-    tagsOn.sort((p, q) => q.y - p.y);
-    for (let i = 0; i < tagsOn.length; i++) {
-      const p = tagsOn[i];
-      p.x = Math.max(p.w / 2 + 4, Math.min(W - p.w / 2 - 4, p.x));
-      for (let pass = 0; pass < tagsOn.length; pass++) {
-        let hit = false;
-        for (let j = 0; j < i; j++) {
-          const q = tagsOn[j];
-          if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 && p.y > q.y - q.h && p.y - p.h < q.y) { p.y = q.y - q.h - 2; hit = true; }
-        }
-        if (!hit) break;
-      }
-      setShown(p.tag.el, p.tag.c, p.y > p.h + 4);
-      place(p.tag.el, p.tag.c, p.x, p.y, ' translateY(-100%)');
+    for(const[h,tag]of this.tags){
+      const tc=tag.c,own=h===me,boarding=own&&!h.dead&&!h.out&&h.state==='boarding'&&h.boardTarget;
+      let anchor=null;
+      if(boarding){const at=h.rig?.root?.position||h.pos;tV.set(at.x,at.y+h.height+.3,at.z).project(this.camera);if(tV.z>=-1&&tV.z<1&&Math.abs(tV.x)<1&&Math.abs(tV.y)<1)anchor={x:(tV.x+1)*W/2,y:(1-tV.y)*H/2,ratio:1}}
+      else if(!own)anchor=visibleEnemyAnchor(g,this.camera,h,{viewport:{width:W,height:H},acceptPoint:({x,y})=>{
+        const barY=y-8;
+        if(x<24||x>W-24||barY<66||barY>H-8)return false;
+        if(tagsOn.some(q=>Math.abs(q.x-x)<(q.w+40)/2&&Math.abs(q.y-barY)<10))return false;
+        return !Object.values(g.rearView?.rects||{}).some(b=>!g.rearView.panel.hidden&&b.height&&x+20>b.left&&x-20<b.left+b.width&&barY>b.top&&barY-8<b.top+b.height);
+      }});
+      setClass(tag.el,tc,'bot','bot',!!h.riding);
+      tag.board.classList.toggle('show',!!boarding);
+      if(boarding){tag.blabel.textContent='탑승';const progress=Math.min(100,h.boardT/h.boardNeed*100);tag.bfill.style.width=progress+'%'}
+      if(!anchor){setShown(tag.el,tc,false);continue}
+      const w=boarding?80:40,hp=Math.round(anchor.ratio*100),x=anchor.x,y=anchor.y-8;
+      if(tc.hp!==hp){tc.hp=hp;tag.hp.style.transform='scaleX('+hp/100+')';tag.hp.parentElement.setAttribute('aria-valuenow',String(hp))}
+      const paneOverlap=Object.values(g.rearView?.rects||{}).some(b=>!g.rearView.panel.hidden&&x+w/2>b.left&&x-w/2<b.left+b.width&&y>b.top&&y-8<b.top+b.height);
+      const overlaps=tagsOn.some(q=>Math.abs(q.x-x)<(q.w+w)/2&&Math.abs(q.y-y)<10);
+      if(paneOverlap||overlaps||x<w/2+4||x>W-w/2-4||y<66||y>H-8){setShown(tag.el,tc,false);continue}
+      tagsOn.push({tag,x,y,w,h:8});setShown(tag.el,tc,true);place(tag.el,tc,x,y,' translateY(-100%)');
     }
-    // 스킬 패널
     const pl = g.player;
     const r = pl && pl.riding;
     const key = r ? r.type : '';
@@ -536,7 +464,7 @@ export class UI {
 
   // 상황별 조작 힌트 (한 판에 종류별로 한 번)
   hint(kind) {
-    if (this.hintSeen.has(kind)) return;
+    if (this.hintSeen.has(kind) || document.getElementById('keyhint')?.classList.contains('collapsed')) return;
     const f = formatControls;
     const msg = {
       jump: '띄웠다! {jump} 로 추격 점프 → 공중에서 {atk} 연타',

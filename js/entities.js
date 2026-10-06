@@ -8,6 +8,7 @@ import { AICtrl } from './ai.js';
 import { PlayerCtrl } from './input.js';
 import { ROBOT_GAITS, applyRobotReadyPose } from './robot-presentation.js';
 import { attachRobotCombat, robotContactSegments, sweptRobotContacts } from './robot-combat.js';
+import { createGroundMarkerGeometry, projectGroundMarker } from './ground-marker.js';
 import { PARTS, PART_BIT, PART_NAME, PART_EFFECT, partMaxHp, robotMods, stepJuice, juiceCost, skillJuice, skillPart, skillBlock as blockOf } from './robot-systems.js';
 
 const tF = new THREE.Vector3();
@@ -87,15 +88,17 @@ function markTextures() {
 function addMark(f, color, size, player) {
   const T = markTextures();
   const mat = new THREE.MeshBasicMaterial({ map: player ? T.player : T.other, color, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const m = new THREE.Mesh(markGeo, mat);
+  const projected = f.kind === 'human';
+  const m = new THREE.Mesh(projected ? createGroundMarkerGeometry() : markGeo, mat);
   m.name = 'rr-mark';
   m.userData.rrGroundMark = true;
+  m.userData.rrProjectedGround = projected;
   m.renderOrder = -1;
   m.castShadow = m.receiveShadow = false;
   f.rig.root.add(m);
   f.mark = m; f.markSize = size; f.markPlayer = player;
   const dispose = f.rig.dispose;
-  f.rig.dispose = () => { dispose(); mat.dispose(); };
+  f.rig.dispose = () => { dispose(); mat.dispose(); if (projected) m.geometry.dispose(); };
 }
 // 공격으로 치지 않는 기술: 배리어를 깨지 않는다
 const NON_ATTACK = new Set(['barrierCast', 'rollDodge', 'backFlip', 'smokeStep', 'blinkStep', 'brace', 'burst', 'summon']);
@@ -278,6 +281,12 @@ class Fighter {
     if (gh === undefined || gh < -50 || this.rig.root.parent !== this.g.scene) { m.visible = false; return; }
     const h = Math.max(0, this.pos.y - gh);
     const k = clamp(1 - h / 7, 0.3, 1);
+    if (m.userData.rrProjectedGround) {
+      m.visible = projectGroundMarker(m, { arena: this.g.arena, root: this.rig.root, groundHeight: gh,
+        size: this.markSize * (0.65 + 0.35 * k), facing: this.facing });
+      m.material.opacity = k;
+      return;
+    }
     m.visible = true;
     m.position.set(0, gh - this.pos.y + 0.05, 0);
     m.rotation.y = -this.spinYaw;

@@ -55,7 +55,7 @@ export class RoomLobby {
     $('room-reconnect').onclick = () => this.reconnect();
     $('room-service-retry').onclick = () => this.checkService();
     $('room-copy').onclick = async () => {
-      if (!this.room) return;
+      if (this.role !== 'host' || !this.room) return;
       const link = this.invitation(); $('room-share-link').value = link;
       try { await navigator.clipboard.writeText(link); this.status('참가 링크를 복사했습니다. 친구의 요청을 승인해 주세요.'); }
       catch { $('room-share-link').hidden = false; $('room-share-link').focus(); $('room-share-link').select(); this.status('아래 참가 링크를 복사해 친구에게 보내 주세요.'); }
@@ -92,7 +92,7 @@ export class RoomLobby {
     }
     this.perform(() => this.flow === 'create' ? this.create() : this.join());
   }
-  invitation() { return this.room ? invitationURL(location.href, this.room.id) : ''; }
+  invitation() { return this.role === 'host' && this.room ? invitationURL(location.href, this.room.id) : ''; }
   status(text, error = false) { $('room-status').textContent = text; $('room-status').classList.toggle('error', error); }
   async checkService() {
     if (this.probing) return;
@@ -119,9 +119,18 @@ export class RoomLobby {
     const headers = { 'Content-Type': 'application/json' }; if (this.token) headers.Authorization = 'Bearer ' + this.token;
     // POST responses are no-store at the relay. Leave the request cache mode at
     // default so the browser may reuse its bounded CORS preflight grant.
-    const response = await fetch(this.endpoint + path, { method: 'POST', headers, body: JSON.stringify(body), credentials: 'omit', signal: AbortSignal.timeout(8000) });
-    const value = await response.json();
-    if (!response.ok) throw new Error(labels[value.error] || value.error || '요청을 처리하지 못했습니다.');
+    let response;
+    try {
+      response = await fetch(this.endpoint + path, { method: 'POST', headers, body: JSON.stringify(body), credentials: 'omit', signal: AbortSignal.timeout(8000) });
+    } catch {
+      throw new Error('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    let value;
+    try { value = await response.json(); } catch {
+      throw new Error('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    if (!response.ok) throw new Error(Object.hasOwn(labels, value.error) ? labels[value.error] : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     return value;
   }
   async perform(task) {
@@ -137,6 +146,12 @@ export class RoomLobby {
   }
   async join() { this.adopt(await this.request('/api/join', { ...this.profile(), room: $('room-code').value.trim().toUpperCase() })); }
   adopt(reply) {
+    // Do not persist partial/malformed admission replies as reconnect credentials.
+    if (!/^[a-f0-9]{64}$/.test(reply?.token) || !/^[a-f0-9]{24}$/.test(reply?.self?.id)
+      || !['host', 'guest'].includes(reply.self.role) || !['approved', 'pending'].includes(reply.self.status)
+      || !/^[A-F0-9]{32}$/.test(reply?.room?.id) || !Array.isArray(reply.room.players)) {
+      throw new Error('참가 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
     this.token = reply.token; this.self = reply.self; this.room = reply.room; this.offlineSince = 0;
     try { sessionStorage.setItem(storageKey, JSON.stringify({ endpoint: this.endpoint, page: location.origin + location.pathname, token: this.token })); } catch { /* Optional storage. */ }
     this.connect(); this.render();
@@ -219,7 +234,9 @@ export class RoomLobby {
     $('room-invited').hidden = creating || !this.invite;
     $('room-stage-field').hidden = !creating;
     $('room-loadout').querySelector('summary').textContent = creating ? '캐릭터 · 전장 선택' : '캐릭터 선택';
-    $('room-entry-note').textContent = creating ? '방을 만든 뒤 친구에게 초대 링크를 보내세요.' : '방장이 승인하면 대기실에 들어갑니다.';
+    $('room-entry-note').textContent = creating
+      ? '방장 비밀번호는 나만 사용합니다. 친구에게는 초대 링크만 보내세요. 계정 확인이 아닌 비밀번호 소지 확인입니다.'
+      : '초대 링크·코드로 신청하고 방장의 승인을 기다립니다. 비밀번호는 필요 없습니다.';
     $('room-create').hidden = !creating; $('room-join').hidden = creating;
     $('room-create').disabled = !ready || this.busy; $('room-join').disabled = !ready || this.busy;
     $('room-create').textContent = this.busy ? '방 만드는 중…' : '방 만들기';

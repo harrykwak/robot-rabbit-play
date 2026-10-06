@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CloseContactView } from './close-contact.js';
 
 export function prepareMountedInput(robot, input, dt) {
   const out = { ...input, cockpitDriving: true };
@@ -8,49 +9,73 @@ export function prepareMountedInput(robot, input, dt) {
   return out;
 }
 export function mountedFov(aspect, first) {
-  const horizontal = first ? 108 : 96;
+  const horizontal = first ? 94 : 96;
   const vertical = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(horizontal / 2)) / Math.max(.3, aspect)));
-  return THREE.MathUtils.clamp(vertical, first ? 76 : 66, first ? 110 : 102);
+  return THREE.MathUtils.clamp(vertical, 66, first ? 96 : 102);
 }
 // This controller changes only local camera layers, never authoritative visibility.
 export class CockpitCamera {
   constructor(options = {}) {
-    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .22;
+    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .34; this.lookPitch = .34; this.rearEnabled = true;
     try {
       this.storage = Object.hasOwn(options, 'storage') ? options.storage : globalThis.localStorage;
       const saved = JSON.parse(this.storage?.getItem('rr-camera') || 'null');
       if (saved?.version === 1 && ['first', 'chase'].includes(saved.mounted)) this.mode = saved.mounted;
+      if (saved?.version === 1 && saved.rearView === false) this.rearEnabled = false;
     } catch { this.storage = null; }
     this.ray = new THREE.Raycaster(); this.anchor = new THREE.Vector3(); this.desired = new THREE.Vector3();
     this.target = new THREE.Vector3(); this.direction = new THREE.Vector3(); this.origin = new THREE.Vector3();
     this.position = new THREE.Vector3(); this.hits = []; this.obstacles = []; this.clearance = Infinity; this.fallback = false;
-    this.hitPoint = new THREE.Vector3();
+    this.hitPoint = new THREE.Vector3(); this.lastRoot = new THREE.Vector3(); this.eyeY = null;
+    this.contactView=new CloseContactView();
     if (typeof document !== 'undefined' && document.body?.append && document.addEventListener) this.installControls();
   }
   installControls() {
     const b = document.createElement('button'); b.id = 'mounted-camera-toggle'; b.type = 'button'; b.hidden = true;
-    b.style.cssText = 'position:fixed;left:12px;top:78px;z-index:35;border:1px solid #6e94a5;border-radius:10px;background:#14263bea;color:#fff9ea;padding:10px 13px;font:600 12px system-ui;cursor:pointer';
-    b.addEventListener('click', () => { this.toggle(); b.blur(); }); document.body.append(b); this.button = b;
+    b.className = 'btn';
+    b.addEventListener('click', () => { this.toggle(); b.blur(); }); (document.querySelector('#pause .col')||document.body).append(b); this.button = b;
     document.addEventListener('keydown', e => {
       if (e.code !== 'KeyC' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || !this.robot) return;
       if (/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName) || e.target?.isContentEditable) return;
       e.preventDefault(); this.toggle();
     }); this.label();
+    // Vertical look is a local camera gesture. It never changes combat/network
+    // inputs, and the two thumb control regions are separate DOM elements.
+    const canvas = document.getElementById?.('gl'); let drag = null;
+    canvas?.addEventListener('pointerdown', e => {
+      if (!this.robot || this.mode !== 'first' || e.button > 0 || drag) return;
+      drag = { id: e.pointerId, y: e.clientY }; canvas.setPointerCapture?.(e.pointerId);
+    });
+    canvas?.addEventListener('pointermove', e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      if (!this.robot || this.mode !== 'first') { drag=null; return; }
+      this.lookPitch = THREE.MathUtils.clamp(this.lookPitch + (e.clientY-drag.y)/Math.max(320,globalThis.innerHeight||800)*1.6,.04,.9);
+      drag.y=e.clientY;
+    });
+    const release = e => { if (drag?.id === e.pointerId) drag=null; };
+    canvas?.addEventListener('pointerup',release); canvas?.addEventListener('pointercancel',release);
+    canvas?.addEventListener('lostpointercapture',release);
+    globalThis.addEventListener?.('blur',()=>{drag=null});
+    globalThis.addEventListener?.('resize',()=>{drag=null});
+    globalThis.addEventListener?.('rr-input-reset',()=>{drag=null});
   }
   label() {
     if (!this.button) return;
     this.button.textContent = this.mode === 'chase' ? '3인칭 · C' : '1인칭 · C';
-    this.button.title = '탑승 시점 전환. 선택한 시점은 다음 플레이에도 유지됩니다.';
+    this.button.title = '탑승 시점 전환. 1인칭에서 화면을 위아래로 끌어 시선을 조절합니다. 선택한 시점은 저장됩니다.';
     this.button.setAttribute('aria-pressed', String(this.mode === 'first'));
   }
   toggle() {
     this.mode = this.mode === 'chase' ? 'first' : 'chase'; this.ready = false; this.label();
-    try { this.storage?.setItem('rr-camera', JSON.stringify({ version: 1, mounted: this.mode })); } catch { /* private storage may be unavailable */ }
+    this.savePreference();
   }
+  savePreference() { try { this.storage?.setItem('rr-camera', JSON.stringify({version:1,mounted:this.mode,rearView:this.rearEnabled})); } catch { /* optional storage */ } }
+  toggleRearView() { this.rearEnabled=!this.rearEnabled;this.savePreference();return this.rearEnabled; }
   restoreVisibility() { for (const [o, mask] of this.hidden) o.layers.mask = mask; this.hidden.clear(); }
-  restore() { this.restoreVisibility(); this.robot = null; this.ready = false; if (this.button) this.button.hidden = true; }
+  restore() { this.restoreVisibility(); this.robot = null; this.ready = false; this.eyeY=null; if (this.button) this.button.hidden = true; }
   reset(camera) {
     this.restore();
+    this.contactView.reset();
     if (this.saved) {
       camera.fov = this.saved.fov; camera.near = this.saved.near;
       const v = this.saved.view;
@@ -66,7 +91,7 @@ export class CockpitCamera {
       if (o.isMesh && !this.hidden.has(o)) { this.hidden.set(o, o.layers.mask); o.layers.disable(0); }
     });
   }
-  collisionDistance(game, anchor, position) {
+  collisionDistance(game, anchor, position, padding=.4) {
     const a = game.arena;
     if (!a?.group) return anchor.distanceTo(position);
     const key = `${a.stageId}:${a.quality}`;
@@ -90,7 +115,7 @@ export class CockpitCamera {
     // and platforms current. Cost depends on prop count, not art triangle count.
     for (const p of this.obstacles) {
       p.node.updateWorldMatrix(true, false);
-      p.box.copy(p.localBox).applyMatrix4(p.node.matrixWorld).expandByScalar(.4);
+      p.box.copy(p.localBox).applyMatrix4(p.node.matrixWorld).expandByScalar(padding);
       if (p.box.containsPoint(anchor)) { safe = 0; break; }
       if (this.ray.ray.intersectBox(p.box, this.hitPoint)) safe = Math.min(safe, Math.max(0, anchor.distanceTo(this.hitPoint)-.15));
     }
@@ -102,14 +127,22 @@ export class CockpitCamera {
       if (this.robot) { this.reset(camera); game._cameraReady = false; } return false;
     }
     if (!this.saved) this.saved = {fov:camera.fov, near:camera.near, view:camera.view ? {...camera.view} : null};
-    if (this.robot !== robot) { this.restoreVisibility(); this.robot = robot; this.ready = false; this.pitch = .22; }
+    if (this.robot !== robot) { this.restoreVisibility(); this.robot = robot; this.ready = false; this.lookPitch = this.pitch = .34; this.eyeY=null; }
     if (this.button) this.button.hidden = false;
-    if (this.button) this.button.style.top = camera.aspect < 1 ? '204px' : '78px';
-    const f = robot.facing, sx = Math.sin(f), sz = Math.cos(f), root = robot.rig.root.position;
-    // The authored eye anchor follows this actual posed head, including the
-    // rig scale/hip planting. A root-height approximation can miss it by a metre.
-    if (robot.rig.viewpoint) robot.rig.viewpoint.getWorldPosition(this.anchor);
-    else this.anchor.set(root.x + sx*(robot.rig.eyeForward ?? .5), root.y + (robot.rig.eyeHeight ?? 5.13), root.z + sz*(robot.rig.eyeForward ?? .5));
+    const f = robot.facing, sx = Math.sin(f), sz = Math.cos(f), root = robot.pos;
+    // A seated, unanimated head-height anchor stays inside the collision body.
+    // Pose head bob/recoil is cosmetic; it must not move the player's eyes.
+    const height=robot.rig.eyeHeight??5.13, desiredY=root.y+height;
+    if(this.eyeY===null || this.lastRoot.distanceToSquared(root)>25) this.eyeY=desiredY;
+    else {
+      this.eyeY+=(desiredY-this.eyeY)*(1-Math.exp(-Math.min(dt,.1)*18));
+      this.eyeY=THREE.MathUtils.clamp(this.eyeY,desiredY-.45,desiredY+.3);
+    }
+    this.lastRoot.copy(root); this.origin.set(root.x,this.eyeY,root.z);
+    const forward=Math.min(robot.radius*.45,robot.rig.eyeForward??.6);
+    this.anchor.set(root.x+sx*forward,this.eyeY,root.z+sz*forward);
+    const safe=this.collisionDistance(game,this.origin,this.anchor,.18);
+    this.anchor.copy(this.origin).addScaledVector(this.direction.set(sx,0,sz),Math.min(forward,safe));
     let first = this.mode === 'first';
     if (!first) {
       const back = camera.aspect < 1 ? 16 : 12.5;
@@ -129,17 +162,14 @@ export class CockpitCamera {
     if (first) {
       this.hideSelf(robot,pilot);
       camera.position.copy(this.anchor);
-      let pitch=.22, distance=24;
-      for (const target of game.targets(robot)) {
-        const dx=target.pos.x-robot.pos.x, dz=target.pos.z-robot.pos.z, d=Math.hypot(dx,dz);
-        if(d<1 || d>=distance || (dx*sx+dz*sz)/d<.82) continue;
-        const eyeDistance=Math.hypot(target.pos.x-camera.position.x,target.pos.z-camera.position.z);
-        distance=d; pitch=THREE.MathUtils.clamp(Math.atan2(camera.position.y-target.pos.y-target.height*.5,eyeDistance),-.45,1.15);
-      }
-      this.pitch+=(pitch-this.pitch)*(1-Math.exp(-Math.min(dt,.1)*5));
+      // Targets cannot pull the horizon up/down. Pitch changes only by the
+      // player's explicit look gesture, at a fixed lens throughout movement.
+      this.pitch=this.lookPitch;
+      camera.up.set(0,1,0);
       camera.lookAt(camera.position.x+sx*20,camera.position.y-Math.tan(this.pitch)*20,camera.position.z+sz*20);
     }
     const fov=mountedFov(camera.aspect,first);
+    this.contactView.update(game,robot,first);
     if(camera.fov!==fov || camera.near!==.12 || camera.view?.enabled) { camera.fov=fov;camera.near=.12;camera.clearViewOffset();camera.updateProjectionMatrix(); }
     game.trauma=Math.max(0,game.trauma-dt*1.9); game.camPos.copy(camera.position); this.ready=true; return true;
   }
