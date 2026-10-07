@@ -11,6 +11,38 @@ const edge = new THREE.Vector3(), normal = new THREE.Vector3(), hit = new THREE.
 const inverse = new THREE.Matrix4(), localRay = new THREE.Ray(), ray = new THREE.Ray();
 const boneBox = new THREE.Box3();
 
+// Scope this scratch state to one UI update, after interpolation has placed all
+// actors. Never retain it across animation/camera/visibility changes. Multiple
+// enemy bars and rays can share current transforms without re-walking parents.
+export function createEnemyVisibilityFrame() {
+  return { roots: new Set(), nodes: new Set(), skeletons: new Set(), skins: new Map(), transforms: new Map() };
+}
+function prepareRoot(root, frame) {
+  if (frame.roots.has(root)) return;
+  frame.roots.add(root);
+  if (!frame.nodes.has(root)) {
+    root.updateWorldMatrix(true, false); root.updateMatrixWorld(true);
+    root.traverse(node => frame.nodes.add(node));
+  }
+}
+function prepareSkin(mesh, frame) {
+  if (mesh.isSkinnedMesh && !frame.skeletons.has(mesh.skeleton)) {
+    mesh.skeleton.update(); frame.skeletons.add(mesh.skeleton);
+  }
+}
+function transforms(mesh, frame) {
+  let result = frame.transforms.get(mesh);
+  if (result) return result;
+  if (!frame.nodes.has(mesh)) { mesh.updateWorldMatrix(true, false); frame.nodes.add(mesh); }
+  result = [];
+  for (let n = 0; n < (mesh.isInstancedMesh ? mesh.count : 1); n++) {
+    const matrix = mesh.matrixWorld.clone();
+    if (mesh.isInstancedMesh) { mesh.getMatrixAt(n, inverse); matrix.multiply(inverse); }
+    result.push({ matrix, inverse: matrix.clone().invert() });
+  }
+  frame.transforms.set(mesh, result); return result;
+}
+
 function shown(node) {
   for (let p = node; p; p = p.parent) if (!p.visible) return false;
   return true;
@@ -34,7 +66,7 @@ function geometryInfo(geometry) {
   const count = index?.count ?? position.count, bounds = new THREE.Box3();
   for (let i = 0; i < position.count; i++) bounds.expandByPoint(va.fromBufferAttribute(position, i));
   const size = bounds.getSize(new THREE.Vector3());
-  info = { position, index, pv: position.version, iv: index?.version, skinIndex, skinWeight, siv: skinIndex?.version, swv: skinWeight?.version, count, bounds,
+  info = { position, index, pv: position.version, iv: index?.version, skinIndex, skinWeight, siv: skinIndex?.version, swv: skinWeight?.version, count, bounds, jointBounds: null,
     area: Math.max(.001, size.x * size.y + size.y * size.z + size.z * size.x), blocks: null };
   geometryCaches.set(geometry, info); return info;
 }
@@ -73,61 +105,78 @@ function environment(arena) {
 function skinState(mesh, info) {
   // A blended vertex lies inside the union bounds of its bone-transformed
   // block. Only blocks touched by the ray need exact posed triangle tests.
-  const matrices = mesh.skeleton.bones.map((bone, i) => new THREE.Matrix4().copy(mesh.bindMatrixInverse)
-    .multiply(new THREE.Matrix4().fromArray(mesh.skeleton.boneMatrices, i * 16)).multiply(mesh.bindMatrix));
+  if (!info.jointBounds) {
+    info.jointBounds = new Map();
+    for (let i = 0; i < info.position.count; i++) {
+      va.fromBufferAttribute(info.position, i);
+      for (let c = 0; c < 4; c++) if (info.skinWeight.getComponent(i, c) > 0) {
+        const joint = info.skinIndex.getComponent(i, c);
+        if (!info.jointBounds.has(joint)) info.jointBounds.set(joint, new THREE.Box3());
+        info.jointBounds.get(joint).expandByPoint(va);
+      }
+    }
+  }
+  const matrices = [];
   const bounds = new THREE.Box3();
-  for (const matrix of matrices) bounds.union(boneBox.copy(info.bounds).applyMatrix4(matrix));
+  // A weighted vertex is a convex combination of the positions transformed by
+  // its influencing bones. Bounds around only those vertices/bones remain
+  // conservative; unrelated ears/feet must not enlarge every mesh's ray box.
+  for (const [joint, box] of info.jointBounds) {
+    const matrix = new THREE.Matrix4().copy(mesh.bindMatrixInverse)
+      .multiply(inverse.fromArray(mesh.skeleton.boneMatrices, joint * 16)).multiply(mesh.bindMatrix);
+    matrices[joint] = matrix; bounds.union(boneBox.copy(box).applyMatrix4(matrix));
+  }
   return { matrices, bounds, blocks: new Map() };
 }
 function posedBlock(mesh, info, block, state) {
   if (state.blocks.has(block)) return state.blocks.get(block);
-  if (!block.joints) {
-    const joints = new Set();
+  if (!block.jointBounds) {
+    block.jointBounds = new Map();
     for (let offset = block.start; offset < block.end; offset++) {
       const index = info.index?.getX(offset) ?? offset;
-      for (let c = 0; c < 4; c++) if (info.skinWeight.getComponent(index, c) > 0) joints.add(info.skinIndex.getComponent(index, c));
+      va.fromBufferAttribute(info.position, index);
+      for (let c = 0; c < 4; c++) if (info.skinWeight.getComponent(index, c) > 0) {
+        const joint = info.skinIndex.getComponent(index, c);
+        if (!block.jointBounds.has(joint)) block.jointBounds.set(joint, new THREE.Box3());
+        block.jointBounds.get(joint).expandByPoint(va);
+      }
     }
-    block.joints = [...joints];
   }
   const bounds = new THREE.Box3();
-  for (const joint of block.joints) bounds.union(boneBox.copy(block.box).applyMatrix4(state.matrices[joint]));
+  for (const [joint, box] of block.jointBounds) bounds.union(boneBox.copy(box).applyMatrix4(state.matrices[joint]));
   state.blocks.set(block, bounds); return bounds;
 }
-function bodyOccluders(game, target, camera) {
-  const entities = new Set(), meshes = [], skeletons = new Set();
+function bodyOccluders(game, target, camera, frame) {
+  const entities = new Set(), meshes = [];
   for (const actor of [...(game.humans || []), ...(game.robots || []), game.player]) {
     const entity = actor?.riding || actor, root = entity?.rig?.root;
     if (!root?.parent || entity === target || entities.has(entity) || entity.dead || entity.out || entity.state === 'dead') continue;
-    entities.add(entity); root.updateWorldMatrix(true, false); root.updateMatrixWorld(true);
+    entities.add(entity); prepareRoot(root, frame);
     root.traverse(mesh => {
       if (!mesh.isMesh || !shown(mesh) || !mesh.layers.test(camera.layers) || mesh.userData.outline || mesh.userData.rrOutline ||
           mesh.userData.rrGroundMark || mesh.userData.rrPlushCoat) return;
       if (!(Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some(solid)) return;
-      if (mesh.isSkinnedMesh && !skeletons.has(mesh.skeleton)) { mesh.skeleton.update(); skeletons.add(mesh.skeleton); }
+      prepareSkin(mesh, frame);
       meshes.push(mesh);
     });
   }
   return meshes;
 }
-function occluded(meshes, origin, destination, camera, stats, cutaway = false, skins = new Map()) {
+function occluded(meshes, origin, destination, camera, stats, cutaway, frame) {
   ray.set(origin, edge.subVectors(destination, origin).normalize());
   const distance = origin.distanceTo(destination);
   for (const mesh of meshes) {
     if (!shown(mesh) || !mesh.layers.test(camera.layers)) continue;
     if (!(Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some(solid)) continue;
     const info = geometryInfo(mesh.geometry); if (!info) continue;
-    mesh.updateWorldMatrix(true, false);
     let skin;
     if (mesh.isSkinnedMesh) {
-      if (!skins.has(mesh)) skins.set(mesh, skinState(mesh, info));
-      skin = skins.get(mesh);
+      if (!frame.skins.has(mesh)) frame.skins.set(mesh, skinState(mesh, info));
+      skin = frame.skins.get(mesh);
     }
     // Instanced plants have few instances; no triangles are expanded/copied.
-    const instance = mesh.isInstancedMesh ? new THREE.Matrix4() : null;
-    for (let n = 0; n < (instance ? mesh.count : 1); n++) {
-      if (instance) { mesh.getMatrixAt(n, instance); instance.premultiply(mesh.matrixWorld); }
-      const matrix = instance || mesh.matrixWorld;
-      inverse.copy(matrix).invert(); localRay.copy(ray).applyMatrix4(inverse);
+    for (const { matrix, inverse: worldInverse } of transforms(mesh, frame)) {
+      localRay.copy(ray).applyMatrix4(worldInverse);
       if (!localRay.intersectsBox(skin?.bounds || info.bounds)) continue;
       for (const block of blocks(mesh, info)) {
         stats.blocks++;
@@ -160,7 +209,7 @@ function occluded(meshes, origin, destination, camera, stats, cutaway = false, s
  * acceptPoint({x,y}) filters actual projected surface points before ray budgets
  * are spent, so a hidden HUD region cannot discard an otherwise visible body.
  */
-export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway, acceptPoint, stats = {} } = {}) {
+export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway, acceptPoint, stats = {}, frame = createEnemyVisibilityFrame() } = {}) {
   Object.assign(stats, { samples: 0, rays: 0, blocks: 0, triangles: 0, bodyMeshes: 0 });
   const entity = actor?.riding || actor, root = entity?.rig?.root;
   if (!camera || (game.camera && camera !== game.camera) || !root?.parent || !shown(root)) return null;
@@ -171,15 +220,16 @@ export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway,
   if (Number.isFinite(health) && health <= 0) return null;
   // updateMatrixWorld invokes SkinnedMesh's attached bind-matrix refresh;
   // updateWorldMatrix alone would leave a moving root's inverse one frame old.
-  camera.updateWorldMatrix(true, false); root.updateWorldMatrix(true, false); root.updateMatrixWorld(true);
+  if (!frame.nodes.has(camera)) { camera.updateWorldMatrix(true, false); frame.nodes.add(camera); }
+  prepareRoot(root, frame);
   const origin = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
-  const meshes = [], skeletons = new Set(); let area = 0;
+  const meshes = []; let area = 0;
   root.traverse(mesh => {
     if (!mesh.isMesh || !shown(mesh) || !mesh.layers.test(camera.layers) || mesh.userData.rrGroundMark ||
         mesh.userData.outline || mesh.userData.rrOutline || mesh.userData.rrPlushCoat) return;
     if (!(Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some(solid)) return;
     const info = geometryInfo(mesh.geometry); if (!info) return;
-    if (mesh.isSkinnedMesh && !skeletons.has(mesh.skeleton)) { mesh.skeleton.update(); skeletons.add(mesh.skeleton); }
+    prepareSkin(mesh, frame);
     meshes.push({ mesh, info }); area += info.area;
   });
   const controller = game.cockpitCamera?.contactView;
@@ -213,7 +263,7 @@ export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway,
   // Prefer upper visible body points, but keep the bar on that surface instead
   // of raising a head anchor through a wall or above the screen.
   candidates.sort((a, b) => (b.ndc.y - Math.abs(b.ndc.x) * .1) - (a.ndc.y - Math.abs(a.ndc.x) * .1));
-  const obstacles = environment(game.arena), bodies = bodyOccluders(game, entity, camera), skins = new Map(), chosen = [];
+  const obstacles = environment(game.arena), bodies = bodyOccluders(game, entity, camera, frame), chosen = [];
   stats.bodyMeshes = bodies.length;
   while (candidates.length && chosen.length < MAX_RAYS) {
     // If the upper point is behind cover, spread the remaining probes over
@@ -230,7 +280,7 @@ export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway,
     }
     const candidate = candidates.splice(next, 1)[0];
     chosen.push(candidate.ndc); stats.rays++;
-    if (!occluded(obstacles, origin, candidate.world, camera, stats) && !occluded(bodies, origin, candidate.world, camera, stats, cutaway, skins)) {
+    if (!occluded(obstacles, origin, candidate.world, camera, stats, false, frame) && !occluded(bodies, origin, candidate.world, camera, stats, cutaway, frame)) {
       return { ...candidate, entity, ratio: Number.isFinite(health / maximum) ? THREE.MathUtils.clamp(health / maximum, 0, 1) : 0 };
     }
   }

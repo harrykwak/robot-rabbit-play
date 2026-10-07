@@ -1,6 +1,6 @@
 // HUD, 이름표, 데미지 숫자, 배너
 import * as THREE from 'three';
-import { visibleEnemyAnchor } from './enemy-visibility.js';
+import { visibleEnemyAnchor, createEnemyVisibilityFrame } from './enemy-visibility.js';
 import { RULES, ROBOT_STATS } from './data.js';
 import { controlLabel, formatControls } from './control-labels.js';
 import { PARTS, PART_BIT, PART_NAME, skillJuice } from './robot-systems.js';
@@ -233,11 +233,12 @@ export class UI {
       this.set(null, L, 'sh', h.shieldT > 0, (v) => c.el.classList.toggle('shielded', v));
       // 이름표: 위치만 계산해 두고, 겹침을 푼 다음 한꺼번에 붙인다
     }
+    const visibilityFrame=createEnemyVisibilityFrame();
     for(const[h,tag]of this.tags){
       const tc=tag.c,own=h===me,boarding=own&&!h.dead&&!h.out&&h.state==='boarding'&&h.boardTarget;
       let anchor=null;
       if(boarding){const at=h.rig?.root?.position||h.pos;tV.set(at.x,at.y+h.height+.3,at.z).project(this.camera);if(tV.z>=-1&&tV.z<1&&Math.abs(tV.x)<1&&Math.abs(tV.y)<1)anchor={x:(tV.x+1)*W/2,y:(1-tV.y)*H/2,ratio:1}}
-      else if(!own)anchor=visibleEnemyAnchor(g,this.camera,h,{viewport:{width:W,height:H},acceptPoint:({x,y})=>{
+      else if(!own)anchor=visibleEnemyAnchor(g,this.camera,h,{frame:visibilityFrame,viewport:{width:W,height:H},acceptPoint:({x,y})=>{
         const barY=y-8;
         if(x<24||x>W-24||barY<66||barY>H-8)return false;
         if(tagsOn.some(q=>Math.abs(q.x-x)<(q.w+40)/2&&Math.abs(q.y-barY)<10))return false;

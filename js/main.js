@@ -23,6 +23,7 @@ import { initInstallUI } from './install.js';
 import { rabbitPortrait } from './rabbit-portraits.js';
 import { preloadCharacterAssets, characterAssetStatus } from './character-assets.js';
 import { RearView } from './rear-view.js';
+import { syncPilotShadows } from './pilot-shadows.js';
 
 // Character factories stay synchronous once the two prototype assets settle.
 // The loader reports each failure explicitly and preserves the existing model.
@@ -1132,6 +1133,7 @@ function collectInterpTargets() {
 // 그림자: 정지 화면(일시정지/결과)에서는 다시 그리지 않는다. 경기와 메뉴에서는 캐릭터가 움직이므로 매 렌더 갱신.
 renderer.shadowMap.autoUpdate = false;
 function updateShadows() {
+  for (const pilot of game.humans) syncPilotShadows(pilot, profile.low);
   if (!renderer.shadowMap.enabled) return;
   if (mode === 'game' || mode === 'menu') renderer.shadowMap.needsUpdate = true;
 }

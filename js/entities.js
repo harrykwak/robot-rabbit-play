@@ -296,7 +296,11 @@ class Fighter {
 
   updateFlash(realDt) {
     if (this.flash > 0) this.flash = Math.max(0, this.flash - realDt * 7);
-    if (this.flash !== this.flashShown) { this.rig.setFlash(this.flash); this.flashShown = this.flash; }
+    // Keep a complete silhouette during recovery instead of hiding the root.
+    const recovery = this.kind === 'human' && this.invuln > 0 && !this.riding
+      ? (this.g.reducedMotion ? .1 : .1 + .08 * (1 + Math.sin(this.invuln * 12))) : 0;
+    const shown = Math.max(this.flash, recovery);
+    if (shown !== this.flashShown) { this.rig.setFlash(shown); this.flashShown = shown; }
   }
 }
 
@@ -743,8 +747,7 @@ export class Human extends Fighter {
     this.physics(dt);
     this.buildPose(dt);
     this.syncRoot();
-    if (this.invuln > 0 && this.state !== 'dash' && this.state !== 'down' && !(this.act && this.act.def.iv)) this.rig.root.visible = Math.floor(this.invuln * 14) % 2 === 0;
-    else this.rig.root.visible = true;
+    this.rig.root.visible = true;
   }
 
   startGuard() {

@@ -129,6 +129,39 @@ function validateTemplate(scene, kind) {
   return nodes;
 }
 
+function tuneOwnedSurface(material, kind) {
+  // The approved red rabbit remains the authored visual reference. Restrict
+  // tuning to named fabric surfaces so eyes, rubber, leather and weapons keep
+  // their different highlights and the rigs keep their vertex-painted patterns.
+  if (kind === 'titan') return;
+  if (kind === 'rabbit') {
+    if (material.name === 'character-painted-surfaces') {
+      material.metalness = 0;
+      material.roughness = Math.max(material.roughness, .82);
+    }
+    return;
+  }
+  const coat = material.name === 'plush-micro-coat-1';
+  if (!coat && material.name !== 'rabbit-plush-short-coat') return;
+  // Bolt's .77 surface reads glossier than the .96/.97 fleece of its peers.
+  // Keep the short-nap normal map; cap Cannon's .15 relief at the red coat's
+  // .09 scale so its pale face has less high-frequency lighting variation.
+  material.roughness = Math.max(material.roughness, .9);
+  if (material.normalScale) {
+    material.normalScale.x = THREE.MathUtils.clamp(material.normalScale.x, -.09, .09);
+    material.normalScale.y = THREE.MathUtils.clamp(material.normalScale.y, -.09, .09);
+  }
+  if (typeof material.specularIntensity === 'number') {
+    material.specularIntensity = Math.min(material.specularIntensity, .16);
+  }
+  if (coat) {
+    // Retain the existing shallow cutout shell and opaque depth ordering. The
+    // stricter cutoff drops faint isolated nap pixels; no new shell or pass.
+    material.alphaTest = Math.max(material.alphaTest, .62);
+    material.alphaToCoverage = false;
+  }
+}
+
 /** Also used by the authoring preview: a template is never attached or mutated. */
 export function cloneCharacterRig(template, kind, { blink = null } = {}) {
   validateTemplate(template, kind);
@@ -140,6 +173,7 @@ export function cloneCharacterRig(template, kind, { blink = null } = {}) {
       // Coverage produced sparkling white fringe in the actual MSAA Edge view.
       // Keep plain MASK cutoff/depth writing on owned materials only.
       if (kind === 'titan' && material.name === 'rabbit-fringe-mask') material.alphaToCoverage = false;
+      tuneOwnedSurface(material, kind);
       materials.set(source, material);
     }
     return materials.get(source);

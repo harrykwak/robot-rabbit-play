@@ -8,8 +8,9 @@ export class CloseContactView {
     if(this.quality!==game.arena?.quality){this.reset();this.camera=game.camera;this.enabled=enabled;this.quality=game.arena?.quality}
     for(const robot of game.robots||[]){
       if(robot===local||robot.state==='dead')continue;
-      const near=robot.pos.distanceToSquared(local.pos)<49;
-      if(near&&!this.entries.has(robot.rig.root))this.prepare(robot.rig.root);
+      // Install once when a mounted view starts, while the whole roster first
+      // renders. Crossing melee range must not swap shader programs mid-punch.
+      if(!this.entries.has(robot.rig.root))this.prepare(robot.rig.root);
     }
     for(const[root,entry]of this.entries)if(!root.parent){this.release(entry);this.entries.delete(root)}
   }
@@ -33,14 +34,16 @@ export class CloseContactView {
         shader.fragmentShader='uniform float rrContact;\nvarying vec3 rrViewPosition;\n'+shader.fragmentShader;
         shader.fragmentShader=shader.fragmentShader.replace('#include <clipping_planes_fragment>',`#include <clipping_planes_fragment>
           if(rrContact>0.5){
-            float coverage=smoothstep(1.6,2.25,length(rrViewPosition));
+            // Only protect the near plane. The former 1.6m sphere removed
+            // readable enemy faces and torsos at ordinary melee distance.
+            float coverage=smoothstep(0.18,0.42,length(rrViewPosition));
             // Fixed screen-space ordered coverage, no time-varying sparkle.
             vec2 cell=mod(floor(gl_FragCoord.xy),4.0);
             float threshold=(mod(cell.x*2.0+cell.y*3.0,4.0)*4.0+mod(cell.y+cell.x*3.0,4.0)+0.5)/16.0;
             if(coverage<threshold)discard;
           }`);
       };
-      material.customProgramCacheKey=()=>originalKey+'|rr-contact-v1';
+      material.customProgramCacheKey=()=>originalKey+'|rr-contact-v2';
       material.userData={...material.userData,rrContactUniform:uniform};materials.set(source,material);return material;
     };
     root.traverse(mesh=>{

@@ -23,7 +23,7 @@ export class RearView {
       for(let n=0;n<uv.count;n++)uv.setX(n,1-i*.5-uv.getX(n)*.5);
       uv.needsUpdate=true;quad.visible=false;this.quadScene.add(quad);return quad;
     });
-    this.viewport=new THREE.Vector4();this.scissor=new THREE.Vector4();this.hidden=[];
+    this.viewport=new THREE.Vector4();this.scissor=new THREE.Vector4();this.hidden=new Map();
     this.stats={worldRenders:0,composites:0,worldCpuMs:[],worldDraws:0,worldTriangles:0,width:0,height:0,rate:8};
     if(typeof document!=='undefined'&&document.body?.append)this.install();
   }
@@ -85,14 +85,16 @@ export class RearView {
         const sx=Math.sin(robot.facing),sz=Math.cos(robot.facing),y=(this.controller.eyeY??(robot.pos.y+4.1))-.85;
         this.camera.position.set(robot.pos.x-sx*.25,y,robot.pos.z-sz*.25);this.camera.up.set(0,1,0);
         this.camera.lookAt(this.camera.position.x-sx*4,this.camera.position.y-3.8,this.camera.position.z-sz*4);
-        for(const root of[robot.rig.root,game.player.rig.root])root.traverse(o=>{if(o.isMesh){this.hidden.push([o,o.layers.mask]);o.layers.disable(0)}});
+        // A boarded pilot is already a descendant of the robot. Keep the first
+        // mask when both traversals reach it so chase/ejection cannot lose layer 0.
+        for(const root of[robot.rig.root,game.player.rig.root])root.traverse(o=>{if(o.isMesh&&!this.hidden.has(o)){this.hidden.set(o,o.layers.mask);o.layers.disable(0)}});
         r.shadowMap.autoUpdate=false;r.autoClear=true;r.setRenderTarget(this.target);r.setScissorTest(false);
         const start=performance.now(),draws=r.info.render.calls,triangles=r.info.render.triangles;r.render(this.scene,this.camera);
         const cpu=performance.now()-start;this.stats.worldRenders++;this.stats.worldDraws=r.info.render.calls-draws;this.stats.worldTriangles=r.info.render.triangles-triangles;
         if(this.stats.worldRenders>3){this.stats.worldCpuMs.push(cpu);if(this.stats.worldCpuMs.length>120)this.stats.worldCpuMs.shift()}
         const recent=this.stats.worldCpuMs.slice(-8);if(recent.length===8&&recent.reduce((a,b)=>a+b,0)/8>5)this.slow=true;
         this.stats.rate=thermal>=2||this.slow?4:8;this.nextWorld=now+1000/this.stats.rate;
-        for(const[o,mask]of this.hidden)o.layers.mask=mask;this.hidden.length=0;
+        for(const[o,mask]of this.hidden)o.layers.mask=mask;this.hidden.clear();
       }
       r.setRenderTarget(oldTarget);r.shadowMap.autoUpdate=shadow;r.autoClear=false;
       for(const[i,side]of['left','right'].entries()){
@@ -100,7 +102,7 @@ export class RearView {
         this.quads[i].visible=true;r.render(this.quadScene,this.quadCamera);this.quads[i].visible=false;this.stats.composites++;
       }
     } finally {
-      for(const[o,mask]of this.hidden)o.layers.mask=mask;this.hidden.length=0;for(const q of this.quads)q.visible=false;
+      for(const[o,mask]of this.hidden)o.layers.mask=mask;this.hidden.clear();for(const q of this.quads)q.visible=false;
       r.setRenderTarget(oldTarget);r.setViewport(this.viewport);r.setScissor(this.scissor);r.setScissorTest(scissorTest);r.autoClear=auto;r.shadowMap.autoUpdate=shadow;
     }
   }

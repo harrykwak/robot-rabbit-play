@@ -297,30 +297,25 @@ export function createEnvironmentArt(st, id, parent = st.g) {
   }
   function garden() {
     if (id === 'farm') {
-      cottage(-6.5, -25);
-      // Four composed garden corners; broad centre and station approaches open.
-      for (const [x, z, s] of [[-20.5, -14, 1.25], [18.5, -18, 1.05], [-10, -23.5, 1.15], [10, -23, 1.3]]) { ledge(x, z, 3.1, -.08); tree(x, z, -.06, s); shrub(x - 1.1, z + 1, 0, 1.1, true); shrub(x + 1.3, z, 0, .9); }
-      for (const [x, z] of [[-16, -18], [-18, -16], [-21, -10], [15, -19], [13, -21], [20, -13], [7, -22], [-15, 17], [17, 15]]) shrub(x, z, 0, 1.05, true);
+      // Retaining-wall planters have a real shared base. Remove the old
+      // off-island annex/ledges whose trees floated through the new perimeter.
+      for (const [x, z, s] of [[-19, -14, .85], [19, -14, .85], [-10, -21.5, .75], [10, -21.5, .75]]) {
+        tree(x, z, 5.7, s); shrub(x, z, 5.7, 1.2);
+      }
+      for (const [x, z] of [[-16, -15], [-18, -11], [16, -15], [18, -11], [7, -20], [-14, 16], [16, 14]]) shrub(x, z, 0, .85, true);
       for (const [x, z] of [[-19, -7], [-20, -5], [-21, -2], [18, -15], [15, -18], [11, -19], [-6, -19], [-8, -18], [-17, 12], [-15, 15], [16, 13]]) { flowers(x, z, 0, 1.3); grass(x + .65, z + .25); }
       for (let k = 0; k < 10; k++) { flowers(-18 + k * .75, -2.1 - k * .22, 0, .9, k % 2 ? 0xe7c88e : p.bloom); grass(15 + k * .45, 3.7 - k * .1, 0, .75); }
     } else if (id === 'fort') {
-      cottage(7, -26);
-      for (const [x, z, s] of [[-20, -17, 1.05], [20, -16, 1.1], [-8, -24, .95], [9, -24, 1.1]]) { ledge(x, z, 3); tree(x, z, -.05, s); shrub(x, z + 1, 0, 1, true); }
+      // Trees sit on the rear battlement; no decorative walkable-looking
+      // annex remains beyond the physical court boundary.
+      for (const [x, z, s] of [[-15, -20, .9], [15, -20, .9], [-7, -24, .8], [7, -24, .8]]) tree(x, z, 5.3, s);
       for (const [x, z] of [[-16, -18], [-18, -14], [16, -18], [18, -14], [-11, -20], [14, 15]]) shrub(x, z, 0, 1.2, true);
       for (const [x, z] of [[-16, -17], [-18, -15], [15, -16], [17, -14], [-20, 0], [-20, 3], [20, 10], [-10, 17]]) { flowers(x, z); grass(x + .55, z + .2); }
     } else {
-      for (const [x, z, y, s] of [[-19, -4, -.05, .8], [19, -3.8, -.05, .9], [-4.8, -9.6, 2.3, .85], [4.7, -9.5, 2.3, .8]]) { ledge(x, z, 1.9, y); tree(x, z, y, s, true); shrub(x, z + .8, y, .65, true); }
-      ledge(0, -10.9, 3.5, 2.34);
+      for (const [x, z, y, s] of [[-19, -4, 0, .8], [19, -3.8, 0, .9], [-4.8, -9.6, 2.4, .85], [4.7, -9.5, 2.4, .8]]) { tree(x, z, y, s, true); shrub(x, z + .8, y, .65, true); }
       // The pavilion shelf is an ornamental garden behind this low railing.
       // Its visible boundary follows the walkable coast and leaves the ferry
       // below it free to keep travelling along the original route.
-      const rail = [];
-      for (let k = 0; k < 13; k++) {
-        const a = -Math.PI / 2 + (k / 12 - .5) * 1.5, r = islandRadius(7.5, a, 0, -3) - .13;
-        const x = Math.cos(a) * r, z = -3 + Math.sin(a) * r;
-        box(x, 2.8, z, .1, .8, .1, p.trim, .025); rail.push([x, 3.05, z]);
-      }
-      tube(rail, .05, p.trim);
       // Pavilion crowns the *rear* of the central island. Its span is beyond
       // the existing fall edge, leaving the flag, landing and station clear.
       arch(0, 2.4, -10.7, 5.4, 5.3, .35, p.trim);

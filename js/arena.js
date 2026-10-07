@@ -154,9 +154,9 @@ function groundTexture(theme = 'farm', cx = 0, cz = 0, radius = 24) {
   }
   g.globalAlpha = 1;
   const routes = theme === 'farm' ? [
-    [[0, 24], [-2, 13], [2, 0], [0, -18.1]],
-    [[-21, -2], [-13, -3], [-6, -7], [0, -14]],
-    [[0, 6], [6, 9], [12, 4], [21, 2]],
+    [[0, 20], [0, 12], [0, 2], [0, -18.1]],
+    [[0, 12], [-15, 12], [-16, -9], [0, -17]],
+    [[0, 12], [15, 12], [16, -9], [0, -17]],
     [[-6, -5], [-10, -8], [-12, -10], [-13, -13]],
     [[0, 12], [2, 13], [4, 15], [8, 15]],
     [[0, -8], [2, -7], [3, -7], [4, -6]],
@@ -169,19 +169,21 @@ function groundTexture(theme = 'farm', cx = 0, cz = 0, radius = 24) {
     [[0, 12], [2, 13], [4, 14], [9, 13]],
     [[-15, -9], [-15, -12], [-13, -14], [-11, -15]],
   ] : [
-    [[0, 19.4], [-1, 15], [1, 12], [0, 6.3]],
+    [[0, 20], [0, 15], [0, 12], [0, 6.3]],
     [[0, 4.5], [2, 0], [0, -3], [0, -9]],
-    [[-21, 1], [-18, 2], [-15, 0], [-12, -2]],
-    [[21, 1], [18, 2], [15, 0], [12, -2]],
-    [[0, 13], [-2, 11], [-3, 10], [-5, 9]],
+    [[0, 13], [-16, 14], [-18, -9], [0, -17]],
+    [[0, 13], [16, 14], [18, -9], [0, -17]],
+    [[-19, -4], [-16, -4], [-13, -4], [-8, -4]],
+    [[19, -4], [16, -4], [13, -4], [8, -4]],
   ];
   for (const route of routes) {
     const curve = new THREE.CubicBezierCurve(new THREE.Vector2(...route[0]), new THREE.Vector2(...route[1]), new THREE.Vector2(...route[2]), new THREE.Vector2(...route[3]));
     g.lineCap = 'round'; g.lineJoin = 'round';
     const draw = (color, width) => { g.strokeStyle = color; g.lineWidth = width * scale; g.beginPath(); g.moveTo(X(route[0][0]), Z(route[0][1])); g.bezierCurveTo(X(route[1][0]), Z(route[1][1]), X(route[2][0]), Z(route[2][1]), X(route[3][0]), Z(route[3][1])); g.stroke(); };
-    draw(theme === 'sky' ? '#abc0b6' : '#809666', 2.1);
-    draw(theme === 'sky' ? '#c8c7c1' : '#b8b298', 1.83);
-    draw(p.path, 1.63);
+    const routeWidth = theme === 'fort' ? 1.4 : 1.85;
+    draw(theme === 'sky' ? '#abc0b6' : '#809666', 2.1 * routeWidth);
+    draw(theme === 'sky' ? '#c8c7c1' : '#b8b298', 1.83 * routeWidth);
+    draw(p.path, 1.63 * routeWidth);
     // Staggered cobbles follow each curve, never a repeated tile grid.
     const n = Math.ceil(curve.getLength() / .52);
     for (let i = 0; i <= n; i++) {
@@ -205,6 +207,20 @@ function groundTexture(theme = 'farm', cx = 0, cz = 0, radius = 24) {
 }
 
 let stripeTex = null;
+let courtWallTex = null;
+function courtWallTexture() {
+  if (courtWallTex) return courtWallTex;
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#d2c4a3'; ctx.fillRect(0, 0, 256, 256);
+  for (let row = 0; row < 6; row++) {
+    const y = row * 43;
+    ctx.fillStyle = row % 2 ? '#d6c9ad' : '#ccbea1'; ctx.fillRect(0, y + 2, 256, 39);
+    ctx.fillStyle = '#b2a58c'; ctx.fillRect(0, y, 256, 2);
+    for (let x = row % 2 ? -64 : 0; x < 256; x += 128) ctx.fillRect(x, y, 2, 43);
+  }
+  courtWallTex = new THREE.CanvasTexture(canvas); courtWallTex.colorSpace = THREE.SRGBColorSpace;
+  return courtWallTex;
+}
 function stripeTexture() {
   if (stripeTex) return stripeTex;
   const c = document.createElement('canvas');
@@ -306,7 +322,9 @@ export function createArena(scene) {
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: { top: { value: new THREE.Color(0x77accb) }, mid: { value: new THREE.Color(0xd0e5dc) }, bot: { value: new THREE.Color(0xb9d6cf) } },
-    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    // Sky is a direction, not scenery at 600m. Keep it on the far plane so
+    // the 85m rear-view camera does not clip it into a black empty backdrop.
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
     fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h = normalize(vP).y; vec3 c = h > 0.0 ? mix(mid, top, smoothstep(0.0, 0.65, h)) : mix(mid, bot, smoothstep(0.0, 0.65, -h)); gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), skyMat);
@@ -670,6 +688,28 @@ export function createArena(scene) {
 
   function posts(R, count, spread) { art.fence(R, count, spread); }
 
+  // A single enclosed garden court. Its visible wall and collision use the
+  // same 32 panels, so the edge is readable from every direction, even seated.
+  // Broad masonry replaces scattered decoration; all panels batch by material.
+  function gardenBoundary(kind = 'farm') {
+    const count = 32, radius = A.radius, depth = kind === 'farm' ? 2.6 : 2.2, half = Math.tan(Math.PI / count) * radius + .04;
+    const wallMaterial = kind === 'farm' ? M(new THREE.MeshStandardMaterial({ map: courtWallTexture(), roughness: 1 })) : mats.stone;
+    for (let i = 0; i < count; i++) {
+      const a = i / count * TAU, x = Math.cos(a) * radius, z = Math.sin(a) * radius;
+      const rot = a + Math.PI / 2, height = kind === 'sky' ? 1.6 : kind === 'fort' ? (z < -10 ? 5 : 3.8) : (z < -10 ? 5.4 : 4.2);
+      const wall = mesh(G(new THREE.BoxGeometry(half * 2, height, depth)), wallMaterial, st.g, x, height / 2, z, false);
+      wall.rotation.y = -rot;
+      const cap = mesh(G(new THREE.BoxGeometry(half * 2, .3, depth + .25)), mats.stoneTop, st.g, x, height + .15, z, false);
+      cap.rotation.y = -rot;
+      const s = addShape({ type: 'box', x, z, hu: half, hv: depth / 2, rot, h: height + .3, thick: height + .3, solid: true, walk: false });
+      s.boundary = true;
+      if (kind === 'fort') {
+        const merlon = mesh(G(new THREE.BoxGeometry(half * .95, .65, depth)), mats.stone, st.g, x, height + .625, z, false);
+        merlon.rotation.y = -rot;
+      }
+    }
+  }
+
   function flag(x, z, base, color) {
     mesh(G(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6)), mats.woodDark, st.g, x, base + 1.3, z, false);
     const f = new THREE.Mesh(G(new THREE.PlaneGeometry(1.1, 0.7)), M(toon(color, { side: THREE.DoubleSide })));
@@ -683,84 +723,93 @@ export function createArena(scene) {
   const BUILD = {
     farm() {
       A.radius = 24;
-      island(0, 0, 24, 0);
-      mound(-12, 5, 6.5, 1.9);
-      mound(12, -5, 5.5, 1.4);
+      island(0, 0, 25, 0);
+      mound(-13, 0, 5.5, 1.4);
+      mound(13, 0, 5.5, 1.4);
       // 언덕 위 전망대 + 경사로
       block(4, -13, 3.8, 2.6, 0, 2.2, 0, mats.brick, mats.stoneTop);
       ramp(4, -8.35, 2.1, 1.6, -Math.PI / 2, 0, 2.2);
       pad(-4, -11, 0, 17, [3, -13]);
       pad(15.5, 7.5, 0, 17, [12, -4]);
-      hay(-10, -7.5, 0.4);
-      hay(8.5, 9.5, -0.7);
-      stone(-7.5, 12.5, 1.6, 1.1);
-      stone(16, -13, 1.8, 1.3);
+      hay(-7, -5, 0);
+      hay(7, 5, 0);
+      stone(-7, 6, 1.6, 1.1);
+      stone(8, -6, 1.8, 1.3);
       windmill(0, -19.5);
       carrotPatches([[-16.5, -10], [6, 16], [18.5, 2], [-3, 16.5]]);
-      posts(24, 28, Math.PI * 0.9);
+      gardenBoundary();
       return {
         spawns: [[0, 12], [14, 2], [-2, -7], [-14.5, -2]],
-        nodes: [[0, 0], [0, 12], [12, 12], [-12, 12], [16, 0], [-17, -3], [-12, -14], [10, -14], [4, -5.6], [4, -12.8], [-4, -11], [-6, -3], [6, 3], [15.5, 7.5], [20, -6]],
+        nodes: [[0, 0], [0, 12], [12, 12], [-12, 12], [17, 0], [-17, -3], [-12, -14], [10, -14], [4, -5.6], [4, -12.8], [-4, -11], [-6, -1], [6, 1], [15.5, 7.5], [19, -6], [-12, 8], [12, -8]],
         special: [[10, 2, 'pad']],
       };
     },
     fort() {
       A.radius = 25;
-      island(0, 0, 25, 0, { holes: [{ x: -13, z: 10, r: 3 }, { x: 13, z: -10, r: 3.2 }] });
+      // Ground extends under the wall even where the sculpted coast dips in.
+      island(0, 0, 26, 0, { holes: [{ x: -13, z: 10, r: 3 }, { x: 13, z: -10, r: 3.2 }] });
+      // Shallow sunken courts replace lethal black wells. Their 0.5 step is
+      // below STEP, so a pilot or robot can leave from every point on the rim.
+      for (const h of A.holes) {
+        const floor = mesh(G(new THREE.CircleGeometry(h.r + .04, 48)), mats.stoneTop, st.g, h.x, -.5, h.z, false);
+        floor.rotation.x = -Math.PI / 2;
+        addShape({ type: 'disc', x: h.x, z: h.z, r: h.r + .04, h: -.5, thick: 1, solid: true });
+      }
       // 가운데 요새와 양쪽 경사로
       block(0, -3, 4.5, 4.5, 0, 3.2, 0, mats.stone, mats.stoneTop);
-      ramp(7.5, -3, 3.05, 1.7, Math.PI, 0, 3.2);
-      ramp(-7.5, -3, 3.05, 1.7, 0, 0, 3.2);
+      ramp(8.5, -3, 4.05, 3.6, Math.PI, 0, 3.2);
+      ramp(-8.5, -3, 4.05, 3.6, 0, 0, 3.2);
       // 남쪽 디딤 계단: 점프로 한 단씩
-      block(0, 2.6, 3, 1.1, 0, 1.5, 0, mats.brick, mats.stoneTop);
+      ramp(0, 5.2, 3.75, 3.6, -Math.PI / 2, 0, 3.2);
       // 벽 튕기기용 낮은 담
       block(-15, -9, 3, 0.5, 0.7, 2, 0, mats.brick, mats.stoneTop);
       block(16, 7, 3, 0.5, -0.8, 2, 0, mats.brick, mats.stoneTop);
       block(-6, 13, 2.2, 0.5, 0.25, 2, 0, mats.brick, mats.stoneTop);
       // 요새 북쪽 모서리 기둥
-      stone(-3.9, -6.9, 0.55, 4.6);
-      stone(3.9, -6.9, 0.55, 4.6);
-      flag(-3.9, -6.9, 4.6, 0xff4d5e);
-      flag(3.9, -6.9, 4.6, 0x2fb8ff);
+      stone(-3.9, -7.4, 0.55, 4.6);
+      stone(3.9, -7.4, 0.55, 4.6);
+      flag(-3.9, -7.4, 4.6, 0xff4d5e);
+      flag(3.9, -7.4, 4.6, 0x2fb8ff);
       windmill(0, -21);
       pad(-18, 1, 0, 19, [-2, -3]);
-      posts(25, 24, Math.PI * 0.8);
+      gardenBoundary('fort');
       return {
         spawns: [[0, 13], [16, -1], [0, -3], [-16, -2]],
-        nodes: [[0, -3], [3.2, -3], [-3.2, -3], [11.4, -3], [-11.4, -3], [0, 8], [0, 14], [10, 12], [-6, 17], [-7, 5], [8, 4], [15, 1], [-15, 2], [-10, -13], [0, -13], [7, -15], [18, -4], [-18, -6], [19, 13], [-20, 8], [-18, 1]],
+        nodes: [[0, -3], [3.2, -3], [-3.2, -3], [12.7, -3], [-12.7, -3], [0, 8], [0, 14], [10, 12], [-6, 17], [-7, 5], [8, 4], [15, 1], [-15, 2], [-10, -13], [0, -13], [7, -15], [18, -4], [-18, -6], [18, 11], [-20, 8], [-18, 1], [0, 4.5]],
         special: [[20, 0, 'pad']],
       };
     },
     sky() {
-      A.radius = 22;
-      island(0, 13, 6.5, 0);
-      island(0, -3, 7.5, 2.4);
-      island(16, 1, 6, 0);
-      island(-16, 1, 6, 0);
+      A.radius = 23;
+      // One continuous floating terrace supports the whole fight. The raised
+      // pavilion and three broad ramps create a centre/flank loop, with no
+      // moving platform or precision jump required between starting points.
+      island(0, 0, 24, 0);
+      island(0, -4, 8, 2.4);
       // 남쪽 섬 → 가운데 섬 경사로
-      ramp(0, 6, 2.05, 1.6, -Math.PI / 2, 0, 2.4);
+      ramp(0, 6.9, 3.2, 3.6, -Math.PI / 2, 0, 2.4);
       // 서쪽 다리
-      {
-        const ax = 0, az = 13, bx = -16, bz = 1;
-        const rot = Math.atan2(bz - az, bx - ax), len = Math.hypot(bx - ax, bz - az);
-        block((ax + bx) / 2, (az + bz) / 2, len / 2 - 3, 1.1, rot, 0, -0.4, mats.wood, mats.wood);
-      }
+      ramp(-12, -4, 4.8, 3.6, 0, 0, 2.4);
+      ramp(12, -4, 4.8, 3.6, Math.PI, 0, 2.4);
       // 동쪽은 움직이는 발판으로 연결
-      mover(5.4, 8.9, 11.1, 4.6, 0, 1.6, 1.6, 6.5);
       // 북쪽 허공을 가로지르는 낮은 발판
-      mover(-9, -12.4, 9, -12.4, 1.3, 1.8, 1.6, 9, 0.25);
       // 동/서 섬 점프 버섯: 가운데 섬으로
-      pad(13, -3, 0, 18, [3.5, -3]);
-      pad(-13, -3, 0, 18, [-3.5, -3]);
+      pad(15, 4, 0, 18, [3.5, -3]);
+      pad(-15, 4, 0, 18, [-3.5, -3]);
       hay(18.5, 3.5, 0.3);
       stone(-18.5, 4, 1.3, 1);
       carrotPatches([[0, 16, 0], [-3, -5, 2.4]]);
       flag(0, -9.2, 2.4, 0xffc21f);
+      // Accessible pavilion columns and tree trunks have small matching
+      // colliders; foliage remains soft and does not obstruct the flank loop.
+      for (const x of [-2.7, 2.7]) addShape({ type: 'disc', x, z: -10.7, r: .34, h: 6.4, thick: 4, solid: true, walk: false });
+      for (const [x, z, base] of [[-19,-4,0],[19,-3.8,0],[-4.8,-9.6,2.4],[4.7,-9.5,2.4]]) addShape({ type: 'disc', x, z, r: .32, h: base + 3.4, thick: 3.4, solid: true, walk: false });
+      gardenBoundary('sky');
       return {
         spawns: [[0, 14], [17, 1], [0, -3], [-17, 1]],
-        nodes: [[0, 13], [0, 9], [0, 3.2], [0, -3], [5, -5], [-5, -5], [6.6, -0.8], [-6.6, -0.8], [11.4, 1.8], [-11.4, 1.8], [16, 1], [-16, 1], [13, -3], [-13, -3], [-8, 7], [-4, 10.2], [-12, 4], [3, 15], [-3, 15]],
+        nodes: [[0, 13], [0, 9], [0, 3.2], [0, -3], [5, -5], [-5, -5], [7, -4], [-7, -4], [14.5, -4], [-14.5, -4], [16, 1], [-16, 1], [15, 4], [-15, 4], [-8, 9], [8, 9], [-15, 9], [15, 9], [-13, -14], [0, -16], [13, -14], [10.8, -4], [-10.8, -4], [0, 6.9]],
         // [노드, 노드, 종류]: 점프 (가장자리에서 건너뛰기), 버섯 (밟으면 발사)
-        links: [[6, 8, 'jump'], [7, 9, 'jump'], [12, 4, 'pad'], [13, 5, 'pad']],
+        links: [[12, 4, 'pad'], [13, 5, 'pad']],
       };
     },
   };
@@ -791,6 +840,19 @@ export function createArena(scene) {
     let bounced = false;
     const r = e.radius, y = e.pos.y;
     for (const s of A.solids) {
+      if (s.boundary) {
+        if (y + STEP >= s.h || y + e.height <= 0) continue;
+        // The court is the intersection of inward half-spaces. At a panel
+        // seam choose the court side, never the shorter sideways box exit.
+        const nx = s.s, nz = -s.c, limit = s.x * nx + s.z * nz - s.hv - r;
+        const penetration = e.pos.x * nx + e.pos.z * nz - limit;
+        if (penetration > 0) {
+          e.pos.x -= nx * penetration; e.pos.z -= nz * penetration;
+          const speed = e.vel.x * nx + e.vel.z * nz;
+          if (speed > 0) { const rebound = e.state === 'launched' && speed > 10 ? 1.6 : 1; e.vel.x -= nx * speed * rebound; e.vel.z -= nz * speed * rebound; bounced ||= rebound > 1; }
+        }
+        continue;
+      }
       const dx0 = e.pos.x - s.x, dz0 = e.pos.z - s.z;
       if (dx0 * dx0 + dz0 * dz0 > (s.br + r) * (s.br + r)) continue;
       if (s.holes && inHole(s, e.pos.x, e.pos.z)) continue;
@@ -825,7 +887,7 @@ export function createArena(scene) {
     }
     // 구멍 안으로 떨어진 뒤에는 옆 바닥 속으로 파고들지 않게
     for (const h of A.holes) {
-      if (y > h.top - 0.3) continue;
+      if (y + STEP >= h.top) continue;
       const dx = e.pos.x - h.x, dz = e.pos.z - h.z, d = Math.hypot(dx, dz);
       if (d > h.r + r + 1) continue;
       const lim = Math.max(0.1, h.r - r * 0.8);
@@ -836,6 +898,10 @@ export function createArena(scene) {
 
   // 평평하고 넓은 자리인지 (움직이는 발판, 버섯 제외)
   function flatAt(x, z, clear) {
+    for (const wall of A.solids) if (wall.boundary) {
+      const n = nearest(wall, x, z);
+      if (n.inside || Math.hypot(x - n.x, z - n.z) < clear) return null;
+    }
     const s = gAt(x, z, 1e6, false, SURF);
     if (!s || s.s.moving || s.pad) return null;
     const h = s.h;
@@ -988,25 +1054,24 @@ export function createArena(scene) {
   A.quality = 'high';
   function applyStageQuality() {
     if (!st) return;
-    const low = A.quality === 'low';
-    if (low && !st.batch) {
+    if (!st.batch) {
       st.batch = bakeBatch(st.g);
       st.geos.push(...st.batch.geos);
     }
     if (!st.batch) return;
-    for (const o of st.batch.hidden) o.visible = !low;
-    for (const m of st.batch.merged) m.visible = low;
+    for (const o of st.batch.hidden) o.visible = false;
+    for (const m of st.batch.merged) m.visible = true;
   }
   A.setQuality = (low) => {
     const q = low ? 'low' : 'high';
     if (A.quality === q) return A;
     A.quality = q;
-    if (low && !lowEnv) buildLowEnv();
-    for (const f of floaters) f.g.visible = !low;
-    for (const c of clouds) c.c.visible = !low;
+    if (!lowEnv) buildLowEnv();
+    for (const f of floaters) f.g.visible = false;
+    for (const c of clouds) c.c.visible = false;
     if (lowEnv) {
-      for (const im of lowEnv.meshes) im.visible = !!low;
-      if (low) writeLowEnv();
+      for (const im of lowEnv.meshes) im.visible = true;
+      writeLowEnv();
     }
     applyStageQuality();
     return A;
@@ -1017,9 +1082,14 @@ export function createArena(scene) {
     if (st) { st.t += dt; for (const f of st.anim) f(st.t, dt); }
     for (const f of floaters) { f.g.position.y = f.base + Math.sin(time * 0.5 + f.ph) * 1.2; f.g.rotation.y += dt * 0.05; }
     for (const c of clouds) { c.a += dt * c.sp; c.c.position.x = Math.cos(c.a) * c.d; c.c.position.z = Math.sin(c.a) * c.d; }
-    if (A.quality === 'low') writeLowEnv();
+    if (lowEnv) writeLowEnv();
   };
 
   A.setStage('farm');
+  buildLowEnv();
+  for (const f of floaters) f.g.visible = false;
+  for (const c of clouds) c.c.visible = false;
+  for (const im of lowEnv.meshes) im.visible = true;
+  writeLowEnv();
   return A;
 }
