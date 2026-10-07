@@ -136,7 +136,7 @@ addEventListener('resize', scheduleResize);
 window.visualViewport?.addEventListener('resize', scheduleResize);
 
 // ---------------- 화면 ----------------
-const screens = ['title', 'help', 'settings', 'select', 'campaign', 'rooms', 'pause', 'result', 'mobile-help'];
+const screens = ['title', 'solo', 'friends', 'help', 'settings', 'select', 'campaign', 'rooms', 'pause', 'result', 'mobile-help'];
 const hud = document.getElementById('hud');
 const $ = (id) => document.getElementById(id);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -184,7 +184,7 @@ const currentSession = () => roomSession;
 
 const roomLobby = new RoomLobby({
   onInvite: () => openRooms('join'),
-  onBack: () => toMenu('title'),
+  onBack: () => toMenu('friends'),
   onMessage: message => roomSession?.receive(message),
   onClosed: reason => { roomSession?.clear(); toMenu('rooms'); roomLobby.status(reason, true); },
   onStart: message => roomSession?.start(message),
@@ -479,9 +479,15 @@ function renderStages() {
   }
   const st = STAGES.find((x) => x.id === cfg.stage) || STAGES[0];
   $('stage-desc').textContent = st ? st.desc : '';
+  $('rules-summary').textContent = `${st.name} · ${['쉬움', '보통', '어려움'][cfg.diff]} · 목숨 ${cfg.stock}`;
 }
 function renderSelect() {
+  // Replacing choice buttons must not strand keyboard users on the document body.
+  const focused = document.activeElement;
+  const choiceList = focused?.parentElement;
+  const choiceIndex = ['pilot-list', 'robot-list'].includes(choiceList?.id) ? [...choiceList.children].indexOf(focused) : -1;
   renderPilots(); renderRobots(); renderDetail(); renderPilotDetail(); renderStages(); buildPreview();
+  if (choiceIndex >= 0) choiceList.children[choiceIndex]?.focus({ preventScroll: true });
   for (const [id, key] of [['seg-diff', 'diff'], ['seg-stock', 'stock'], ['seg-stage', 'stage']]) {
     for (const b of document.querySelectorAll('#' + id + ' button')) {
       const on = key === 'stage' ? b.dataset.v === cfg.stage : Number(b.dataset.v) === cfg[key];
@@ -840,6 +846,7 @@ function toMenu(screen) {
   if (screen === 'select') renderSelect();
   $('select').querySelector('.opt-row').classList.toggle('hidden', choosingCampaignPilot);
   $('stage-desc').classList.toggle('hidden', choosingCampaignPilot);
+  $('selection-rules').classList.toggle('hidden', choosingCampaignPilot);
   $('select-start').textContent = choosingCampaignPilot ? '선택 완료 · 도전으로' : '난투 시작';
   focusFirst(screen);
 }
@@ -847,6 +854,7 @@ function toMenu(screen) {
 function startMatch(skipGuide = false, peerConfig = null) {
   if (contextLost) return;
   if (mobileControls && !preferences.touchGuideSeen && !skipGuide && !cfg.autoplay) {
+    touchStartReturn = cur;
     show('mobile-help');
     focusFirst('mobile-help');
     return;
@@ -899,6 +907,8 @@ game.onEnd = (res) => {
   } else message.textContent = currentSession().active ? '친구 대전을 마쳤어요. 대기실에서 준비하면 다시 함께 할 수 있어요.'
     : win ? '멋진 승부였어요! 다른 로봇과 무대에도 도전해 보세요.' : '방어 스킬로 버티고, 당근이 차면 로봇을 호출해 보세요.';
   $('next-mission').classList.toggle('hidden', !nextMission);
+  document.querySelector('#result [data-action=restart]').classList.toggle('big', !nextMission);
+  document.querySelector('#result [data-action=toCampaign]').classList.toggle('hidden', !activeMission);
   document.getElementById('result-title').textContent = win ? '승리!' : res.findIndex((r) => r.h === game.player) + 1 + '위';
   const tbl = document.createElement('table');
   tbl.className = 'res';
@@ -920,7 +930,12 @@ game.onEnd = (res) => {
   audio.startMusic('menu');
 };
 
+let touchStartReturn = 'solo';
 const actions = {
+  toSolo: () => { clearMission(); toMenu('solo'); },
+  toFriends: () => toMenu('friends'),
+  selectionBack: () => choosingCampaignPilot ? openCampaign() : toMenu('solo'),
+  toKeySettings: () => { openSub('settings'); const section = document.querySelector('.keyboard-settings'); if (section) { section.open = true; section.scrollIntoView({block:'start'}); } },
   toRooms: () => openRooms('join'),
   toCreateRoom: () => openRooms('create'),
   toJoinRoom: () => openRooms('join'),
@@ -937,7 +952,7 @@ const actions = {
   confirmSelection,
   quickStart: () => { clearMission(); cfg.diff = 0; cfg.stock = 3; startMatch(true); },
   beginTouchMatch: () => { preferences.touchGuideSeen = true; savePreferences(); startMatch(true); },
-  cancelTouchStart: () => activeMission ? openCampaign() : toMenu('select'),
+  cancelTouchStart: () => activeMission ? openCampaign() : toMenu(touchStartReturn || 'solo'),
   resume,
   restart: () => currentSession().active ? openRooms() : startMatch(),
 };
@@ -1050,7 +1065,10 @@ function frame(now = performance.now()) {
     if (input.intents.pause) {
       if (cur === 'help' || cur === 'settings') back();
       else if (mode === 'paused') resume();
-      else if (cur === 'select') toMenu('title');
+      else if (cur === 'select') actions.selectionBack();
+      else if (cur === 'solo' || cur === 'friends') toMenu('title');
+      else if (cur === 'campaign') toMenu('solo');
+      else if (cur === 'mobile-help') actions.cancelTouchStart();
       else if (cur === 'rooms') roomLobby.back();
     }
     input.endFrame();

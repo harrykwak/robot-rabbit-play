@@ -513,6 +513,7 @@ export class Game {
     t.hs = Math.max(t.hs, hs * (t.hp <= 0 ? 1.8 : 1));
     if (att) att.hs = Math.max(att.hs, hs * (power >= 2 ? 0.85 : 0.6));
     this.fx.hit(at, dir, power, color);
+    if (src === this.player && src.riding) this.cockpitCamera.confirmHit(power);
     if (opt.noSnd !== true) this.sound(h.snd || 'punch', at, 1 + power * 0.1, 0.95 + Math.random() * 0.1);
     if (t.kind === 'robot' && !byRobot) this.sound('block', at, 0.5, 1.3);
     this.shake(SHAKE[clamp(power, 0, 3)] * (playerInvolved ? 1 : 0.5), at);

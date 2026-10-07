@@ -163,3 +163,7 @@ html #hud:has(.supply-panel.show) #toast, html.touch-mode #hud:has(.supply-panel
   html #hud #timer { top:max(12px,env(safe-area-inset-top)); left:auto; right:max(70px,calc(env(safe-area-inset-right) + 58px)); transform:none; min-width:58px; padding:6px 8px; font-size:18px; }
   html #hud #combo, html #hud #toast { top:66px; }
 }
+
+.cockpit-reticle .hit-marker { position:absolute; inset:-7px; opacity:0; transform:rotate(45deg); background:linear-gradient(#fff5cf,#fff5cf) left top/8px 2px,linear-gradient(#fff5cf,#fff5cf) left top/2px 8px,linear-gradient(#fff5cf,#fff5cf) right top/8px 2px,linear-gradient(#fff5cf,#fff5cf) right top/2px 8px,linear-gradient(#fff5cf,#fff5cf) left bottom/8px 2px,linear-gradient(#fff5cf,#fff5cf) left bottom/2px 8px,linear-gradient(#fff5cf,#fff5cf) right bottom/8px 2px,linear-gradient(#fff5cf,#fff5cf) right bottom/2px 8px; background-repeat:no-repeat; }
+.cockpit-reticle.hit { border-color:transparent; }
+.cockpit-reticle.hit .hit-marker { opacity:1; }

@@ -47,7 +47,7 @@ const HNUM=['hp','maxHp','stock','gauge','stateT','boardT','boardNeed','invuln',
 const RNUM=['armor','maxArmor','stateT','idleT','gh','eyeLevel','exposedT','juice','maxJuice','broken'];
 const rootState = mesh => ({p:mesh.position.toArray().map(round),q:mesh.quaternion.toArray().map(round),s:mesh.scale.toArray().map(round),visible:mesh.visible});
 const fighterState = f => ({...rootState(f.rig.root),pos:f.pos.toArray().map(round),pose:KEYS.map(k=>round(f.pose[k])),hipY:round(f.rig.hips.position.y),state:f.state,onGround:!!f.onGround,
-  facing:round(f.facing),action:f.act?.name??null,spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
+  facing:round(f.facing),action:f.act?.name??null,actionTime:round(f.act?.t||0),spinYaw:round(f.spinYaw||0),parts:['remote','handL','handR'].map(k=>f.rig[k]?.visible ?? true)});
 const numbers = (o,keys)=>Object.fromEntries(keys.map(k=>[k,round(o[k]||0)]));
 export function captureSnapshot(game,{matchId,seq,onInvalid,inputAcks}) {
   const state={v:PEER_VERSION,matchId,seq,time:round(game.time),timeLeft:round(game.timeLeft),phase:game.phase,introStep:game.introStep ?? -1,
@@ -66,7 +66,7 @@ export function captureSnapshot(game,{matchId,seq,onInvalid,inputAcks}) {
 }
 const validRoot = r=>r && vector(r.p,3) && vector(r.q,4,1.01) && Math.abs(Math.hypot(...r.q)-1)<.01 && vector(r.s,3,200) && r.s.every(v=>v>=0) && bool(r.visible);
 const validFighter = f=>validRoot(f) && vector(f.pos,3) && vector(f.pose,KEYS.length,1000) && num(f.hipY,-100,100) && typeof f.state==='string' && /^[a-zA-Z]{1,24}$/.test(f.state)
-  && num(f.facing,-100000,100000) && num(f.spinYaw) && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
+  && num(f.facing,-100000,100000) && (f.actionTime===undefined||num(f.actionTime,0,30)) && num(f.spinYaw) && bool(f.onGround) && Array.isArray(f.parts) && f.parts.length===3 && f.parts.every(bool);
 const validAction = (name, table)=>name===null||(typeof name==='string'&&Object.hasOwn(table,name));
 export function validateSnapshot(s,matchId) {
   try {
@@ -136,11 +136,12 @@ export class PeerReplica {
       this.fighter(r,x,reset); setRoot(r.ring,x.ring); r.setEyes(x.eyeLevel);
     }
     for(const x of s.humans) {
-      const h=g.humans[x.id], wasRiding=h.riding?.id??null, oldHp=h.hp, oldStock=h.stock, oldDead=h.dead, oldOut=h.out;
+      const h=g.humans[x.id], wasRiding=h.riding?.id??null, oldHp=h.hp, oldStock=h.stock, oldDead=h.dead, oldOut=h.out, oldDamage=h.dmgDealt;
       Object.assign(h,Object.fromEntries(HNUM.map(k=>[k,x[k]])),{state:x.state,dead:x.dead,out:x.out,combo:{...h.combo,...x.combo},riding:g.robots.find(r=>r.id===x.riding)||null,boardTarget:g.robots.find(r=>r.id===x.boardTarget)||null});
       if(h.riding && h.rig.root.parent!==h.riding.rig.cockpit) h.riding.rig.cockpit.add(h.rig.root);
       this.fighter(h,x,reset||wasRiding!==x.riding||oldStock!==x.stock||oldDead!==x.dead||oldOut!==x.out);
       if(!first&&x.hp<oldHp&&x.stock===oldStock) { g.fx.hit(h.pos,this.up,1,h.color); if(h.isPlayer) {g.ui.flash(.15);audio.sfx('punch');} }
+      if(!first&&h.isPlayer&&h.riding&&wasRiding===x.riding&&x.dmgDealt>oldDamage) g.cockpitCamera?.confirmHit(Math.min(3,(x.dmgDealt-oldDamage)/6));
       if(!first&&wasRiding!==x.riding&&x.riding!==null) audio.sfx('board');
     }
     g.time=s.time;g.timeLeft=s.timeLeft;g.phase=s.phase;
@@ -162,7 +163,7 @@ export class PeerReplica {
     f.clearBrokenMotionOffsets?.();
     f.pos.fromArray(s.pos);f.onGround=s.onGround;f.state=s.state;f.facing=s.facing;
     f.spinYaw=s.spinYaw;
-    f.act=s.action===null?null:{name:s.action,def:(f.kind==='robot'?ROBOT_ACTS:HUMAN_ACTS)[s.action]};
+    f.act=s.action===null?null:{name:s.action,t:s.actionTime??0,def:(f.kind==='robot'?ROBOT_ACTS:HUMAN_ACTS)[s.action]};
     for(let i=0;i<KEYS.length;i++)f.pose[KEYS[i]]=s.pose[i];
     applyRig(f.rig,f.pose,f.restHips,f.sc);f.rig.hips.position.y=s.hipY;
     if(f.kind==='robot')f.rig.presentMotion?.(f.pose,s.action,f.broken);

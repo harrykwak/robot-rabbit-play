@@ -16,7 +16,7 @@ export function mountedFov(aspect, first) {
 // This controller changes only local camera layers, never authoritative visibility.
 export class CockpitCamera {
   constructor(options = {}) {
-    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .34; this.lookPitch = .34; this.rearEnabled = true;
+    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .16; this.lookPitch = .16; this.hitTime = 0; this.hitStrength = 0; this.clock = 0; this.rearEnabled = true;
     try {
       this.storage = Object.hasOwn(options, 'storage') ? options.storage : globalThis.localStorage;
       const saved = JSON.parse(this.storage?.getItem('rr-camera') || 'null');
@@ -72,7 +72,7 @@ export class CockpitCamera {
   savePreference() { try { this.storage?.setItem('rr-camera', JSON.stringify({version:1,mounted:this.mode,rearView:this.rearEnabled})); } catch { /* optional storage */ } }
   toggleRearView() { this.rearEnabled=!this.rearEnabled;this.savePreference();return this.rearEnabled; }
   restoreVisibility() { for (const [o, mask] of this.hidden) o.layers.mask = mask; this.hidden.clear(); }
-  restore() { this.restoreVisibility(); this.robot = null; this.ready = false; this.eyeY=null; if (this.button) this.button.hidden = true; }
+  restore() { this.hitTime = 0; this.restoreVisibility(); this.robot = null; this.ready = false; this.eyeY=null; if (this.button) this.button.hidden = true; }
   reset(camera) {
     this.restore();
     this.contactView.reset();
@@ -84,6 +84,17 @@ export class CockpitCamera {
       camera.updateProjectionMatrix(); this.saved = null;
     }
     this.obstacles.length = 0; this.obstacleKey = null;
+  }
+  confirmHit(power = 1) { this.hitTime = .2; this.hitStrength = THREE.MathUtils.clamp(power / 3, .35, 1); }
+  showAttackingLimbs(robot) {
+    const limbs = [robot.rig.armL, robot.rig.armR];
+    if (robot.type === 'bolt' && robot.act) {
+      if (['bk2','bk3','drill','tornado'].includes(robot.act.name)) limbs.push(robot.rig.legL);
+      if (['bk1','bk3','drill','tornado'].includes(robot.act.name)) limbs.push(robot.rig.legR);
+    }
+    for (const limb of limbs) limb?.traverse(o => {
+      if (this.hidden.has(o)) { o.layers.mask = this.hidden.get(o); this.hidden.delete(o); }
+    });
   }
   hideSelf(robot, pilot) {
     // All meshes including weapons, pilot, outlines and quality-dependent bakes.
@@ -127,7 +138,7 @@ export class CockpitCamera {
       if (this.robot) { this.reset(camera); game._cameraReady = false; } return false;
     }
     if (!this.saved) this.saved = {fov:camera.fov, near:camera.near, view:camera.view ? {...camera.view} : null};
-    if (this.robot !== robot) { this.restoreVisibility(); this.robot = robot; this.ready = false; this.lookPitch = this.pitch = .34; this.eyeY=null; }
+    if (this.robot !== robot) { this.restoreVisibility(); this.robot = robot; this.ready = false; this.lookPitch = this.pitch = .16; this.hitTime = 0; this.eyeY=null; }
     if (this.button) this.button.hidden = false;
     const f = robot.facing, sx = Math.sin(f), sz = Math.cos(f), root = robot.pos;
     // A seated, unanimated head-height anchor stays inside the collision body.
@@ -139,10 +150,21 @@ export class CockpitCamera {
       this.eyeY=THREE.MathUtils.clamp(this.eyeY,desiredY-.45,desiredY+.3);
     }
     this.lastRoot.copy(root); this.origin.set(root.x,this.eyeY,root.z);
-    const forward=Math.min(robot.radius*.45,robot.rig.eyeForward??.6);
+    this.clock += dt; this.hitTime = Math.max(0, this.hitTime - dt);
+    const impact = Math.sin(this.hitTime / .2 * Math.PI) * this.hitStrength;
+    let swing = 0; const act = robot.act;
+    if (act && Number.isFinite(act.t)) {
+      const pulse = t => { const age = act.t - t; return age >= 0 && age < .18 ? Math.sin(age / .18 * Math.PI) : 0; };
+      for (const hit of act.def.hits || []) swing = Math.max(swing, pulse(hit.t0));
+      for (const [t,event] of act.def.events || []) if (/^(shot[LR]|rocketFist|missile|laserOn|smash|megaSlam)$/.test(event)) swing = Math.max(swing,pulse(t));
+    }
+    const motion = game.reducedMotion ? 0 : 1;
+    const portrait = THREE.MathUtils.clamp((1-camera.aspect)/.55,0,1);
+    // Keep collision avoidance and the optional chase view from the current release.
+    const forward=this.mode==='first' ? -3.2-portrait-motion*(swing*.16+impact*.12) : Math.min(robot.radius*.45,robot.rig.eyeForward??.6);
     this.anchor.set(root.x+sx*forward,this.eyeY,root.z+sz*forward);
     const safe=this.collisionDistance(game,this.origin,this.anchor,.18);
-    this.anchor.copy(this.origin).addScaledVector(this.direction.set(sx,0,sz),Math.min(forward,safe));
+    this.anchor.copy(this.origin).addScaledVector(this.direction.set(sx,0,sz),Math.sign(forward)*Math.min(Math.abs(forward),safe));
     let first = this.mode === 'first';
     if (!first) {
       const back = camera.aspect < 1 ? 16 : 12.5;
@@ -161,10 +183,15 @@ export class CockpitCamera {
     }
     if (first) {
       this.hideSelf(robot,pilot);
+      if (forward < 0 && safe > 1.5) this.showAttackingLimbs(robot);
       camera.position.copy(this.anchor);
+      const shake = Math.min(.04,(game.trauma||0)**2*.06)*motion;
+      camera.position.x += sz*Math.sin(this.clock*53)*shake;
+      camera.position.z -= sx*Math.sin(this.clock*53)*shake;
+      camera.position.y += Math.sin(this.clock*67)*shake;
       // Targets cannot pull the horizon up/down. Pitch changes only by the
       // player's explicit look gesture, at a fixed lens throughout movement.
-      this.pitch=this.lookPitch;
+      this.pitch=this.lookPitch-motion*(swing*.022+impact*.028);
       camera.up.set(0,1,0);
       camera.lookAt(camera.position.x+sx*20,camera.position.y-Math.tan(this.pitch)*20,camera.position.z+sz*20);
     }

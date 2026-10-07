@@ -1,7 +1,7 @@
 {
   "application": "robot-rabbit",
   "format": 1,
-  "version": "1.9.0",
+  "version": "1.9.1",
   "files": [
     ".nojekyll",
     "THIRD_PARTY_NOTICES.md",

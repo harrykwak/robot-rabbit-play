@@ -84,7 +84,7 @@ export class UI {
     this.hud.appendChild(this.supplyPanel);
     this.reticle = document.createElement('div');
     this.reticle.className = 'cockpit-reticle';
-    this.reticle.innerHTML = '<i></i>';
+    this.reticle.innerHTML = '<i></i><b class="hit-marker" aria-hidden="true"></b>';
     this.hud.appendChild(this.reticle);
     this.comboEndT = 0;
     this.hintEl = document.createElement('div');
@@ -188,6 +188,7 @@ export class UI {
     const me = g.player;
     const riding = !!me?.riding && !me.dead && !me.out && g.phase !== 'end';
     this.reticle.classList.toggle('show', riding);
+    this.reticle.classList.toggle('hit', riding && g.cockpitCamera.hitTime > 0);
     this.reticle.classList.toggle('damaged', riding && !!(me.riding.broken & PART_BIT.head));
     const supplying=!!me&&!me.dead&&!me.out&&me.supplyProgress>0;
     this.supplyPanel.classList.toggle('show',supplying);this.supplyPanel.classList.toggle('working',supplying);

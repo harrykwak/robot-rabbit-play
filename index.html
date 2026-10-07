@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#101a3a" />
+  <meta name="theme-color" content="#f5f3eb" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="로봇 래빗" />
@@ -29,19 +29,48 @@
   <div id="world-ui"></div>
 
   <!-- 타이틀 -->
-  <section id="title" class="screen game-menu" aria-label="메인 메뉴">
+  <section id="title" class="screen" aria-labelledby="title-name">
     <div class="title-content">
-      <div class="logo"><div class="logo-ko">로봇 래빗</div><h1><span class="l1">ROBOT</span><span class="l2">RABBIT</span></h1></div>
-      <nav class="title-menu" aria-label="플레이 방식">
-        <button class="btn big title-play" data-action="quickStart"><span>혼자 플레이</span><span aria-hidden="true">▶</span></button>
-        <button class="btn" data-action="toCreateRoom"><span>방 만들기</span><span aria-hidden="true">＋</span></button>
-        <button class="btn" data-action="toJoinRoom"><span>참가하기</span><span aria-hidden="true">↗</span></button>
-      </nav>
-      <p id="title-online-status" class="menu-service">멀티플레이 연결 확인 중</p>
+    <div class="logo">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><i></i></div>
+      <h1 id="title-name"><span class="l1">ROBOT</span><span class="l2">RABBIT<span class="logo-dot">.</span></span></h1>
+      <div class="logo-ko">로봇 래빗</div>
+    </div>
+    <p class="title-tagline">작은 파일럿과 커다란 토끼의 한 판.</p>
+    <nav class="title-menu" aria-label="플레이 모드">
+      <button class="btn big title-play" data-action="toSolo"><span>혼자 플레이</span><span aria-hidden="true">→</span></button>
+      <button class="btn title-mode" data-action="toFriends"><span>친구와 플레이</span><span aria-hidden="true">→</span></button>
+    </nav>
+    <div class="title-tools"><button class="btn" data-action="toHelp">조작법</button><span aria-hidden="true">·</span><button class="btn" data-action="toSettings">설정</button></div>
     </div>
     <div class="title-showcase" id="title-showcase" aria-hidden="true"></div>
-    <nav class="title-tools" aria-label="더 보기"><button class="btn" data-action="toSelect">캐릭터 · 연습</button><button class="btn" data-action="toCampaign">도전</button><button class="btn" data-action="toHelp">조작법</button><button class="btn" data-action="toSettings">설정</button></nav>
-    <p class="title-hint" id="title-hint" hidden></p>
+    <p class="title-hint" id="title-hint"></p>
+  </section>
+
+<section id="solo" class="screen dim hidden" aria-labelledby="solo-h">
+    <div class="panel solo-panel">
+      <button class="btn text-btn" data-action="toTitle">← 홈</button>
+      <h2 id="solo-h">혼자 플레이</h2>
+      <p class="menu-intro">파일럿 한 명, CPU 세 명. 가볍게 한 판.</p>
+      <div class="solo-options">
+        <button class="btn big mode-row" data-action="quickStart"><span>바로 시작<small>선택한 캐릭터로 · 쉬움 · 3분</small></span><span aria-hidden="true">→</span></button>
+        <button class="btn mode-row" data-action="toSelect"><span>자유 난투<small>캐릭터, 무대, 난이도 선택</small></span><span aria-hidden="true">→</span></button>
+        <button class="btn mode-row" data-action="toCampaign"><span>솔로 도전<small>여섯 개의 미션과 나만의 기록</small></span><span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="friends" class="screen dim hidden" aria-labelledby="friends-h">
+    <div class="panel solo-panel">
+      <button class="btn text-btn" data-action="toTitle">← 홈</button>
+      <h2 id="friends-h">친구와 플레이</h2>
+      <p class="menu-intro">친구를 초대해 최대 4명이 함께 플레이하세요.</p>
+      <div class="solo-options">
+        <button class="btn big mode-row" data-action="toCreateRoom"><span>방 만들기<small>방장으로 시작하고 친구 초대</small></span><span aria-hidden="true">→</span></button>
+        <button class="btn mode-row" data-action="toJoinRoom"><span>참가하기<small>초대 링크 또는 방 코드로 참가</small></span><span aria-hidden="true">→</span></button>
+      </div>
+      <p id="title-online-status" class="menu-intro" role="status">멀티플레이 연결 확인 중</p>
+    </div>
   </section>
 
   <section id="rooms" class="screen game-menu hidden" aria-labelledby="room-title">
@@ -79,7 +108,7 @@
       <div class="tabs" role="tablist" aria-label="조작법 항목" id="help-tabs"></div>
       <div class="tab-body" id="help-body" role="tabpanel" tabindex="0"></div>
       <div class="panel-actions">
-        <button class="btn" data-action="toSettings">키 설정</button>
+        <button class="btn" data-action="toKeySettings">키 설정</button>
         <button class="btn" data-action="back">돌아가기</button>
       </div>
     </div>
@@ -89,12 +118,6 @@
   <section id="settings" class="screen dim hidden" aria-labelledby="settings-h">
     <div class="panel settings-panel">
       <h2 id="settings-h">설정</h2>
-      <details class="keyboard-settings">
-      <summary class="sec-h">키보드 키 설정</summary>
-      <p class="help-note">칸을 누른 뒤 원하는 키를 누르세요. <kbd>Esc</kbd> 취소 · <kbd>Del</kbd> 칸 비우기. 다른 동작이 쓰던 키를 고르면 두 키가 서로 바뀝니다.</p>
-      <div class="keys-grid" id="keys-grid"></div>
-      <p class="keys-status" id="keys-status" aria-live="polite"></p>
-      </details>
       <h3 class="sec-h">소리 · 화면</h3>
       <div class="opts-grid">
         <label for="vol-master">전체 음량</label>
@@ -107,15 +130,7 @@
         <input type="checkbox" id="opt-hint" />
         <span class="opt-note">F1 로도 켜고 끌 수 있습니다</span>
       </div>
-      <h3 class="sec-h">모바일 · 성능</h3>
-      <div class="pwa-panel" data-pwa="panel">
-        <strong>앱 설치 · 오프라인</strong>
-        <p data-pwa="status" role="status" aria-live="polite"></p>
-        <p data-pwa="ios" hidden></p>
-        <span data-pwa="offline" hidden>오프라인</span>
-        <button class="btn" type="button" data-pwa="install" hidden>앱 설치</button>
-        <button class="btn" type="button" data-pwa="update" hidden>새 버전 적용</button>
-      </div>
+      <details class="settings-group"><summary>화면 · 터치 · 성능</summary>
       <div class="opts-grid" id="touch-settings">
         <label for="opt-touch">화면 터치 조작</label>
         <select id="opt-touch"><option value="auto">자동 감지</option><option value="on">항상 표시</option><option value="off">끄기</option></select>
@@ -139,9 +154,26 @@
         <input id="opt-reduce-motion" type="checkbox" />
         <span class="opt-note">카메라 흔들림과 화면 플래시 완화</span>
       </div>
+      </details>
+      <details class="keyboard-settings">
+      <summary class="sec-h">키보드 키 설정</summary>
+      <p class="help-note">칸을 누른 뒤 원하는 키를 누르세요. <kbd>Esc</kbd> 취소 · <kbd>Del</kbd> 칸 비우기. 다른 동작이 쓰던 키를 고르면 두 키가 서로 바뀝니다.</p>
+      <div class="keys-grid" id="keys-grid"></div>
+      <p class="keys-status" id="keys-status" aria-live="polite"></p>
+      <button class="btn" id="keys-reset">키보드 기본값</button>
       <p class="help-note">게임패드는 고정 배치입니다: 왼쪽 스틱 이동, A 점프, X 공격, Y 스킬 1, B 스킬 2, RB 대시, LB 호출/탑승/하차, Start 일시정지</p>
+      </details>
+      <details class="settings-group"><summary>앱 설치 · 업데이트</summary>
+      <div class="pwa-panel" data-pwa="panel">
+        <strong>앱 설치 · 오프라인</strong>
+        <p data-pwa="status" role="status" aria-live="polite"></p>
+        <p data-pwa="ios" hidden></p>
+        <span data-pwa="offline" hidden>오프라인</span>
+        <button class="btn" type="button" data-pwa="install" hidden>앱 설치</button>
+        <button class="btn" type="button" data-pwa="update" hidden>새 버전 적용</button>
+      </div>
+      </details>
       <div class="panel-actions">
-        <button class="btn" id="keys-reset">키보드 기본값</button>
         <button class="btn big" data-action="back">확인</button>
       </div>
     </div>
@@ -151,11 +183,12 @@
   <section id="select" class="screen hidden">
     <div class="select-wrap">
       <div class="panel select-panel">
-        <p class="menu-eyebrow">BUILD YOUR DUO</p>
-        <h2>01 <span>파일럿 선택</span></h2>
+        <div class="select-heading"><button class="btn text-btn" data-action="selectionBack">← 뒤로</button><h2>출격 준비</h2></div>
+        <h3 class="choice-heading">파일럿</h3>
         <div id="pilot-list" class="pilot-list"></div>
-        <h2>02 <span>토끼 로봇</span></h2>
+        <h3 class="choice-heading">토끼 로봇</h3>
         <div id="robot-list" class="robot-list"></div>
+        <details class="selection-rules" id="selection-rules"><summary>대전 설정 <span id="rules-summary"></span></summary>
         <div class="opt-row">
           <div class="opt">
             <span>난이도</span>
@@ -175,13 +208,13 @@
           </div>
         </div>
         <p class="stage-desc" id="stage-desc"></p>
+        </details>
         <div class="select-actions">
-          <button class="btn" data-action="toTitle">뒤로</button>
-          <button class="btn big" id="select-start" data-action="confirmSelection">난투 시작</button>
+          <button class="btn big" id="select-start" data-action="confirmSelection">플레이</button>
         </div>
       </div>
       <div class="detail-col">
-        <div id="select-showcase" class="select-showcase" aria-hidden="true"><span class="showcase-kicker">YOUR DUO / READY</span></div>
+        <div id="select-showcase" class="select-showcase" aria-hidden="true"></div>
         <div class="pilot-detail" id="pilot-detail"></div>
         <div class="robot-detail" id="robot-detail"></div>
       </div>
@@ -190,11 +223,12 @@
 
   <section id="campaign" class="screen dim hidden" aria-labelledby="campaign-h">
     <div class="panel campaign-panel">
-      <div class="campaign-heading"><div><p class="campaign-eyebrow">CARROT CHALLENGE / 01—06</p><h2 id="campaign-h">작은 토끼의 큰 도전</h2></div><p id="campaign-progress"></p></div>
-      <p class="campaign-intro">여섯 번의 출격, 세 개의 무대. 목표를 달성하고 나만의 최고 기록을 남겨요.</p>
+      <button class="btn text-btn" data-action="toSolo">← 혼자 플레이</button>
+      <div class="campaign-heading"><h2 id="campaign-h">솔로 도전</h2><p id="campaign-progress"></p></div>
+      <p class="campaign-intro">하나씩 도전하고, 더 좋은 기록을 남겨보세요.</p>
       <div class="campaign-loadout"><span id="campaign-pilot"></span><button class="btn" data-action="chooseCampaignPilot">파일럿 · 로봇 선택</button></div>
       <div id="mission-list"></div>
-      <div class="panel-actions"><button class="btn" data-action="toTitle">타이틀로</button><p class="save-note">기록은 이 기기에 저장됩니다. 앱을 삭제하면 사라져요.</p></div>
+      <p class="save-note">기록은 이 기기에 저장됩니다.</p>
     </div>
   </section>
 
@@ -219,17 +253,15 @@
 
   <section id="mobile-help" class="screen dim hidden" aria-labelledby="mobile-help-title">
     <div class="panel mobile-guide">
-      <h2 id="mobile-help-title">두 엄지로, 토끼 난투!</h2>
-      <p>왼쪽 스틱으로 이동하고, 오른쪽 큰 버튼으로 공격해요. 가로 화면을 권장하며, 세로로도 플레이할 수 있어요.</p>
+      <h2 id="mobile-help-title">플레이 전에</h2>
+      <p>왼손으로 이동, 오른손으로 공격. 가로 화면에서 더 넓게 즐길 수 있습니다.</p>
       <ol>
-        <li>큰 <strong>공격</strong> 버튼을 여러 번 눌러 콤보! 옆의 작은 두 버튼은 <strong>스킬 1</strong>(공격 기술)과 <strong>스킬 2</strong>(방어 기술)예요.</li>
-        <li>스틱 옆 <strong>점프</strong> 버튼으로 뛰고, 스틱을 같은 방향으로 <strong>두 번 튕기면 대시</strong>예요. 띄운 직후 공격을 누르면 저절로 따라 뛰어요.</li>
-        <li>당근 게이지가 가득 차면 <strong>호출</strong> 버튼이 나타나요. 눌러서 로봇을 불러요.</li>
-        <li>로봇 옆에서 멈추고 <strong>탑승</strong>을 길게 눌러요. 맞거나 움직이면 취소돼요.</li>
-        <li>로봇을 타면 스킬 버튼이 로봇 기술로 바뀌어요. <strong>하차</strong>를 길게 눌러 내릴 수 있어요.</li>
+        <li><strong>이동과 점프</strong> — 왼쪽 스틱으로 이동하고 옆 버튼으로 점프. 스틱을 같은 방향으로 두 번 튕기면 대시합니다.</li>
+        <li><strong>공격과 방어</strong> — 오른쪽 큰 버튼은 공격, 작은 두 버튼은 공격 스킬과 방어 스킬입니다.</li>
+        <li><strong>로봇 탑승</strong> — 당근이 차면 호출하세요. 로봇 옆에서 탑승을 길게 누르고, 내릴 때는 하차를 길게 누르세요.</li>
       </ol>
-      <p>앱을 바꾸면 자동으로 일시정지됩니다. 버튼 크기와 왼손잡이 배치는 설정에서 바꿀 수 있어요.</p>
-      <div class="panel-actions"><button class="btn" data-action="cancelTouchStart">돌아가기</button><button class="btn big" data-action="beginTouchMatch">알겠어요, 시작!</button></div>
+      <p>자세한 조작법과 버튼 설정은 일시정지 메뉴에서 볼 수 있습니다.</p>
+      <div class="panel-actions"><button class="btn" data-action="cancelTouchStart">뒤로</button><button class="btn big" data-action="beginTouchMatch">플레이</button></div>
     </div>
   </section>
   <div id="runtime-notice" class="hidden" role="alert"><span id="runtime-message"></span><button class="btn" type="button" id="reload-game">새로 열기</button></div>
@@ -245,7 +277,7 @@
           <button class="btn" data-action="restart">다시 시작</button>
           <button class="btn" data-action="toHelp">조작법</button>
           <button class="btn" data-action="toSettings">설정</button>
-          <button class="btn" data-action="toTitle">타이틀로</button>
+          <button class="btn" data-action="toTitle">홈으로</button>
         </div>
         <dl class="pause-keys" id="pause-keys" aria-label="현재 키"></dl>
       </div>
@@ -259,15 +291,16 @@
       <p id="result-message"></p>
       <div id="result-table"></div>
       <div class="select-actions">
-        <button class="btn" data-action="toSelect">캐릭터 선택</button>
+        <button class="btn" data-action="toSelect">캐릭터 변경</button>
         <button class="btn big" data-action="restart">한 판 더</button>
         <button class="btn big hidden" id="next-mission" data-action="nextMission">다음 도전</button>
         <button class="btn" data-action="toCampaign">도전 목록</button>
+        <button class="btn" data-action="toTitle">홈으로</button>
       </div>
     </div>
   </section>
 
-  <div id="loading" role="status">로봇 래빗을 준비하고 있어요…</div>
+  <div id="loading" role="status" aria-live="polite"><span class="loading-brand">ROBOT RABBIT<span>.</span></span><span class="loading-caption"><i aria-hidden="true"></i>게임 준비 중</span></div>
   <output id="performance-hud" class="hidden" aria-label="실행 성능"></output>
   <div id="thermal-note" role="status"></div>
   <p id="mission-hud" class="hidden"></p>
