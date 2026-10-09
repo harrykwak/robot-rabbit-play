@@ -1,0 +1,21 @@
+/* Local OFL display subsets; licensing and source credits: THIRD_PARTY_NOTICES.md.
+ * RR Display retains all 2,350 KS X 1001 Hangul syllables. Unsupported symbols
+ * and syllables continue through the consumer's system-font fallback stack.
+ * Use "RR Number", "RR Display", sans-serif for mixed Korean/Latin UI.
+ */
+@font-face {
+  font-family: "RR Number";
+  src: url("../assets/ui/fonts/rr-number.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A1-00FF, U+2010-2027, U+2030-203A, U+2212;
+}
+
+@font-face {
+  font-family: "RR Display";
+  src: url("../assets/ui/fonts/rr-display-jua.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}

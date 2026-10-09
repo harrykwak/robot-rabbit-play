@@ -1,6 +1,7 @@
 import * as input from './input.js';
 import { RULES } from './data.js';
 import { ICONS, skillIcon } from './touch-icons.js';
+import { UI_ICONS } from './ui-icons.js';
 
 // Large attack in the center, dash/jump beside it, skills/context in an upper arc.
 // A dedicated dash keeps moving + dashing possible without a second stick gesture.
@@ -63,7 +64,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
   const knob = make('div', 'touch-knob'); stick.append(knob);
   const group = make('div', 'touch-actions');
   const status = make('div', 'touch-status');
-  const menu = make('button', 'touch-menu'); menu.type = 'button'; menu.setAttribute('aria-label', '일시정지 메뉴'); menu.title = '일시정지';
+  const menu = make('button', 'touch-menu btn rr-icon'); menu.type = 'button'; menu.setAttribute('aria-label', '일시정지 메뉴'); menu.title = '일시정지';
   menu.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="4.5" y="3.5" width="4" height="13" rx="1.6"/><rect x="11.5" y="3.5" width="4" height="13" rx="1.6"/></svg>';
   const buttons = new Map();
   const names = { atk: '공격', dash: '대시', jump: '점프', hvy: '스킬 1', act: '호출', grd: '스킬 2' };
@@ -97,8 +98,22 @@ export function createTouchControls({ onPause = () => {} } = {}) {
   const special = buttons.get('act');
   special.btn.classList.add('touch-special');
   special.btn.hidden = true; special.btn.setAttribute('aria-hidden', 'true'); special.btn.tabIndex = -1;
+  // The action remains absent until the game permits it. Its stable slot still
+  // shows real carrot progress, without becoming an unavailable input target.
+  const charge = make('div', 'touch-charge');
+  charge.setAttribute('role', 'progressbar'); charge.setAttribute('aria-label', '로봇 호출 당근 게이지');
+  charge.setAttribute('aria-valuemin', '0'); charge.setAttribute('aria-valuemax', String(RULES.gaugeMax));
+  const chargeIcon = make('span', 'touch-charge-icon'); chargeIcon.innerHTML = ICONS.call; chargeIcon.setAttribute('aria-hidden', 'true');
+  const chargeText = make('span', 'touch-charge-text', '0%');
+  charge.append(chargeIcon, chargeText);
+  const chargeState = { btn: charge, gauge: -1 };
+  for (const action of ['hvy', 'grd']) {
+    const b = buttons.get(action);
+    b.stateIcon = make('span', 'touch-state-icon'); b.stateIcon.setAttribute('aria-hidden', 'true');
+    b.btn.append(b.stateIcon);
+  }
   let specialKind = null;
-  root.append(stick, group, menu, status); document.body.append(root);
+  root.append(stick, group, menu, status, charge); document.body.append(root);
 
   let enabled = false, active = false, stickId = null, center = { x: 0, y: 0 }, radius = 1;
   let scale = 1, leftHanded = false;
@@ -109,6 +124,7 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     const next = touchLayout(rect.width || globalThis.innerWidth || 390, rect.height || globalThis.innerHeight || 844, { scale, leftHanded, safe });
     const place = (el, box) => { el.style.setProperty('--touch-x', box.x + 'px'); el.style.setProperty('--touch-y', box.y + 'px'); el.style.setProperty('--touch-size', box.size + 'px'); };
     place(stick, next.stick); for (const [action, b] of buttons) place(b.btn, next.buttons[action]);
+    place(charge, next.buttons.act);
     root.style.setProperty('--touch-zone', next.zone + 'px');
   }
   const usable = () => enabled && active;
@@ -222,6 +238,10 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     attr(b.btn, 'title', name);
     b.btn.classList.toggle('is-cooling', !ready);
     b.btn.classList.toggle('is-locked', !!why);
+    if (b.lockReason !== why) {
+      b.lockReason = why;
+      b.stateIcon.innerHTML = why ? UI_ICONS[why === 'juice' ? 'juice' : 'warning'] : '';
+    }
     b.btn.classList.toggle('is-burst', burst);
     b.btn.classList.toggle('is-active', active);
     if (ready && !b.ready) b.btn.classList.add('is-ready');
@@ -250,6 +270,9 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     if (kind === specialKind) return;
     specialKind = kind;
     b.btn.hidden = !kind;
+    charge.classList.toggle('has-action', !!kind);
+    b.btn.classList.toggle('is-charged', kind === 'call');
+    if (kind === 'call') b.btn.classList.add('is-ready');
     attr(b.btn, 'aria-hidden', String(!kind));
     b.btn.tabIndex = kind ? 0 : -1;
     if (!kind) fill(b, 'hold', 0, '--hold');
@@ -260,6 +283,12 @@ export function createTouchControls({ onPause = () => {} } = {}) {
     input.syncRiding(player);
     if (!usable() || !player) return;
     const robot = player.riding || null;
+    const gauge = Math.max(0, Math.min(RULES.gaugeMax, Number(player.gauge) || 0));
+    fill(chargeState, 'gauge', gauge / RULES.gaugeMax, '--charge');
+    text(chargeText, Math.floor(gauge / RULES.gaugeMax * 100) + '%');
+    attr(charge, 'aria-valuenow', String(Math.floor(gauge)));
+    charge.classList.toggle('is-charged', gauge >= RULES.gaugeMax);
+    charge.hidden = !!(player.out || player.dead);
     // 사람/로봇이 바뀌면 스킬 칸의 최대 쿨다운 기억을 새로 시작한다
     if (player !== lastPlayer || robot !== lastRiding) { lastPlayer = player; lastRiding = robot; for (const b of buttons.values()) { b.ready = true; b.max = 0; } }
     if (player.out || player.dead) { reset(); setSpecial(null); text(status, player.out ? '탈락 · 관전 중' : '잠시 뒤 부활해요'); return; }

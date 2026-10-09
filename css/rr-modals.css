@@ -1,0 +1,294 @@
+/* Results, menus and online rooms share the brawler kit. */
+:is(#help,#settings,#pause,#result,#mobile-help) .panel { max-height:calc(100dvh - 2 * var(--rr-edge) - var(--safe-t) - var(--safe-b)); min-width:0; }
+:is(#help,#settings,#pause,#result,#mobile-help) .rr-ribbon { align-self:center; margin:0 20px 16px; flex:none; }
+:is(#help,#settings,#mobile-help) .panel-actions { display:flex; justify-content:center; gap:12px; padding:12px 4px 4px; flex:none; }
+:is(#help,#settings,#pause,#result,#mobile-help,#rooms) button { min-height:44px; }
+:is(.settings-scroll,#help-body,.result-scroll,.guide-steps,.room-panel) { overscroll-behavior:contain; touch-action:pan-y; scrollbar-width:thin; scrollbar-color:var(--rr-yellow) #201453; }
+.help-panel { width:min(940px,100%); display:flex; flex-direction:column; }
+#help-tabs { flex:none; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:4px; margin-bottom:16px; }
+#help-tabs button { min-width:0; padding:10px 6px; white-space:normal; }
+#help-body { overflow:auto; min-height:0; display:flex; flex-direction:column; gap:14px; padding:4px 10px 6px 4px; }
+#help .help-grid { display:grid; grid-template-columns:minmax(125px,auto) minmax(0,1fr); gap:12px 18px; padding:16px; border-radius:16px; background:#211660; align-items:center; }
+#help .help-grid > div:nth-child(odd) { display:flex; flex-wrap:wrap; gap:5px; }
+#help .help-grid > div:nth-child(even) { padding-bottom:9px; border-bottom:1px solid #ffffff20; font-size:13px; }
+:is(#help,#settings) .help-note { padding:12px 14px; border-radius:12px; background:#201450; font-size:12px; line-height:1.7; color:#e6e0ff; }
+#help .help-note.hl { border-left:5px solid var(--rr-yellow); }
+#help :is(.pilot-help,.robot-help) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+#help .ph-card { padding:16px; border:3px solid var(--rr-ink); border-top:6px solid var(--c); border-radius:16px; background:#271965; display:flex; flex-direction:column; gap:10px; }
+#help .ph-card h3 { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+#help .pd-role { background:var(--c); color:var(--rr-ink); padding:3px 8px; border-radius:7px; font:400 12px var(--rr-font-display); text-shadow:none; -webkit-text-stroke:0; }
+#help :is(.ph-desc,.traits,.skill-desc) { font-size:12px; line-height:1.6; }
+#help :is(.traits,.skill-desc) { list-style:none; }
+#help .move-list { list-style:none; display:grid; gap:10px; }
+#help .move-list li { display:grid; grid-template-columns:minmax(72px,auto) minmax(0,1fr); gap:4px 12px; padding:12px; border-radius:12px; background:#1b1048; }
+#help .mv-in { grid-row:span 2; align-self:start; padding:5px 8px; border-radius:7px; background:var(--rr-cream); color:var(--rr-ink); font:400 13px var(--rr-font-display); max-width:170px; overflow-wrap:anywhere; }
+#help .mv-name { font:400 17px var(--rr-font-display); color:var(--rr-yellow); }
+#help .mv-desc { color:#d6cff4; font-size:12px; line-height:1.5; }
+.settings-panel { width:min(760px,100%); display:flex; flex-direction:column; }
+.settings-scroll { min-height:0; overflow:auto; padding:4px 8px; }
+#settings .sec-h { margin:4px 0 10px; }
+#settings .opts-grid { display:grid; grid-template-columns:minmax(110px,1fr) minmax(120px,1.4fr) minmax(45px,.8fr); gap:12px; align-items:center; padding:14px 12px; background:#23175b; border-radius:14px; }
+#settings .opts-grid label { font:400 16px var(--rr-font-display); }
+#settings input[type=range] { min-height:44px; margin:0; }
+#settings input[type=checkbox] { height:44px; }
+#settings .opts-grid output { font:400 23px var(--rr-font-display); color:var(--rr-yellow); }
+#settings .opt-note { font-size:12px; line-height:1.4; color:#c9c3ef; }
+#settings select { min-width:0; width:100%; font-size:13px; }
+#settings :is(.settings-group,.keyboard-settings) { margin:14px 0 0; }
+#settings details[open] > summary { margin-bottom:12px; }
+#settings .keys-grid { display:grid; grid-template-columns:minmax(80px,1fr) 1fr 1fr minmax(80px,1fr) 1fr 1fr; gap:8px; align-items:center; padding:14px 4px; }
+#settings .k-name { font:400 14px var(--rr-font-display); }
+#settings .k-slot { border:2px solid var(--rr-ink); min-width:0; border-radius:9px; background:linear-gradient(#fff,#d9d2f0); color:var(--rr-ink); box-shadow:inset 0 -4px #a39bc6; font:400 15px var(--rr-font-display); cursor:pointer; }
+#settings .k-slot.empty { color:#655888; background:#bdb4da; }
+#settings .k-slot.wait { background:var(--rr-yellow); animation:rr-pulse .7s ease-in-out infinite; }
+#settings .keys-status { min-height:20px; color:var(--rr-yellow); font-size:12px; margin-bottom:10px; }
+#settings .keyboard-settings > .help-note { margin-top:12px; }
+#settings .pwa-panel { padding:14px; background:#201450; border-radius:14px; }
+#settings .pwa-panel p { margin:8px 0; font-size:13px; }
+#settings [data-build-version] { font-size:12px; color:var(--rr-yellow); }
+.pause-panel { width:min(700px,100%); display:flex; flex-direction:column; }
+.pause-body { display:flex; gap:24px; }
+.pause-body .col { display:grid; grid-template-columns:1fr 1fr; gap:14px; flex:1; min-width:250px; }
+.pause-body .col > :is([data-action=resume],[data-action=restart],[data-action=toTitle],#mounted-camera-toggle) { grid-column:1/-1; }
+.pause-body .col .btn { min-height:54px; }
+.pause-body .col .big { min-height:68px; }
+.pause-keys { flex:1; display:grid; grid-template-columns:auto 1fr; gap:9px 12px; align-items:center; padding:18px; border-radius:16px; background:#201453; }
+.pause-keys dt { display:flex; flex-wrap:wrap; gap:4px; }
+.pause-keys dd { font-size:12px; }
+#peer-pause-note:not(:empty) { padding:12px; margin-bottom:10px; border-radius:12px; background:#211650; }
+.mobile-guide { display:flex; flex-direction:column; width:min(850px,100%); text-align:center; }
+.guide-intro { font:400 20px var(--rr-font-display); }
+.guide-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; list-style:none; padding:18px 4px 10px; min-height:0; overflow:auto; }
+.guide-steps li { padding:14px; border:3px solid var(--rr-ink); border-radius:18px; background:linear-gradient(#7964ed,#4633ba); }
+.guide-art { position:relative; display:flex; align-items:center; justify-content:center; min-height:105px; }
+.guide-art .rr-ic { width:78px; height:78px; }
+.guide-art .rr-ic + .rr-ic { width:52px; margin-left:-15px; align-self:flex-end; }
+.guide-art span { position:absolute; top:0; left:0; color:#ffdf57; font:400 21px var(--rr-font-display); }
+.guide-steps strong { display:block; font:400 22px var(--rr-font-display); color:var(--rr-yellow); margin:10px 0 8px; }
+.guide-steps p { font-size:13px; line-height:1.7; }
+.guide-tip { font-size:12px; padding-top:8px; }
+.mobile-guide .panel-actions .big { min-width:180px; }
+#runtime-notice { position:fixed; z-index:40; left:50%; top:calc(16px + var(--safe-t)); transform:translateX(-50%); width:min(560px,calc(100% - 28px)); padding:16px; background:#471744; border:3px solid var(--rr-red); border-radius:16px; box-shadow:0 6px 0 var(--rr-ink); display:flex; align-items:center; gap:16px; }
+#runtime-message { min-width:0; font-size:13px; }
+#runtime-notice .btn { flex:none; font-size:16px; }
+.result-panel { width:min(1050px,100%); display:flex; flex-direction:column; padding:18px 24px; }
+.result-hero { display:flex; align-items:center; justify-content:center; gap:20px; flex:none; padding-bottom:12px; }
+#result .result-hero .rr-ribbon { font-size:36px; margin:0 10px; min-width:240px; }
+.result-hero .rr-ic { width:42px; height:42px; }
+.result-scroll { overflow:auto; min-height:0; padding:10px 5px 2px; }
+#result-podium { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:15px; list-style:none; padding:12px 0 6px; }
+.result-fighter { position:relative; border:3px solid var(--rr-ink); border-radius:18px; overflow:visible; background:radial-gradient(ellipse at 50% 35%,color-mix(in srgb,var(--fighter-color) 70%,white),#4433a8 90%); box-shadow:0 5px 0 #180d44; }
+.result-fighter.is-first { background:radial-gradient(ellipse at 50% 35%,#fff495,#d99720); }
+.result-fighter.is-me { outline:4px solid var(--rr-yellow); outline-offset:1px; }
+.fighter-place { position:absolute; top:8px; left:8px; z-index:2; display:flex; align-items:center; font:400 22px var(--rr-font-display); -webkit-text-stroke:4px var(--rr-ink); paint-order:stroke fill; }
+.fighter-place .rr-ic { width:35px; height:35px; }
+.fighter-art { height:215px; overflow:hidden; border-radius:15px 15px 0 0; background:repeating-conic-gradient(from 20deg at 50% 65%,#ffffff10 0 10deg,transparent 10deg 30deg); }
+.fighter-art img { display:block; width:100%; height:100%; object-fit:contain; padding:12px 5px 0; }
+.fighter-info { position:relative; padding:10px 8px 12px; border-top:3px solid var(--rr-ink); border-radius:0 0 15px 15px; background:#201453; }
+#result .fighter-name { font-size:21px; text-align:center; margin-bottom:8px; overflow-wrap:anywhere; }
+.result-you { display:inline-block; vertical-align:middle; margin-left:6px; padding:3px 6px; border-radius:5px; background:var(--rr-yellow); color:var(--rr-ink); font:400 12px var(--rr-font-display); text-shadow:none; -webkit-text-stroke:0; }
+.fighter-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); text-align:center; gap:3px; }
+.fighter-stats dt { font-size:12px; color:#d0c8ed; }
+.fighter-stats dd { font:400 22px var(--rr-font-display); }
+.fighter-mvp { position:absolute; right:6px; top:-14px; z-index:3; --bg:var(--rr-yellow); font-size:16px; padding:4px 9px; transform:rotate(5deg); }
+.fighter-mvp .rr-ic { width:23px; height:23px; }
+.result-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:14px 0 8px; }
+.result-metrics > div { display:flex; justify-content:center; align-items:center; gap:14px; border-radius:12px; padding:8px; background:#191046; border:2px solid #7660de; }
+.result-metrics dt { font-size:12px; color:#d0c8ed; }
+.result-metrics dd { font:400 27px var(--rr-font-display); color:var(--rr-yellow); }
+/* Narrow screens list the four fighters vertically; the highlighted "나" card already carries the same three
+   numbers, so the duplicate tiles are dropped there instead of being clipped at the end of the scroll list. */
+@media (max-width:700px) and (orientation:portrait) { #result .result-metrics { display:none; } }
+#result-message { font-size:12px; line-height:1.6; text-align:center; margin:10px 0; }
+.result-records { margin:8px 0 0; flex:none; }
+#result-table { overflow:auto; max-width:100%; max-height:150px; touch-action:pan-x pan-y; }
+#result .res { width:100%; border-collapse:collapse; font-size:12px; min-width:440px; }
+#result .res caption { padding:8px; }
+#result .res :is(th,td) { padding:9px 7px; border-bottom:1px solid #ffffff25; text-align:center; }
+#result .res .me { background:#65479b; }
+.result-actions { display:flex; gap:12px; flex:none; padding:13px 4px 5px; justify-content:center; }
+.result-actions .btn { flex:1; padding-inline:12px; }
+.result-actions .big { flex:1.35; }
+#result-stars { display:flex; justify-content:center; gap:9px; margin:0 0 8px; }
+#result-stars .rr-ic { width:42px; height:42px; }
+#result-stars .earned { animation:rr-pop .4s var(--rr-ease-pop) both; animation-delay:calc(150ms + var(--i) * 180ms); }
+#rooms { display:block; background:linear-gradient(90deg,#20115aea 0%,#312281c0 45%,#20115a25 72%); }
+.room-heading { display:flex; align-items:center; gap:20px; margin:2px 2vw 18px; }
+.room-heading > span { font:400 18px var(--rr-font-display); -webkit-text-stroke:4px var(--rr-ink); paint-order:stroke fill; }
+#room-showcase { position:absolute; inset:14% 2% 8% 51%; pointer-events:none; }
+#rooms .room-panel { width:min(480px,48%); margin-left:3vw; padding:20px; max-height:calc(100% - 78px); overflow:auto; }
+#rooms .room-eyebrow { text-align:center; font-size:12px; color:#dfd5ff; margin-bottom:10px; }
+#rooms h2.rr-ribbon { display:flex; margin:0 20px 22px; font-size:28px; }
+#room-status:not(:empty) { margin-bottom:14px; padding:10px; border-radius:12px; background:#1d1147; overflow-wrap:anywhere; }
+#room-status.error { border-left:4px solid var(--rr-red); }
+#room-entry,#room-unavailable { display:grid; gap:14px; }
+#rooms label { display:grid; gap:8px; font:400 16px var(--rr-font-display); }
+#rooms :is(input,select) { min-width:0; width:100%; }
+#rooms input[aria-invalid=true] { outline:3px solid var(--rr-red); }
+#rooms input::placeholder { font-size:13px; }
+#room-code { text-transform:uppercase; }
+#rooms .room-note,#room-invited,#room-service-message { font-size:12px; line-height:1.65; color:#ddd5fc; }
+#room-host-note { margin-top:9px; }
+.room-loadout-fields { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:12px 3px 4px; }
+#room-stage-field { grid-column:1/-1; }
+.room-code-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+#room-copy { flex:1; font-size:16px; }
+.room-invite-code { margin:14px 0; }
+#room-number { display:block; padding:14px; font:400 21px var(--rr-font-display); letter-spacing:.07em; color:var(--rr-ink); border-radius:12px; background:var(--rr-yellow); overflow-wrap:anywhere; margin-top:10px; }
+#room-state { font-size:13px; padding:10px 0; }
+#room-roster { display:grid; grid-template-columns:1fr 1fr; gap:10px; list-style:none; }
+#room-roster li { display:grid; grid-template-columns:50px minmax(0,1fr); align-items:center; padding:8px; min-height:76px; background:#221653; border:2px solid #170d39; border-radius:12px; }
+#room-roster .is-me { border-color:var(--rr-yellow); }
+#room-roster img { grid-row:span 2; width:50px; height:58px; object-fit:contain; }
+#room-roster span { overflow-wrap:anywhere; font:400 17px var(--rr-font-display); }
+#room-roster small { display:flex; align-items:center; gap:3px; font-size:12px; color:#b6f798; }
+#room-roster small .rr-ic { width:18px; height:18px; }
+#room-roster .rr-ic svg { width:100%; height:100%; }
+#room-roster small span:not(.rr-ic),#room-roster .vacant span:not(.rr-ic) { font:inherit; }
+#room-roster .vacant { font-size:12px; color:#c7bde8; border-style:dashed; }
+#room-roster .vacant .rr-ic { width:38px; height:38px; opacity:.55; }
+#room-pending-block h3 { margin:18px 0 8px; }
+#room-pending { list-style:none; }
+#room-pending li { display:flex; align-items:center; gap:10px; padding:10px 0; }
+#room-pending li > span { flex:1; overflow-wrap:anywhere; min-width:0; }
+#room-pending .btn { font-size:15px; padding-inline:12px; }
+#room-start-reason { margin:14px 0; }
+.room-actions { display:flex; flex-wrap:wrap; gap:12px; padding:3px; }
+.room-actions .big { width:100%; }
+@media (max-width:700px) {
+  :is(#help,#settings,#pause,#result,#mobile-help) .panel { padding:16px 14px; }
+  #help-tabs { gap:8px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:10px; }
+  #help-tabs button { font-size:15px; }
+  #help .help-grid { grid-template-columns:minmax(70px,.75fr) minmax(0,1.25fr); padding:12px; gap:10px; }
+  #help :is(.pilot-help,.robot-help) { grid-template-columns:1fr; }
+  #help .move-list li { grid-template-columns:1fr; }
+  #help .mv-in { grid-row:auto; max-width:none; justify-self:start; }
+  #settings .opts-grid { grid-template-columns:minmax(90px,1fr) minmax(90px,1fr); gap:8px 10px; padding:12px 10px; }
+  #settings .opts-grid .opt-note { grid-column:1/-1; margin-top:-5px; padding-bottom:10px; }
+  #settings .opts-grid output { grid-column:2; text-align:right; font-size:16px; margin-top:-10px; }
+  #settings .keys-grid { grid-template-columns:minmax(75px,1fr) 1fr 1fr; }
+  #settings .opts-grid label { font-size:14px; }
+  .pause-panel { width:min(420px,100%); }
+  .pause-keys { display:none; }
+  .pause-body .col { min-width:0; }
+  .guide-steps { grid-template-columns:1fr; gap:10px; padding-top:12px; }
+  .guide-steps li { display:flex; align-items:center; gap:10px; text-align:left; padding:10px; }
+  .guide-art { flex:0 0 76px; min-height:84px; }
+  .guide-art .rr-ic { width:62px; height:62px; }
+  .guide-art .rr-ic + .rr-ic { position:absolute; width:36px; right:-3px; bottom:0; }
+  .guide-art span { font-size:16px; top:-5px; left:-3px; }
+  .guide-steps strong { font-size:20px; margin:0 0 5px; }
+  .guide-steps p { font-size:12px; line-height:1.55; }
+  .guide-tip { padding-top:3px; }
+  .mobile-guide .panel-actions .big { min-width:0; flex:1; }
+  #result .result-hero .rr-ribbon { font-size:28px; min-width:0; margin:0 10px; }
+  .result-hero { gap:4px; padding-bottom:5px; }
+  #result-rank { display:none; }
+  #result-podium { grid-template-columns:1fr; gap:12px; padding:12px 3px 6px; }
+  .result-fighter { display:grid; grid-template-columns:80px minmax(0,1fr); align-items:center; min-height:94px; }
+  .fighter-art { height:100px; border-radius:15px 0 0 15px; }
+  .fighter-art img { padding:3px 0 0; }
+  .fighter-info { border-top:0; border-left:3px solid var(--rr-ink); border-radius:0 15px 15px 0; padding:10px 7px; align-self:stretch; display:flex; flex-direction:column; justify-content:center; }
+  .fighter-place { top:0; left:0; font-size:16px; }
+  .fighter-place .rr-ic { width:26px; height:26px; }
+  #result .fighter-name { font-size:20px; margin-bottom:5px; }
+  .fighter-stats dd { font-size:20px; }
+  .fighter-mvp { font-size:12px; top:-12px; right:8px; padding:2px 6px; }
+  .fighter-mvp .rr-ic { width:18px; height:18px; }
+  .result-metrics { gap:7px; }
+  .result-metrics > div { flex-direction:column; gap:2px; }
+  .result-metrics dd { font-size:24px; }
+  .result-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; padding-top:12px; }
+  .result-actions .btn { min-width:0; font-size:16px; padding:8px 5px 12px; min-height:46px; }
+  .result-actions .big { grid-column:1/-1; font-size:22px; min-height:52px; }
+  #rooms { background:linear-gradient(#24126760 0,#241267e6 30%,#241267 65%); }
+  .room-heading { margin:0 4px 8px; }
+  #room-showcase { inset:48px 2% auto 45%; height:170px; }
+  #rooms .room-panel { width:100%; margin:125px 0 0; max-height:calc(100% - 184px); padding:16px; }
+  #rooms h2.rr-ribbon { margin-bottom:16px; }
+  #room-roster { grid-template-columns:1fr; }
+  #room-roster li { min-height:66px; }
+}
+@media (max-height:430px) and (min-width:701px) {
+  :is(#help,#settings,#pause,#result,#mobile-help) .panel { padding:12px 18px; }
+  :is(#help,#settings,#pause,#mobile-help) .rr-ribbon { margin-bottom:10px; font-size:25px; min-height:40px; padding:5px 24px 9px; }
+  :is(#help,#settings,#mobile-help) .panel-actions { padding-top:9px; }
+  .settings-panel { width:720px; }
+  .settings-scroll { display:grid; grid-template-columns:1.15fr 1fr; gap:7px 18px; }
+  #settings .settings-scroll > .sec-h { grid-column:1; grid-row:1; font-size:18px; margin:0; }
+  #settings .settings-scroll > .opts-grid { grid-column:1; grid-row:2 / span 3; padding:7px 10px; gap:3px 8px; grid-template-columns:100px minmax(90px,1fr) 35px; }
+  #settings .settings-scroll > .opts-grid .opt-note { grid-column:2 / span 2; margin-top:-4px; }
+  #settings .settings-scroll > details { grid-column:2; margin:0; }
+  #settings .settings-scroll > .settings-group:first-of-type { grid-row:2; }
+  #settings .settings-scroll > .keyboard-settings { grid-row:3; }
+  #settings .settings-scroll > .settings-group:last-of-type { grid-row:4; }
+  #settings .settings-scroll:has(details[open]) { display:block; }
+  #settings .settings-scroll:has(details[open]) > details { margin-top:10px; }
+  .pause-panel { width:430px; }
+  .pause-keys { display:none; }
+  .pause-body .col { gap:10px; }
+  .pause-body .col .btn { min-height:45px; }
+  .pause-body .col .big { min-height:55px; }
+  .guide-intro { font-size:16px; }
+  .guide-steps { padding:10px 4px 3px; gap:12px; }
+  .guide-steps li { padding:8px 10px; }
+  .guide-art { min-height:52px; }
+  .guide-art .rr-ic { width:48px; height:48px; }
+  .guide-art .rr-ic + .rr-ic { width:36px; height:36px; }
+  .guide-art span { font-size:16px; }
+  .guide-steps strong { margin:3px 0; font-size:19px; }
+  .guide-steps p { font-size:12px; line-height:1.5; }
+  .guide-tip { display:none; }
+  .mobile-guide .panel-actions .big { min-height:48px; }
+  #result .result-hero .rr-ribbon { font-size:25px; padding:4px 22px 8px; min-height:39px; }
+  .result-hero .rr-ic { width:29px; height:29px; }
+  .result-hero { padding-bottom:1px; }
+  .result-scroll { padding-top:5px; }
+  #result-podium { gap:12px; padding-top:10px; }
+  .fighter-art { height:100px; }
+  .fighter-art img { padding:0; }
+  .fighter-place { top:5px; left:4px; font-size:18px; }
+  .fighter-place .rr-ic { width:26px; height:26px; }
+  .fighter-info { padding:5px; }
+  #result .fighter-name { font-size:18px; margin-bottom:2px; }
+  .fighter-stats dd { font-size:19px; }
+  .fighter-mvp { font-size:12px; padding:2px 6px; top:-12px; }
+  .fighter-mvp .rr-ic { width:18px; height:18px; }
+  .result-metrics { margin:9px 0 4px; }
+  .result-records { margin-top:4px; }
+  .result-metrics > div { padding:3px 8px; }
+  .result-metrics dd { font-size:20px; }
+  .result-actions { padding-top:8px; gap:10px; }
+  .result-actions .btn { min-height:45px; font-size:17px; }
+  .result-actions .big { font-size:22px; }
+  #result-message { margin:5px 0; }
+  #rooms .room-panel { margin-left:2vw; padding:16px; max-height:calc(100% - 62px); width:48%; }
+  #rooms .room-eyebrow { display:none; }
+  #rooms h2.rr-ribbon { margin-bottom:14px; font-size:24px; min-height:40px; }
+  #room-entry { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+  #room-entry > :is(#room-loadout,.btn,.room-note,#room-invited) { grid-column:1/-1; }
+  #rooms #room-host-note { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
+  #rooms #room-entry .btn.big { min-height:46px; font-size:22px; }
+  #rooms #room-entry input { padding:10px; }
+  .room-heading { margin-bottom:10px; }
+  #room-showcase { inset:12% 2% 4% 52%; }
+}
+@media (max-width:360px) {
+  :is(#help,#settings,#pause,#result,#mobile-help) .panel { padding:12px 10px; }
+  :is(#help,#settings,#pause,#mobile-help) .rr-ribbon { margin-bottom:12px; font-size:27px; }
+  .guide-intro { font-size:16px; }
+  .guide-steps { gap:8px; padding:8px 0 3px; }
+  .guide-steps li { padding:8px; gap:8px; }
+  .guide-art { flex-basis:57px; }
+  .guide-art .rr-ic { width:51px; height:51px; }
+  .guide-steps strong { font-size:18px; }
+  .guide-tip { display:none; }
+  .fighter-art { height:88px; }
+  .result-fighter { min-height:88px; grid-template-columns:66px minmax(0,1fr); }
+  .result-actions .big { min-height:47px; }
+  #room-showcase { height:112px; }
+  #rooms .room-panel { margin-top:78px; max-height:calc(100% - 137px); }
+  #rooms #room-host-note { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
+  #rooms #room-entry { gap:11px; }
+  #rooms .room-eyebrow { display:none; }
+}

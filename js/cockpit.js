@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CloseContactView } from './close-contact.js';
+import { prepareCockpitLimbs } from './cockpit-limbs.js';
 
 export function prepareMountedInput(robot, input, dt) {
   const out = { ...input, cockpitDriving: true };
@@ -16,12 +17,12 @@ export function mountedFov(aspect, first) {
 // This controller changes only local camera layers, never authoritative visibility.
 export class CockpitCamera {
   constructor(options = {}) {
-    this.hidden = new Map(); this.robot = null; this.mode = 'first'; this.pitch = .16; this.lookPitch = .16; this.hitTime = 0; this.hitStrength = 0; this.clock = 0; this.rearEnabled = true;
+    this.hidden = new Map(); this.robot = null; this.mode = 'chase'; this.pitch = .16; this.lookPitch = .16; this.hitTime = 0; this.hitStrength = 0; this.clock = 0; this.rearEnabled = false;
     try {
       this.storage = Object.hasOwn(options, 'storage') ? options.storage : globalThis.localStorage;
       const saved = JSON.parse(this.storage?.getItem('rr-camera') || 'null');
-      if (saved?.version === 1 && ['first', 'chase'].includes(saved.mounted)) this.mode = saved.mounted;
-      if (saved?.version === 1 && saved.rearView === false) this.rearEnabled = false;
+      if (saved?.version === 2 && ['first', 'chase'].includes(saved.mounted)) this.mode = saved.mounted;
+      if (saved?.version === 2 && saved.rearView === true) this.rearEnabled = true;
     } catch { this.storage = null; }
     this.ray = new THREE.Raycaster(); this.anchor = new THREE.Vector3(); this.desired = new THREE.Vector3();
     this.target = new THREE.Vector3(); this.direction = new THREE.Vector3(); this.origin = new THREE.Vector3();
@@ -61,7 +62,7 @@ export class CockpitCamera {
   }
   label() {
     if (!this.button) return;
-    this.button.textContent = this.mode === 'chase' ? '3인칭 · C' : '1인칭 · C';
+    this.button.textContent = this.mode === 'chase' ? '중앙 탑승 시점 · C' : '조종석 시점 · C';
     this.button.title = '탑승 시점 전환. 1인칭에서 화면을 위아래로 끌어 시선을 조절합니다. 선택한 시점은 저장됩니다.';
     this.button.setAttribute('aria-pressed', String(this.mode === 'first'));
   }
@@ -69,7 +70,7 @@ export class CockpitCamera {
     this.mode = this.mode === 'chase' ? 'first' : 'chase'; this.ready = false; this.label();
     this.savePreference();
   }
-  savePreference() { try { this.storage?.setItem('rr-camera', JSON.stringify({version:1,mounted:this.mode,rearView:this.rearEnabled})); } catch { /* optional storage */ } }
+  savePreference() { try { this.storage?.setItem('rr-camera', JSON.stringify({version:2,mounted:this.mode,rearView:this.rearEnabled})); } catch { /* optional storage */ } }
   toggleRearView() { this.rearEnabled=!this.rearEnabled;this.savePreference();return this.rearEnabled; }
   restoreVisibility() { for (const [o, mask] of this.hidden) o.layers.mask = mask; this.hidden.clear(); }
   restore() { this.hitTime = 0; this.restoreVisibility(); this.robot = null; this.ready = false; this.eyeY=null; if (this.button) this.button.hidden = true; }
@@ -87,6 +88,10 @@ export class CockpitCamera {
   }
   confirmHit(power = 1) { this.hitTime = .2; this.hitStrength = THREE.MathUtils.clamp(power / 3, .35, 1); }
   showAttackingLimbs(robot) {
+    for (const mesh of prepareCockpitLimbs(robot.rig)) {
+      if (!this.hidden.has(mesh)) this.hidden.set(mesh, mesh.layers.mask);
+      mesh.layers.enable(0);
+    }
     const limbs = [robot.rig.armL, robot.rig.armR];
     if (robot.type === 'bolt' && robot.act) {
       if (['bk2','bk3','drill','tornado'].includes(robot.act.name)) limbs.push(robot.rig.legL);
@@ -99,7 +104,7 @@ export class CockpitCamera {
   hideSelf(robot, pilot) {
     // All meshes including weapons, pilot, outlines and quality-dependent bakes.
     for (const root of [robot.rig.root, pilot.rig?.root]) root?.traverse(o => {
-      if (o.isMesh && !this.hidden.has(o)) { this.hidden.set(o, o.layers.mask); o.layers.disable(0); }
+      if (o.isMesh) { if (!this.hidden.has(o)) this.hidden.set(o, o.layers.mask); o.layers.disable(0); }
     });
   }
   collisionDistance(game, anchor, position, padding=.4) {
@@ -116,6 +121,11 @@ export class CockpitCamera {
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         this.obstacles.push({ node: o, localBox: o.geometry.boundingBox, box: new THREE.Box3() });
       });
+      for (const p of this.obstacles) {
+        p.dynamic = p.node.matrixAutoUpdate;
+        for (let n = p.node; n && n !== a.group; n = n.parent) if (n.userData.dyn) p.dynamic = true;
+        p.box.copy(p.localBox).applyMatrix4(p.node.matrixWorld);
+      }
       this.obstacleKey = key; this.obstacleGroup = a.group;
     }
     this.direction.subVectors(position, anchor);
@@ -125,10 +135,12 @@ export class CockpitCamera {
     // Inflated boxes bound a swept near-plane volume. Matrices keep moving roofs
     // and platforms current. Cost depends on prop count, not art triangle count.
     for (const p of this.obstacles) {
-      p.node.updateWorldMatrix(true, false);
-      p.box.copy(p.localBox).applyMatrix4(p.node.matrixWorld).expandByScalar(padding);
-      if (p.box.containsPoint(anchor)) { safe = 0; break; }
-      if (this.ray.ray.intersectBox(p.box, this.hitPoint)) safe = Math.min(safe, Math.max(0, anchor.distanceTo(this.hitPoint)-.15));
+      if (p.dynamic) { p.node.updateWorldMatrix(true, false); p.box.copy(p.localBox).applyMatrix4(p.node.matrixWorld); }
+      const box = this._testBox || (this._testBox = new THREE.Box3());
+      box.copy(p.box).expandByScalar(padding);
+      // An anchor inside a prop has no safe backward boom.
+      if (box.containsPoint(anchor)) { safe = 0; break; }
+      if (this.ray.ray.intersectBox(box, this.hitPoint)) safe = Math.min(safe, Math.max(0, anchor.distanceTo(this.hitPoint)-.15));
     }
     return safe;
   }
@@ -143,7 +155,9 @@ export class CockpitCamera {
     const f = robot.facing, sx = Math.sin(f), sz = Math.cos(f), root = robot.pos;
     // A seated, unanimated head-height anchor stays inside the collision body.
     // Pose head bob/recoil is cosmetic; it must not move the player's eyes.
-    const height=robot.rig.eyeHeight??5.13, desiredY=root.y+height;
+    // The authored welded rig needs a raised cockpit lens: proximal arm
+    // seams stay below the frame while its real gloves/weapons remain visible.
+    const height=(robot.rig.eyeHeight??5.13)+(this.mode==='first'&&robot.rig.asset?2.2:0), desiredY=root.y+height;
     if(this.eyeY===null || this.lastRoot.distanceToSquared(root)>25) this.eyeY=desiredY;
     else {
       this.eyeY+=(desiredY-this.eyeY)*(1-Math.exp(-Math.min(dt,.1)*18));
@@ -161,24 +175,33 @@ export class CockpitCamera {
     const motion = game.reducedMotion ? 0 : 1;
     const portrait = THREE.MathUtils.clamp((1-camera.aspect)/.55,0,1);
     // Keep collision avoidance and the optional chase view from the current release.
-    const forward=this.mode==='first' ? -3.2-portrait-motion*(swing*.16+impact*.12) : Math.min(robot.radius*.45,robot.rig.eyeForward??.6);
+    const forward=this.mode==='first' ? -3.2-portrait-motion*(swing*.16+impact*.12) : 0;
     this.anchor.set(root.x+sx*forward,this.eyeY,root.z+sz*forward);
     const safe=this.collisionDistance(game,this.origin,this.anchor,.18);
     this.anchor.copy(this.origin).addScaledVector(this.direction.set(sx,0,sz),Math.sign(forward)*Math.min(Math.abs(forward),safe));
     let first = this.mode === 'first';
     if (!first) {
-      const back = camera.aspect < 1 ? 16 : 12.5;
-      this.desired.set(root.x - sx*back + sz*7.2, root.y+9.3, root.z - sz*back - sx*7.2);
-      if (!this.ready) this.position.copy(this.desired);
-      else this.position.lerp(this.desired, 1-Math.exp(-Math.min(dt,.1)*10));
+      // The robot and the aim direction share the centreline. No side offset
+      // or world-space yaw lag: A/D feels like turning an FPS camera.
+      const back = camera.aspect < 1 ? 11.8 : 10.2;
+      this.desired.set(root.x - sx*back, this.eyeY+3.2, root.z - sz*back);
+      this.position.copy(this.desired);
       this.clearance = this.collisionDistance(game, this.anchor, this.position);
-      this.fallback = this.clearance < (this.fallback ? 6.2 : 4.8);
-      first = this.fallback;
+      if (this.clearance < 5.5) {
+        // Near a tall prop, lift above the machine instead of putting the
+        // camera inside its head or silently switching to an invisible body.
+        this.desired.set(root.x, this.eyeY + 9, root.z);
+        const lifted = this.collisionDistance(game, this.anchor, this.desired);
+        if (lifted > this.clearance) { this.position.copy(this.desired); this.clearance = lifted; }
+      }
+      this.fallback = false;
       if (!first) {
         const length = this.anchor.distanceTo(this.position);
         camera.position.copy(this.anchor).lerp(this.position, Math.min(1,this.clearance/Math.max(length,.001)));
-        this.target.set(root.x+sx*6.5,root.y+2.8,root.z+sz*6.5); camera.lookAt(this.target);
-        if (this.clearance < 8) this.hideSelf(robot,pilot); else this.restoreVisibility();
+        this.target.set(root.x+sx*7,root.y+3.4,root.z+sz*7); camera.lookAt(this.target);
+        this.restoreVisibility();
+        // Occlusion can pull the boom close. Never hide the whole piloted
+        // machine as an automatic fallback; the view remains centred.
       }
     }
     if (first) {

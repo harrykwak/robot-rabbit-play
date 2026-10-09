@@ -19,7 +19,9 @@ export function touchEnabled(preferences, hasTouch) {
 }
 
 export function qualityProfile(preferences, hasTouch, deviceDpr = 1, width = 0, height = 0) {
-  const low = preferences.quality === 'low' || (preferences.quality === 'auto' && hasTouch);
+  // Auto spends the frame budget on the game, without a full-screen bloom
+  // chain and a second shadow-map scene pass on every display frame.
+  const low = preferences.quality !== 'high';
   let dpr = Math.min(Math.max(1, deviceDpr || 1), low ? 1 : 1.75);
   // Bound GPU fill on large iPads as well as high-DPI phones. DOM controls stay sharp.
   if (low && width > 0 && height > 0) dpr = Math.min(dpr, Math.sqrt(921600 / (width * height)));

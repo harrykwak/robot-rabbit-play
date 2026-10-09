@@ -1,0 +1,102 @@
+{
+  "pilots": {
+    "rico": {
+      "bust": "assets/ui/portraits/pilot-rico-bust.webp",
+      "full": "assets/ui/portraits/pilot-rico-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "mimi": {
+      "bust": "assets/ui/portraits/pilot-mimi-bust.webp",
+      "full": "assets/ui/portraits/pilot-mimi-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "jun": {
+      "bust": "assets/ui/portraits/pilot-jun-bust.webp",
+      "full": "assets/ui/portraits/pilot-jun-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "sora": {
+      "bust": "assets/ui/portraits/pilot-sora-bust.webp",
+      "full": "assets/ui/portraits/pilot-sora-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "dori": {
+      "bust": "assets/ui/portraits/pilot-dori-bust.webp",
+      "full": "assets/ui/portraits/pilot-dori-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "haru": {
+      "bust": "assets/ui/portraits/pilot-haru-bust.webp",
+      "full": "assets/ui/portraits/pilot-haru-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "taro": {
+      "bust": "assets/ui/portraits/pilot-taro-bust.webp",
+      "full": "assets/ui/portraits/pilot-taro-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "luna": {
+      "bust": "assets/ui/portraits/pilot-luna-bust.webp",
+      "full": "assets/ui/portraits/pilot-luna-full.webp",
+      "w": 360,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    }
+  },
+  "robots": {
+    "titan": {
+      "bust": "assets/ui/portraits/robot-titan-bust.webp",
+      "full": "assets/ui/portraits/robot-titan-full.webp",
+      "w": 420,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "bolt": {
+      "bust": "assets/ui/portraits/robot-bolt-bust.webp",
+      "full": "assets/ui/portraits/robot-bolt-full.webp",
+      "w": 420,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "cannon": {
+      "bust": "assets/ui/portraits/robot-cannon-bust.webp",
+      "full": "assets/ui/portraits/robot-cannon-full.webp",
+      "w": 420,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    },
+    "hammer": {
+      "bust": "assets/ui/portraits/robot-hammer-bust.webp",
+      "full": "assets/ui/portraits/robot-hammer-full.webp",
+      "w": 420,
+      "h": 560,
+      "bustW": 320,
+      "bustH": 320
+    }
+  }
+}

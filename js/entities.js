@@ -163,21 +163,6 @@ class Fighter {
     return Math.hypot(this.pos.x, this.pos.z) <= a.radius && y > -1.2 ? FLAT : null;
   }
 
-  // 걸어서는 허공(구멍/섬 밖)으로 나가지 않게 한다. 벽을 따라 미끄러지도록 축별로 시도
-  keepOnGround(px, pz, y) {
-    let s = this.ground(y);
-    if (s) return s;
-    const nx = this.pos.x, nz = this.pos.z;
-    this.pos.z = pz;
-    s = this.ground(y);
-    if (s) return s;
-    this.pos.x = px; this.pos.z = nz;
-    s = this.ground(y);
-    if (s) return s;
-    this.pos.z = pz;
-    return this.ground(y);
-  }
-
   pushWalls() {
     const a = this.g.arena;
     if (a.pushOut) { if (a.pushOut(this) && this.state === 'launched') this.g.wallBounce(this); }
@@ -906,17 +891,16 @@ export class Human extends Fighter {
     if (this.juggleT > 0) this.juggleT -= dt;
     if (this.padT > 0) this.padT -= dt;
     const wasGround = this.onGround;
-    const px = this.pos.x, pz = this.pos.z, py = this.pos.y;
+    const py = this.pos.y;
     if (wasGround && this.plat) { this.pos.x += this.plat.vx * dt; this.pos.z += this.plat.vz * dt; }
     this.vel.y -= grav * dt;
     this.pos.addScaledVector(this.vel, dt);
     const st = this.state;
-    // 걸어서는 허공으로 떨어지지 않는다 (넉백, 대시, 공중 기술은 예외)
-    // 지상 대시도 허공 앞에서 멈춘다. 건너가려면 점프해야 한다
+    // Walking and dashing can cross the open coast. Only real surfaces snap
+    // the feet; the former keepOnGround rollback acted as an invisible wall.
     const walker = wasGround && (st === 'normal' || st === 'guard' || st === 'boarding' || st === 'dash' || (st === 'act' && this.act && !this.act.def.air && !this.act.def.dive));
     const qy = Math.max(py, this.pos.y);
-    let s = this.ground(qy);
-    if (!s && walker) s = this.keepOnGround(px, pz, qy);
+    const s = this.ground(qy);
     if (s) {
       const snap = walker && this.vel.y <= 0 && this.pos.y - s.h < 0.35;
       if ((this.pos.y <= s.h && this.pos.y > s.h - 1.6 && this.vel.y <= 0) || snap) {
@@ -1557,14 +1541,13 @@ export class Robot extends Fighter {
     const g = this.g;
     const wasGround = this.onGround;
     if (this.padT > 0) this.padT -= dt;
-    const px = this.pos.x, pz = this.pos.z, py = this.pos.y;
+    const py = this.pos.y;
     if (wasGround && this.plat) { this.pos.x += this.plat.vx * dt; this.pos.z += this.plat.vz * dt; }
     this.vel.y -= 44 * dt;
     this.pos.addScaledVector(this.vel, dt);
     const qy = Math.max(py, this.pos.y);
     const walker = wasGround && this.stagger <= 0 && (this.state === 'idle' || (this.state === 'active' && !(this.act && this.act.name === 'stomp')));
-    let s = this.ground(qy);
-    if (!s && walker) s = this.keepOnGround(px, pz, qy);
+    const s = this.ground(qy);
     if (s) {
       const snap = walker && this.vel.y <= 0 && this.pos.y - s.h < 0.45;
       if ((this.pos.y <= s.h && this.pos.y > s.h - 2 && this.vel.y <= 0) || snap) {

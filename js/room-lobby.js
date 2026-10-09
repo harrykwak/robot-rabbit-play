@@ -3,6 +3,8 @@ import { ROBOT_INFO } from './models.js';
 import { ROOM_RELAY_ORIGIN } from './room-config.js';
 import { relayOrigin, invitationFrom, invitationURL } from './room-links.js';
 import { ROOM_RECONNECT_GRACE_MS } from './room-protocol.js';
+import { portraitImg } from './ui-portraits.js';
+import { UI_ICONS } from './ui-icons.js';
 const $ = id => document.getElementById(id);
 const storageKey = 'rr-browser-room-v1';
 const MAX_GAME_REQUESTS = 4;
@@ -317,6 +319,7 @@ export class RoomLobby {
     this.scheduleReconnect(250);
   }
   render() {
+    const badge = kind => { const mark = document.createElement('span'); mark.className = 'rr-ic'; mark.setAttribute('aria-hidden', 'true'); mark.innerHTML = UI_ICONS[kind]; return mark; };
     const joined = !!this.token, host = this.role === 'host', pendingSelf = this.self?.status === 'pending';
     const creating = this.flow === 'create', ready = !!this.available;
     $('title-online-status').textContent = ready ? '친구와 최대 4명 · 방장 승인 후 참가' : this.probing ? '멀티플레이 연결 확인 중 · 혼자 플레이 가능' : '멀티플레이 준비 중 · 혼자 플레이 가능';
@@ -341,6 +344,7 @@ export class RoomLobby {
     $('room-join').textContent = this.busy ? '요청 보내는 중…' : '참가 요청';
     $('room-back').disabled = this.busy;
     $('room-back').textContent = joined ? host ? '← 방 닫고 나가기' : '← 나가기' : '← 뒤로';
+    $('room-back').classList.toggle('rr-red', joined);
     $('room-back').setAttribute('aria-label', joined ? host ? '방 닫고 메인 메뉴로' : '나가고 메인 메뉴로' : '메인 메뉴로 돌아가기');
     $('room-number').textContent = this.room?.id || '';
     $('room-state').textContent = pendingSelf ? '방장이 요청을 확인하고 있습니다.' : this.room?.state === 'playing' ? '게임 진행 중' : host ? '참가자 ' + (this.room?.players.length || 0) + ' / 4' : '방장이 게임을 시작하면 함께 입장합니다.';
@@ -355,17 +359,22 @@ export class RoomLobby {
     const list = $('room-roster'); list.replaceChildren(); list.hidden = pendingSelf;
     for (const p of this.room?.players || []) {
       const item = document.createElement('li'), name = document.createElement('span'), state = document.createElement('small');
+      item.className = p.id === this.self?.id ? 'room-player is-me' : 'room-player';
+      item.append(portraitImg('pilot', PILOTS[p.pilot]?.id || PILOTS[0].id));
       name.textContent = p.name + (p.id === this.self?.id ? ' (나)' : '');
-      state.textContent = !p.online ? '재연결 중' : p.role === 'host' ? '방장' : '준비 완료'; item.append(name, state); list.append(item);
+      const label = document.createElement('span'); label.textContent = !p.online ? '재연결 중' : p.role === 'host' ? '방장' : '준비 완료';
+      state.append(badge(!p.online ? 'refresh' : p.role === 'host' ? 'crown' : 'check'), label);
+      item.append(name, state); list.append(item);
     }
     if (!pendingSelf) for (let n = this.room?.players.length || 0; n < 4; n++) {
-      const item = document.createElement('li'); item.className = 'vacant'; item.textContent = '빈 자리 · 게임에서는 CPU 참가'; list.append(item);
+      const item = document.createElement('li'), label = document.createElement('span'); item.className = 'vacant'; label.textContent = '빈 자리 · CPU 참가'; item.append(badge('user'), label); list.append(item);
     }
     const pending = $('room-pending'); pending.replaceChildren(); $('room-pending-block').hidden = !host || !this.pending.length;
     for (const p of this.pending) {
       const item = document.createElement('li'), name = document.createElement('span'); name.textContent = p.name; item.append(name);
       for (const [type, label] of [['approve', '승인'], ['deny', '거절']]) {
-        const button = document.createElement('button'); button.className = 'btn'; button.textContent = label;
+        const button = document.createElement('button'); button.className = 'btn ' + (type === 'approve' ? 'rr-green' : 'rr-red'); button.textContent = label;
+        button.setAttribute('aria-label', p.name + ' 참가 ' + label);
         button.disabled = this.busy || (type === 'approve' && !p.online); button.onclick = () => this.perform(() => this.action(type, p.id)); item.append(button);
       }
       pending.append(item);

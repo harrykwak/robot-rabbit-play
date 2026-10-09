@@ -5,6 +5,7 @@ export class CloseContactView {
   constructor(){this.entries=new Map();this.camera=null;this.enabled=false;}
   update(game,local,enabled){
     this.camera=game.camera;this.enabled=enabled;
+    if (!enabled) return;
     if(this.quality!==game.arena?.quality){this.reset();this.camera=game.camera;this.enabled=enabled;this.quality=game.arena?.quality}
     for(const robot of game.robots||[]){
       if(robot===local||robot.state==='dead')continue;

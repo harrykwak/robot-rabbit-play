@@ -20,10 +20,18 @@ import { MISSIONS, loadProgress, saveProgress, missionStatus, isUnlocked, record
 import { RoomLobby } from './room-lobby.js';
 import { RoomSession } from './room-session.js';
 import { initInstallUI } from './install.js';
-import { rabbitPortrait } from './rabbit-portraits.js';
 import { preloadCharacterAssets, characterAssetStatus } from './character-assets.js';
 import { RearView } from './rear-view.js';
 import { syncPilotShadows } from './pilot-shadows.js';
+import { warmEnemyVisibility } from './enemy-visibility.js';
+import { prepareCockpitLimbs } from './cockpit-limbs.js';
+import { CloseContactView } from './close-contact.js';
+import { renderLobby } from './ui-lobby.js';
+import { renderResult, initModalIcons } from './ui-result.js';
+import { portraitImg } from './ui-portraits.js';
+import { characterTile, skillRows, campaignLoadout, campaignCard, syncCategoryJumps } from './ui-select.js';
+
+initModalIcons();
 
 // Character factories stay synchronous once the two prototype assets settle.
 // The loader reports each failure explicitly and preserves the existing model.
@@ -100,6 +108,7 @@ touch.setActive(false);
 touch.setHandedness(preferences.leftHanded);
 touch.setScale(preferences.scale);
 document.documentElement.classList.toggle('touch-mode', mobileControls);
+document.documentElement.classList.toggle('reduce-motion', !!preferences.reducedMotion);
 
 let viewWidth = innerWidth, viewHeight = innerHeight, viewDpr = profile.dpr;
 let resizePending = false;
@@ -196,6 +205,8 @@ roomSession = new RoomSession({ game, lobby: roomLobby,
     for (const h of game.humans) { h.isPlayer = h.id === localIndex; h.remote = config.roster.some(p => p.slot === h.id) && !h.isPlayer; }
     game.player = game.humans[localIndex];
     ui.reset(); for (const h of game.humans) ui.addFighter(h);
+    // ui.reset() hides the intro shown by startMatch(); show it again with this device's own seat marked.
+    ui.intro(game, config);
     touch.update(game.player);
   },
   showResult: res => game.onEnd(res),
@@ -215,24 +226,12 @@ function clearMission() {
 function renderCampaign() {
   const statuses = missionStatus(campaignProgress);
   const stars = statuses.reduce((n, s) => n + s.bestStars, 0);
-  $('campaign-progress').textContent = `${statuses.filter(s => s.cleared).length} / 6 클리어 · ${stars} / 18 ★`;
-  $('campaign-pilot').textContent = `${PILOTS[cfg.pilot].name} · ${ROBOT_INFO[cfg.robot].name}`;
+  $('campaign-progress').textContent = `★ ${stars} / 18`;
+  $('campaign-progress').setAttribute('aria-label', `전체 별 ${stars} / 18, ${statuses.filter(s => s.cleared).length}개 도전 클리어`);
+  campaignLoadout($('campaign-pilot'), PILOTS[cfg.pilot], cfg.robot, ROBOT_INFO[cfg.robot]);
   const list = $('mission-list'); list.replaceChildren();
-  for (const mission of MISSIONS) {
-    const status = statuses[mission.index];
-    const card = document.createElement('article');
-    card.className = 'mission-card' + (status.unlocked ? '' : ' locked') + (status.cleared ? ' cleared' : '');
-    const no = el('span', 'mission-number', String(mission.index + 1).padStart(2, '0'));
-    const heading = el('h3', '', mission.title);
-    const detail = el('p', 'mission-goal', mission.goalText);
-    const meta = el('p', 'mission-meta', `${STAGES.find(s => s.id === mission.stage).name} · ${['쉬움', '보통', '어려움'][mission.diff]} · 목숨 ${mission.stock}`);
-    const medals = el('p', 'mission-medals', status.cleared ? '★'.repeat(status.bestStars) + '☆'.repeat(3 - status.bestStars) : mission.medals.map(m => m.text).join(' / '));
-    const button = el('button', 'btn' + (status.unlocked ? ' big' : ''), status.unlocked ? (status.cleared ? '다시 도전' : '출격') : '이전 도전 클리어');
-    button.type = 'button'; button.disabled = !status.unlocked;
-    button.setAttribute('aria-label', `${mission.title} ${status.unlocked ? '출격' : '잠김'}`);
-    button.onclick = () => { audio.unlock(); launchMission(mission.id); };
-    card.append(no, heading, detail, meta, medals, button); list.appendChild(card);
-  }
+  for (const mission of MISSIONS) list.append(campaignCard(mission, statuses[mission.index],
+    STAGES.find(s => s.id === mission.stage), () => { audio.unlock(); launchMission(mission.id); }));
 }
 function launchMission(id) {
   if (!isUnlocked(campaignProgress, id)) return;
@@ -281,7 +280,7 @@ function buildPreview(config = cfg) {
   previewRobot = createRobot(config.robot, { team: p.color });
   previewHuman = createHuman(p);
   previewRobot.root.position.set(0, 0, 0);
-  previewHuman.root.position.set(2.8, 0, .6);
+  previewHuman.root.position.set(3.8, 0, .8);
   previewHuman.root.scale.setScalar(1.5);
   previewHuman.root.rotation.y = -0.5;
   showcase.add(previewRobot.root, previewHuman.root);
@@ -295,119 +294,69 @@ function buildPreview(config = cfg) {
 for (const id of ['room-pilot', 'room-robot']) $(id).addEventListener('change', () => buildPreview(roomLobby.profile()));
 
 // Small, crisp roster portraits share the 3D pilots' palette and signature headwear.
-function pilotPortrait(p) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 64 64');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  const body = hex(p.body), accent = hex(p.accent), hair = hex(p.hair), skin = hex(p.skin);
-  const eye = hex(p.look?.eye ?? 0x141a33), style = p.style;
-  const path = (d, fill, extra = '') => `<path d="${d}" fill="${fill}" ${extra}/>`;
-  const rear = style === 3 ? path('M42 16Q62 13 55 46L46 38 42 22Z', hair)
-    : style === 7 ? path('M14 25Q11 48 16 59L23 57 24 31H41L43 59 51 57Q51 35 46 23Z', hair)
-    : style === 4 ? path('M15 24Q10 37 15 48L23 45H44L51 47Q54 30 46 22Z', hair) : '';
-  const front = [
-    path('M15 28L12 20 19 21 19 12 27 17 32 8 36 17 46 12 46 20 52 20 48 31 43 25 35 24 29 28 24 23 19 31Z', hair),
-    path('M14 28Q11 10 32 11Q48 12 49 27L43 29 40 25 21 27Z', body) + path('M17 25Q35 19 52 27L46 31 20 30Z', accent),
-    path('M16 28L14 16Q9 0 17 2L25 19H39L45 3Q52 0 51 11L47 29Z', body)
-      + path('M20 31L20 24Q32 17 43 25L44 31 38 27 34 31 29 26 24 31Z', hair),
-    path('M14 31Q9 11 30 12Q46 7 49 27L42 32 39 21 32 30 32 22 22 29 19 35Z', hair),
-    path('M14 28Q12 10 32 10Q51 10 50 29L44 27 39 26 32 26 22 28Z', accent)
-      + path('M28 11H36V24H28Z', body) + path('M32 16L36 20 32 24 28 20Z', '#ffe29a'),
-    path('M14 32L9 22 17 22 14 13 25 16 30 8 35 16 46 12 45 22 54 22 48 33 42 27 37 28 27 25 20 32Z', hair)
-      + '<rect x="17" y="20" width="30" height="7" rx="3" fill="#141a33"/><rect x="20" y="19" width="10" height="9" rx="3" fill="#83e4ec"/><rect x="34" y="19" width="10" height="9" rx="3" fill="#83e4ec"/>',
-    '<circle cx="32" cy="11" r="6" fill="' + hair + '"/>' + path('M14 30Q11 14 29 14Q49 11 50 32L44 25 20 25Z', hair)
-      + path('M15 23Q33 18 49 23V28Q32 24 15 29Z', body),
-    path('M17 33L16 23 47 22 47 35 41 28 35 29 35 25 27 29 26 26 21 35Z', hair)
-      + path('M12 24L24 19 29 2 35 5 42 20 54 25 50 29H14Z', accent)
-      + path('M24 19L42 20 44 24 22 24Z', '#ffe29a'),
-  ][style] || '';
-  const fierce = p.look?.eyes === 'fierce' || p.look?.eyes === 'sharp';
-  const mouth = p.look?.mouth === 'grin' ? path('M25 43Q32 50 39 43Z', '#fff8ec')
-    : path(p.look?.mouth === 'flat' ? 'M28 45H37' : 'M28 44Q33 48 38 43', 'none');
-  svg.innerHTML = `<g stroke="#141a33" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">`
-    + `<rect x="1" y="1" width="62" height="62" rx="15" fill="${body}" fill-opacity=".17" stroke="none"/>`
-    + rear + path('M9 64Q11 50 25 50H39Q53 50 55 64Z', body)
-    + path('M25 49L32 56 39 49 40 64H24Z', accent)
-    + `<ellipse cx="32" cy="34" rx="17" ry="18" fill="${skin}"/>` + front
-    + `<ellipse cx="25" cy="36" rx="2.5" ry="3.7" fill="${eye}" stroke="none"/><ellipse cx="39" cy="36" rx="2.5" ry="3.7" fill="${eye}" stroke="none"/>`
-    + '<circle cx="25.5" cy="34.5" r="1" fill="#fff8ec" stroke="none"/><circle cx="39.5" cy="34.5" r="1" fill="#fff8ec" stroke="none"/>'
-    + (fierce ? path('M21 30L28 32M35 32L42 30', 'none') : '')
-    + (p.look?.blush ? '<path d="M20 41H24M40 41H44" stroke="#e99893" stroke-width="3"/>' : '')
-    + mouth + '</g>';
-  return svg;
-}
+function pilotPortrait(p) { return portraitImg('pilot', p.id, 'bust'); }
 
 function renderPilots() {
-  const list = document.getElementById('pilot-list');
-  list.innerHTML = '';
-  PILOTS.forEach((p, i) => {
-    const b = document.createElement('button');
-    b.className = 'pilot' + (i === cfg.pilot ? ' on' : '');
-    b.setAttribute('aria-pressed', String(i === cfg.pilot));
-    b.style.setProperty('--c', hex(p.color));
-    b.innerHTML = '<span class="pilot-face"></span><span class="pilot-txt"><span class="pilot-name"></span><span class="pilot-desc"></span><span class="pilot-skills"></span></span><span class="pilot-role"></span>';
-    b.querySelector('.pilot-face').appendChild(pilotPortrait(p));
-    b.querySelector('.pilot-name').textContent = p.name;
-    b.querySelector('.pilot-desc').textContent = p.desc;
-    const role = roleOf(p), skills = [p.skill1?.name, p.skill2?.name].filter(Boolean);
-    b.querySelector('.pilot-role').textContent = role;
-    for (const s of skills) b.querySelector('.pilot-skills').appendChild(el('span', 'ps', s));
-    b.setAttribute('aria-label', p.name + ', ' + role + (skills.length ? ', 스킬 ' + skills.join(', ') : ''));
-    b.onclick = () => { cfg.pilot = i; audio.sfx('ui'); renderSelect(); };
-    list.appendChild(b);
-  });
+  const list = $('pilot-list'); list.replaceChildren();
+  PILOTS.forEach((p, i) => list.append(characterTile({
+    kind: 'pilot', id: p.id, name: p.name, role: p.cls || p.role, color: hex(p.color), selected: i === cfg.pilot,
+    label: p.name + ', ' + roleOf(p) + ', 스킬 ' + [p.skill1?.name, p.skill2?.name].filter(Boolean).join(', '),
+    onSelect: () => { cfg.pilot = i; audio.sfx('ui'); renderSelect(); $('pilot-detail').parentElement.scrollTop = 0; },
+  })));
 }
 // 클래스 · 세부 역할 (cls/sub 가 없으면 role 문자열)
 function roleOf(p) { return p.cls ? p.cls + (p.sub ? ' · ' + p.sub : '') : p.role || ''; }
 // 파일럿 스킬 1/2 요약 줄: [키] 이름 · 쿨다운
-function pilotSkillRows(p) {
-  const ul = el('ul', 'skill-desc pilot-skill-rows');
-  const rows = [['hvy', '스킬 1', p.skill1], ['grd', '스킬 2', p.skill2]];
-  for (const [action, slot, s] of rows) {
-    if (!s) continue;
-    const li = el('li');
-    li.appendChild(el('b', '', controlLabel(action) === slot ? slot : slot + ' ' + controlLabel(action)));
-    const hold = s.kind === 'guard' || s.kind === 'parry';
-    li.appendChild(document.createTextNode(' ' + s.name + (hold ? ' (누르고 있기)' : s.cd ? ' (' + s.cd + '초)' : '')));
-    ul.appendChild(li);
+function pilotSkillRows(p, rich = false) {
+  // Help also uses this helper; keep its compact key-label rows intact.
+  if (!rich) {
+    const ul = el('ul', 'skill-desc pilot-skill-rows');
+    for (const [action, slot, s] of [['hvy', '스킬 1', p.skill1], ['grd', '스킬 2', p.skill2]]) {
+      if (!s) continue;
+      const li = el('li');
+      li.appendChild(el('b', '', controlLabel(action) === slot ? slot : slot + ' ' + controlLabel(action)));
+      const hold = s.kind === 'guard' || s.kind === 'parry';
+      li.appendChild(document.createTextNode(' ' + s.name + (hold ? ' (누르고 있기)' : s.cd ? ' (' + s.cd + '초)' : '')));
+      ul.appendChild(li);
+    }
+    return ul;
   }
-  return ul;
+  return skillRows([p.skill1, p.skill2].filter(Boolean).map(s => ({
+    ...s, desc: p.moves?.find(m => m.name === s.name)?.desc || '',
+  })));
 }
 function renderRobots() {
-  const el = document.getElementById('robot-list');
-  el.innerHTML = '';
+  const list = $('robot-list'); list.replaceChildren();
   for (const t of ROBOT_ORDER) {
     const info = ROBOT_INFO[t];
-    const b = document.createElement('button');
-    b.className = 'robot-card' + (t === cfg.robot ? ' on' : '');
-    b.setAttribute('aria-pressed', String(t === cfg.robot));
-    b.style.setProperty('--c', '#' + info.color.toString(16).padStart(6, '0'));
-    b.innerHTML = '<span class="rc-face">' + rabbitPortrait(t) + '</span><span class="rc-copy"><span class="rc-name"></span><span class="rc-tag"></span></span>';
-    b.querySelector('.rc-name').textContent = info.name;
-    b.querySelector('.rc-tag').textContent = ROBOT_STATS[t].tag;
-    b.onclick = () => { cfg.robot = t; audio.sfx('ui'); renderSelect(); };
-    el.appendChild(b);
+    list.append(characterTile({ kind: 'robot', id: t, name: info.name, role: ROBOT_STATS[t].tag,
+      color: hex(info.color), selected: t === cfg.robot,
+      onSelect: () => { cfg.robot = t; audio.sfx('ui'); renderSelect(); const d = $('robot-detail'); d.parentElement.scrollTop = d.offsetTop - 12; },
+    }));
   }
 }
 function renderDetail() {
-  const t = cfg.robot, info = ROBOT_INFO[t], st = ROBOT_STATS[t];
-  const el = document.getElementById('robot-detail');
-  el.innerHTML = '';
-  el.style.setProperty('--c', '#' + info.color.toString(16).padStart(6, '0'));
-  const h3 = document.createElement('h3'); h3.textContent = info.name; el.appendChild(h3);
-  const p = document.createElement('p'); p.textContent = info.desc; el.appendChild(p);
-  el.appendChild(statBars(st.bars, { power: '파워', speed: '스피드', range: '사거리', armor: '내구도' }));
-  const ul = document.createElement('ul');
-  ul.className = 'skill-desc';
-  for (const s of st.skills) {
-    const li = document.createElement('li');
-    const b = document.createElement('b'); b.textContent = robotKey(s.key);
-    li.appendChild(b);
-    li.appendChild(document.createTextNode(' ' + s.name + ' — ' + s.desc));
-    ul.appendChild(li);
+  const t = cfg.robot, info = ROBOT_INFO[t], st = ROBOT_STATS[t], d = $('robot-detail');
+  const body = detailBody(d, info.name, info.desc, st.tag);
+  d.style.setProperty('--c', hex(info.color));
+  d.querySelector('.detail-preview').replaceChildren(
+    statBars(st.bars, { power: '파워', speed: '스피드', range: '사거리', armor: '내구도' }),
+    skillRows(st.skills.slice(1)));
+  body.appendChild(moveList(st.skills.map(s => ({ input: robotKey(s.key), name: s.name, desc: s.desc }))));
+}
+// Keep the native disclosure and its summary mounted: selection/keybind refreshes
+// must preserve the player's expanded state and keyboard focus.
+function detailBody(host, name, description, role) {
+  if (!host.querySelector('.loadout-disclosure')) {
+    host.innerHTML = '<h3><span class="detail-name"></span><span class="pd-role rr-badge"></span></h3><p class="detail-identity"></p><div class="detail-preview"></div><details class="loadout-disclosure"><summary>능력·조작 보기</summary><div class="loadout-disclosure-body"></div></details>';
   }
-  el.appendChild(ul);
+  host.querySelector('.detail-name').textContent = name;
+  host.querySelector('.pd-role').textContent = role;
+  host.querySelector('.detail-identity').textContent = description;
+  host.querySelector('summary').setAttribute('aria-label', name + ' 능력·조작 보기');
+  const body = host.querySelector('.loadout-disclosure-body');
+  body.replaceChildren();
+  return body;
 }
 // 로봇 스킬 표기 J/K/L 을 현재 키로
 const ROBOT_KEY = { J: 'atk', K: 'hvy', L: 'grd' };
@@ -419,13 +368,13 @@ function statBars(vals, names) {
   for (const k of Object.keys(names)) {
     const row = document.createElement('div');
     row.className = 'stat';
-    row.innerHTML = '<span class="stat-l"></span><div class="sbar" role="meter" aria-valuemin="0" aria-valuemax="5"><i></i></div>';
+    row.innerHTML = '<span class="stat-l"></span><div class="sbar rr-bar rr-seg5" role="meter" aria-valuemin="0" aria-valuemax="5"><i></i></div>';
     row.querySelector('.stat-l').textContent = names[k];
     const v = (vals && vals[k]) || 0;
     const bar = row.querySelector('.sbar');
     bar.setAttribute('aria-valuenow', v);
     bar.setAttribute('aria-label', names[k] + ' ' + v + '/5');
-    row.querySelector('i').style.width = v * 20 + '%';
+    row.querySelector('i').style.transform = `scaleX(${v / 5})`;
     wrap.appendChild(row);
   }
   return wrap;
@@ -451,21 +400,16 @@ function moveList(moves, cls = 'move-list') {
 function renderPilotDetail() {
   const p = PILOTS[cfg.pilot];
   const d = $('pilot-detail');
-  d.innerHTML = '';
+  const body = detailBody(d, p.name, p.traits?.[0] || p.desc, roleOf(p));
   d.style.setProperty('--c', hex(p.color));
-  const h = el('h3');
-  h.appendChild(el('span', '', p.name));
-  if (roleOf(p)) h.appendChild(el('span', 'pd-role', roleOf(p)));
-  d.appendChild(h);
-  d.appendChild(el('p', '', p.desc));
-  d.appendChild(pilotSkillRows(p));
-  d.appendChild(statBars(p.stats, { power: '파워', speed: '스피드', air: '공중', tech: '기술' }));
+  d.querySelector('.detail-preview').replaceChildren(
+    statBars(p.stats, { power: '파워', speed: '스피드', air: '공중', tech: '기술' }), pilotSkillRows(p, true));
   if (p.traits && p.traits.length) {
     const ul = el('ul', 'traits');
     for (const t of p.traits) ul.appendChild(el('li', '', t));
-    d.appendChild(ul);
+    body.appendChild(ul);
   }
-  d.appendChild(moveList(p.moves));
+  body.appendChild(moveList(p.moves));
 }
 function renderStages() {
   const seg = $('seg-stage');
@@ -487,6 +431,7 @@ function renderSelect() {
   const choiceList = focused?.parentElement;
   const choiceIndex = ['pilot-list', 'robot-list'].includes(choiceList?.id) ? [...choiceList.children].indexOf(focused) : -1;
   renderPilots(); renderRobots(); renderDetail(); renderPilotDetail(); renderStages(); buildPreview();
+  syncCategoryJumps(PILOTS[cfg.pilot], cfg.robot, ROBOT_INFO[cfg.robot]);
   if (choiceIndex >= 0) choiceList.children[choiceIndex]?.focus({ preventScroll: true });
   for (const [id, key] of [['seg-diff', 'diff'], ['seg-stock', 'stock'], ['seg-stage', 'stage']]) {
     for (const b of document.querySelectorAll('#' + id + ' button')) {
@@ -565,16 +510,16 @@ function renderHelp() {
     ]));
     body.appendChild(note('브레이크 버스트 — 연속으로 맞아 콤보에 갇히면 스킬 2 버튼이 BREAK 로 반짝입니다. {grd} 를 누르면 스킬 2 쿨다운을 쓰고 주변을 밀어내며 빠져나옵니다.'.replace(/\{grd\}/g, controlLabel('grd')), 'help-note hl'));
     body.appendChild(note('쓰러졌을 때는 아무 버튼이나 누르거나 스틱을 밀면 바로 일어납니다. 일어난 직후 잠깐 무적이에요.'));
-    if (mobileControls) body.appendChild(note('터치: 흰색 큰 버튼은 공격, 옆의 아이콘 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 나타나고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 스틱 옆 버튼은 점프, 스틱을 같은 방향으로 두 번 튕기면 대시예요. 로봇은 당근쥬스로 움직이고, 팔·머리·다리가 따로 부서질 수 있어요.', 'help-note hl'));
+    if (mobileControls) body.appendChild(note('터치: 오른쪽 큰 버튼은 공격, 옆의 아이콘 두 버튼은 스킬 1·2 예요. 호출 버튼은 당근 게이지가 가득 차면 활성화되고, 로봇 옆에서는 탑승, 타고 있으면 하차 버튼으로 바뀝니다. 스틱 옆 버튼은 점프, 스틱을 같은 방향으로 두 번 튕기면 대시예요. 로봇은 당근쥬스로 움직이고, 팔·머리·다리가 따로 부서질 수 있어요.', 'help-note hl'));
     body.appendChild(note('호출 배리어 — ' + BARRIER_TEXT, 'help-note hl'));
     body.appendChild(note('당근 게이지는 시간이 지나거나, 때리거나, 맞거나, 콤보를 이어가면 찹니다. 적이 로봇에 타고 있으면 더 빨리 찹니다.'));
-    body.appendChild(note('탑승하면 토끼 눈높이의 1인칭 시점이 됩니다. 스틱·방향키 좌우로 회전하고 앞뒤로 전진·후진합니다. 하차하면 사람의 3인칭 시점으로 돌아옵니다.', 'help-note hl'));
+    body.appendChild(note('탑승하면 로봇 전체가 화면 중앙에 보이는 가까운 시점으로 바뀝니다. 좌우로 회전하고 앞뒤로 전진·후진합니다. C 키 또는 일시정지 메뉴에서 실제 팔·무기가 보이는 조종석 시점으로 전환할 수 있습니다. 맵 가장자리를 넘으면 떨어지니 주의하세요.', 'help-note hl'));
     body.appendChild(note('공격 적중으로 얻은 어택 포인트(AP)는 호출 게이지와 별개입니다. 탑승한 채 커다란 음료 판매대 앞에서 멈춰 보급 버튼을 길게 누르면 20 AP로 주스 60을 구매합니다. 당근밭 분쇄기에서는 3.2초 동안 직접 갈아 무료로 주스 60을 얻습니다. 움직임·점프·공격·피격은 보급을 취소합니다. 보급소에서 벗어나면 하차 버튼으로 돌아옵니다.', 'help-note hl'));
     body.appendChild(note('빈 로봇은 누구나 탈 수 있습니다. 주인은 0.8초, 다른 사람은 2.2초가 걸리니 적 로봇이 떨어지면 달려가서 방해하거나 빼앗으세요. 탑승하려는 사람을 때리면 탑승이 취소됩니다.'));
     body.appendChild(note('게임패드: 왼쪽 스틱 이동, A 점프, X 공격, Y 스킬 1, B 스킬 2, RB 대시, LB 호출/탑승/하차, Start 일시정지'));
   } else if (helpTab === 'combo') {
     body.appendChild(moveList(COMMON_MOVES, 'move-list big'));
-    body.appendChild(note('타수가 이어지는 동안 화면 왼쪽에 콤보 수가 표시됩니다. 콤보가 길어질수록 한 타의 피해는 조금씩 줄어들지만 게이지는 더 많이 찹니다.'));
+    body.appendChild(note('타수가 이어지는 동안 화면에 콤보 수가 표시됩니다. 콤보가 길어질수록 한 타의 피해는 조금씩 줄어들지만 게이지는 더 많이 찹니다.'));
   } else if (helpTab === 'pilot') {
     const grid = el('div', 'pilot-help');
     for (const p of PILOTS) {
@@ -626,6 +571,7 @@ let capturing = null; // { action, slot }
 function setStatus(t) { $('keys-status').textContent = t; }
 function renderKeys() {
   const grid = $('keys-grid');
+  const focused = grid.contains(document.activeElement) ? { ...document.activeElement.dataset } : null;
   const binds = input.getBinds();
   grid.innerHTML = '';
   for (const a of input.ACTIONS) {
@@ -645,6 +591,7 @@ function renderKeys() {
       grid.appendChild(b);
     }
   }
+  if (focused?.a) grid.querySelector(`[data-a="${focused.a}"][data-slot="${focused.slot}"]`)?.focus({ preventScroll: true });
 }
 function startCapture(a, slot) {
   audio.sfx('ui');
@@ -697,6 +644,7 @@ function applyPreferences() {
   game.reducedMotion = preferences.reducedMotion;
   fx.reducedMotion = preferences.reducedMotion;
   ui.reducedMotion = preferences.reducedMotion;
+  document.documentElement.classList.toggle('reduce-motion', !!preferences.reducedMotion);
   ui.skillKey = '#';
   $('performance-hud').classList.toggle('hidden', !(preferences.diagnostics || new URLSearchParams(location.search).has('stats')));
   applyRenderQuality();
@@ -788,8 +736,7 @@ function renderKeyHints() {
     ['{move}', '이동'], ['{atk}', '공격 · 콤보 / 로봇 콤보'], ['{hvy}', '스킬 1'], ['{grd}', '스킬 2'],
     ['{jump}', '점프'], ['{dash}', '대시'], ['{act}', '호출 · 탑승 · 하차'], ['{pause}', '일시정지'], ['F1', '키 안내'],
   ]);
-  $('title-hint').textContent = input.fmtKeys('{move} 이동 · {atk} 공격 · 당근을 모아 로봇을 호출하세요.');
-  if (mobileControls) $('title-hint').textContent = '왼손으로 이동 · 오른손으로 공격 · 당근을 모아 로봇 호출!';
+  $('title-hint').textContent = '당근 게이지가 가득 차면 로봇을 호출!';
 }
 function refreshKeysUI() {
   renderKeyHints();
@@ -843,6 +790,7 @@ function toMenu(screen) {
   show(screen);
   audio.startMusic('menu');
   buildPreview(screen === 'rooms' ? roomLobby.profile() : cfg);
+  if (['title', 'solo', 'friends'].includes(screen)) renderLobby(cfg, campaignProgress, ROBOT_INFO, () => roomLobby.available);
   if (screen === 'select') renderSelect();
   $('select').querySelector('.opt-row').classList.toggle('hidden', choosingCampaignPilot);
   $('stage-desc').classList.toggle('hidden', choosingCampaignPilot);
@@ -862,6 +810,7 @@ function startMatch(skipGuide = false, peerConfig = null) {
   input.resetInputs();
   simulationClock.reset();
   renderBudget.scale = 1;
+  renderBudget.capped = false;
   mode = 'game';
   // Restore the battlefield projection before the first match frame.
   applyPreferences();
@@ -875,6 +824,8 @@ function startMatch(skipGuide = false, peerConfig = null) {
   hintSt.n++;
   saveHint();
   game.start(peerConfig || cfg);
+  game.ui.intro(game, peerConfig || cfg);
+  warmEnemyVisibility(arena.group);
   uiElapsed = 0;
   touch.update(game.player);
   canvas.focus && canvas.focus();
@@ -884,10 +835,12 @@ function startMatch(skipGuide = false, peerConfig = null) {
 game.onEnd = (res) => {
   currentSession().localResult();
   mode = 'result';
+  hud.classList.add('hidden');
   const win = res[0].h === game.player;
   const playerRank = res.findIndex(r => r.h === game.player);
   const playerResult = res[playerRank];
   const message = $('result-message');
+  let resultStars = null;
   nextMission = null;
   if (activeMission && !cfg.autoplay) {
     const outcome = recordResult(campaignProgress, activeMission.id, {
@@ -895,10 +848,11 @@ game.onEnd = (res) => {
       dmg: playerResult.dmg, stock: Math.max(0, playerResult.stock), autoplay: false,
     });
     if (outcome.accepted) {
+      resultStars = outcome.evaluation.stars;
       campaignProgress = outcome.progress;
       const saved = saveProgress(campaignStorage, campaignProgress);
       message.textContent = outcome.evaluation.cleared
-        ? `${'★'.repeat(outcome.evaluation.stars)} 도전 성공! ${activeMission.title}${outcome.newBest ? ' · 최고 기록' : ''}`
+        ? `도전 성공! ${activeMission.title}${outcome.newBest ? ' · 최고 기록' : ''}`
         : `다시 도전해 보세요 · 목표: ${activeMission.goalText}`;
       if (!saved) message.textContent += ' · 저장할 수 없어 이번 실행 동안만 기록됩니다';
       if (outcome.evaluation.cleared) nextMission = MISSIONS[activeMission.index + 1]?.id || null;
@@ -906,25 +860,7 @@ game.onEnd = (res) => {
     } else message.textContent = '이번 경기는 기록에 반영되지 않았어요.';
   } else message.textContent = currentSession().active ? '친구 대전을 마쳤어요. 대기실에서 준비하면 다시 함께 할 수 있어요.'
     : win ? '멋진 승부였어요! 다른 로봇과 무대에도 도전해 보세요.' : '방어 스킬로 버티고, 당근이 차면 로봇을 호출해 보세요.';
-  $('next-mission').classList.toggle('hidden', !nextMission);
-  document.querySelector('#result [data-action=restart]').classList.toggle('big', !nextMission);
-  document.querySelector('#result [data-action=toCampaign]').classList.toggle('hidden', !activeMission);
-  document.getElementById('result-title').textContent = win ? '승리!' : res.findIndex((r) => r.h === game.player) + 1 + '위';
-  const tbl = document.createElement('table');
-  tbl.className = 'res';
-  tbl.innerHTML = '<thead><tr><th>순위</th><th>파일럿</th><th>남은 목숨</th><th>KO</th><th>낙하</th><th>피해량</th></tr></thead>';
-  const tb = document.createElement('tbody');
-  res.forEach((r, i) => {
-    const tr = document.createElement('tr');
-    if (r.h === game.player) tr.className = 'me';
-    const cells = [i + 1, r.name, Math.max(0, r.stock), r.kos, r.falls, r.dmg];
-    cells.forEach((v, j) => { const td = document.createElement('td'); td.textContent = v; if (j === 0) td.className = 'rank'; if (j === 1) td.style.color = '#' + r.color.toString(16).padStart(6, '0'); tr.appendChild(td); });
-    tb.appendChild(tr);
-  });
-  tbl.appendChild(tb);
-  const host = document.getElementById('result-table');
-  host.innerHTML = '';
-  host.appendChild(tbl);
+  renderResult(res, game.player, { stars: resultStars, nextMission, campaign: !!activeMission });
   show('result');
   document.querySelector('#result .btn.big').focus({ preventScroll: true });
   audio.startMusic('menu');
@@ -995,8 +931,15 @@ addEventListener('keydown', (e) => {
     if (mode === 'game') toggleHint();
     return;
   }
-  // 선택 화면에서 Enter 로 바로 시작
-  if (mode === 'menu' && e.code === 'Enter' && !document.getElementById('select').classList.contains('hidden') && !(document.activeElement instanceof HTMLButtonElement)) confirmSelection();
+  // Bare Enter is a shortcut only when no focused control owns that key.
+  // Native buttons and disclosures must receive their normal activation event.
+  if (mode === 'menu' && e.code === 'Enter' && !e.defaultPrevented && !e.isComposing && !e.repeat
+      && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
+      && !document.getElementById('select').classList.contains('hidden')) {
+    const ownsEnter = [e.target, document.activeElement].some(target => target instanceof Element
+      && (target.isContentEditable || target.closest('button, summary, input, select, textarea, a[href], [contenteditable]:not([contenteditable="false"]), [tabindex], [role="button"], [role="link"]')));
+    if (!ownsEnter) confirmSelection();
+  }
 });
 addEventListener('pointerdown', () => audio.unlock());
 $('game-menu-btn').addEventListener('click', pauseGame);
@@ -1129,7 +1072,7 @@ function frame(now = performance.now()) {
   frameStats.record(now, performance.now() - cpuStart, renderer.info.render.calls, renderer.info.render.triangles,
     { mode, target, dpr: profile.dpr, thermal: renderBudget.thermal });
   if (mode === 'game' && lastRenderFrame !== null) {
-    const change = renderBudget.observe(now - lastRenderFrame, now, target, preferences.quality !== 'high', preferences.frameRate === 'auto', profile.dpr > 1.05);
+    const change = renderBudget.observe(now - lastRenderFrame, now, target, preferences.quality !== 'high', preferences.frameRate === 'auto', profile.dpr > 1.05, performance.now() - cpuStart);
     if (change === 'scale') applyRenderQuality();
     else if (change === 'fps') renderBudget.reset();
   }
@@ -1161,6 +1104,35 @@ applyPreferences();
 renderKeyHints();
 applyHint(hintDefaultOpen());
 toMenu(roomLobby.token || roomLobby.invite ? 'rooms' : 'title');
+// Compile the complete roster before handing control to the player. Retain
+// these hidden material owners so shader programs survive between summons.
+// compileAsync visits offscreen objects, unlike a warm-up render of one view.
+const warmupRoster = new THREE.Group(); warmupRoster.name = 'shader-warmup-roster';
+audio.prepareResources();
+warmupRoster.add(game.prepareRenderResources());
+const warmBeam=fx.takeBeam(),warmPillar=fx.takePillar();
+warmupRoster.add(warmBeam.core,warmBeam.glow,warmPillar.m);
+for (const type of ROBOT_ORDER) {
+  const rig = createRobot(type); applyModelQuality(rig.root, profile.low);
+  prepareCockpitLimbs(rig);
+  warmupRoster.add(rig.root);
+}
+scene.add(warmupRoster);
+warmEnemyVisibility(scene);
+const warmTextures=new Set();
+scene.traverse(node=>{for(const material of [].concat(node.material||[]))for(const value of Object.values(material))if(value?.isTexture)warmTextures.add(value)});
+for(const texture of warmTextures)renderer.initTexture(texture);
+const warmContact=new CloseContactView();
+try {
+  await renderer.compileAsync(scene, camera);
+  // C can select the cockpit mid-fight; retain that shader variant too.
+  for(const root of warmupRoster.children)if(root.userData.rrCharacterAsset)warmContact.prepare(root);
+  await renderer.compileAsync(scene, camera);
+}
+catch (error) { console.warn('Shader warm-up:', error); }
+warmupRoster.removeFromParent();
+for(const mesh of [warmBeam.core,warmBeam.glow,warmPillar.m])mesh.removeFromParent();
+fx.beamPool.push(warmBeam);fx.pillarPool.push(warmPillar);
 document.getElementById('loading').classList.add('done');
 frame();
 window.NativeGame?.ready();

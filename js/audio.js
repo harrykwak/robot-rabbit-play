@@ -11,6 +11,25 @@ let ctx = null;
 let master, comp, sfxBus, musicBus, duckGain, verbIn;
 let noiseBuf = null;
 const curveCache = new Map();
+let preparedResources = null;
+
+// Prepare sample data before the first input. Creating the AudioContext still
+// happens on a user gesture, but hundreds of thousands of random/pow calls do
+// not block that gesture. Use a separate PRNG so audio cannot change combat RNG.
+export function prepareResources() {
+  if (preparedResources) return preparedResources;
+  const sampleRate=48000, noise=new Float32Array(sampleRate*2);
+  const reverb=[new Float32Array(sampleRate*2.4),new Float32Array(sampleRate*2.4)];
+  let seed=19021;
+  const random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296)*2-1;
+  for(let i=0;i<noise.length;i++)noise[i]=random();
+  for(let i=0;i<reverb[0].length;i++){
+    const decay=Math.pow(1-i/reverb[0].length,2.8);
+    reverb[0][i]=random()*decay;reverb[1][i]=random()*decay;
+  }
+  for(const k of [3,4,5,6,8,10,14,16,18,20,22,25])distortionCurve(k);
+  return preparedResources={sampleRate,noise,reverb};
+}
 
 let masterVol = 0.8;
 let musicVol = 0.45;
@@ -64,17 +83,15 @@ function build() {
   musicBus.connect(duckGain);
 
   // 재사용 화이트 노이즈 버퍼 (2초)
-  const len = Math.floor(ctx.sampleRate * 2);
-  noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const nd = noiseBuf.getChannelData(0);
-  for (let i = 0; i < len; i++) nd[i] = Math.random() * 2 - 1;
+  const resources=prepareResources();
+  noiseBuf = ctx.createBuffer(1, resources.noise.length, resources.sampleRate);
+  noiseBuf.getChannelData(0).set(resources.noise);
 
   // 간단한 리버브: 지수 감쇠 노이즈 임펄스 응답
-  const irLen = Math.floor(ctx.sampleRate * 2.4);
-  const ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
+  const ir = ctx.createBuffer(2, resources.reverb[0].length, resources.sampleRate);
   for (let c = 0; c < 2; c++) {
     const d = ir.getChannelData(c);
-    for (let i = 0; i < irLen; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.8);
+    d.set(resources.reverb[c]);
   }
   const conv = ctx.createConvolver();
   conv.buffer = ir;
@@ -266,7 +283,7 @@ function filt(dst, type, f, q = 0.7, t = null, f2 = 0, glide = 0.1) {
 }
 
 // tanh 소프트 클리핑 WaveShaper (k 클수록 거칠게)
-function shaper(dst, k = 8) {
+function distortionCurve(k) {
   let curve = curveCache.get(k);
   if (!curve) {
     const n = 1024;
@@ -278,8 +295,11 @@ function shaper(dst, k = 8) {
     }
     curveCache.set(k, curve);
   }
+  return curve;
+}
+function shaper(dst, k = 8) {
   const ws = ctx.createWaveShaper();
-  ws.curve = curve;
+  ws.curve = distortionCurve(k);
   ws.oversample = '2x';
   ws.connect(dst);
   return ws;

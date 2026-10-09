@@ -1,0 +1,410 @@
+/* =====================================================================
+   ROBOT RABBIT · UI kit v2 (commercial brawler style)
+   Shared tokens, base layers and components for every screen.
+   Screen files (rr-lobby / rr-select / rr-hud / rr-controls / rr-modals)
+   build on these classes; keep component styling here, layout there.
+   ===================================================================== */
+
+:root {
+  /* ink & surfaces */
+  --rr-ink: #1b1036;
+  --rr-ink-2: #2b1d5a;
+  --rr-night: #1f1556;
+  --rr-indigo: #3527a3;
+  --rr-indigo-hi: #5a4be0;
+  --rr-indigo-lo: #261a84;
+  --rr-cream: #fff6e3;
+  --rr-cream-2: #ffe7bd;
+  --rr-white: #ffffff;
+  --rr-muted: #c9c3f2;
+  --rr-steel: #9fb4c8;
+
+  /* button/accent ramps: hi (top) -> base -> lo (bottom) -> lip (extrusion) */
+  --rr-yellow-hi: #fff27a; --rr-yellow: #ffd23a; --rr-yellow-lo: #ffad0d; --rr-yellow-lip: #c46d00;
+  --rr-blue-hi: #7ccbff;   --rr-blue: #3a9bff;   --rr-blue-lo: #2373e8;   --rr-blue-lip: #164fb0;
+  --rr-green-hi: #b4f57e;  --rr-green: #66dc4a;  --rr-green-lo: #31b02f;  --rr-green-lip: #1c7a22;
+  --rr-red-hi: #ff9a9a;    --rr-red: #ff5a64;    --rr-red-lo: #e02a3e;    --rr-red-lip: #9c1426;
+  --rr-carrot-hi: #ffc061; --rr-carrot: #ff8a1f; --rr-carrot-lo: #f0650a; --rr-carrot-lip: #a8420a;
+  --rr-purple-hi: #cfa8ff; --rr-purple: #a066ff; --rr-purple-lo: #7a3ff0; --rr-purple-lip: #4f22a8;
+  --rr-grey-hi: #dfe4ee;   --rr-grey: #b7bfd0;   --rr-grey-lo: #9099ad;   --rr-grey-lip: #636b80;
+  --rr-gold: #ffc93a; --rr-silver: #d6e2ee; --rr-bronze: #e39a5c;
+
+  /* type */
+  --rr-font-display: "RR Number", "RR Display", "Jua", "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --rr-font-body: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --rr-fs-hero: clamp(34px, 6.2vw, 68px);
+  --rr-fs-h1: clamp(24px, 3.4vw, 36px);
+  --rr-fs-h2: clamp(18px, 2.4vw, 25px);
+  --rr-fs-btn: clamp(16px, 1.9vw, 21px);
+  --rr-fs-btn-big: clamp(20px, 2.7vw, 30px);
+  --rr-fs-body: 14px;
+  --rr-fs-small: 12px;
+
+  /* shape */
+  --rr-line: 3px;
+  --rr-radius: 16px;
+  --rr-radius-lg: 24px;
+  --rr-lip: 5px;
+  --rr-drop: 0 6px 0 3px rgba(18, 8, 46, .36);
+
+  /* layout */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --rr-edge: 14px;
+  --rr-ease-pop: cubic-bezier(.34, 1.56, .64, 1);
+  --rr-ease-out: cubic-bezier(.22, 1, .36, 1);
+
+  /* legacy aliases still read by JS-created inline styles */
+  --carrot: var(--rr-carrot);
+  --yellow: var(--rr-yellow);
+  --ink: var(--rr-ink);
+  --white: var(--rr-white);
+  --red: var(--rr-red);
+}
+
+@media (max-height: 430px), (max-width: 360px) {
+  :root { --rr-line: 2.5px; --rr-lip: 4px; --rr-edge: 10px; --rr-fs-body: 13px; }
+}
+
+/* ---------------------------------------------------------------- base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0; width: 100%; height: 100%; overflow: hidden;
+  background: #6fb9f2; color: var(--rr-white);
+  font: 600 var(--rr-fs-body)/1.45 var(--rr-font-body);
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+h1, h2, h3, h4, p, ul, ol, dl, dd, figure { margin: 0; }
+ul, ol { padding: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+input, textarea { user-select: text; -webkit-user-select: text; }
+.hidden { display: none !important; }
+[hidden] { display: none !important; }
+.rr-sr-only, .sr-only { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+::selection { background: var(--rr-yellow); color: var(--rr-ink); }
+
+/* fixed render layers: #gl(0) #overlay(1) #world-ui(2) #hud(3) #flash(5) .screen(10) #loading(30) */
+#gl, #overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#gl { z-index: 0; outline: none; }
+#overlay { z-index: 1; pointer-events: none; }
+#world-ui { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+#hud { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+#flash { position: fixed; inset: 0; z-index: 5; background: #fff; opacity: 0; pointer-events: none; }
+
+.screen {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(var(--rr-edge) + var(--safe-t)) calc(var(--rr-edge) + var(--safe-r)) calc(var(--rr-edge) + var(--safe-b)) calc(var(--rr-edge) + var(--safe-l));
+  pointer-events: auto;
+}
+/* Menu backdrop over the live 3D scene: deep sky tint + static light rays.
+   (Static on purpose: the 3D scene keeps rendering behind menus on phones.) */
+.screen.dim { isolation: isolate; background: radial-gradient(120% 90% at 50% 38%, rgba(58, 54, 180, .50) 0%, rgba(28, 18, 92, .80) 62%, rgba(14, 8, 48, .92) 100%); }
+.screen.dim::before {
+  content: ""; position: absolute; left: 50%; top: 42%; width: 150vmax; height: 150vmax; margin: -75vmax 0 0 -75vmax;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, .055) 0deg 7deg, transparent 7deg 18deg);
+  pointer-events: none; z-index: -1;
+}
+/* Every overlay screen fades in when it is shown (display:none -> flex restarts the animation). */
+.screen:not(.hidden) { animation: rr-fade .16s ease-out both; }
+
+/* ---------------------------------------------------------- typography */
+.rr-display, .panel h2, .rr-title {
+  font-family: var(--rr-font-display); font-weight: 400; letter-spacing: .01em; line-height: 1.08;
+}
+/* Outlined game text: stroke painted behind the fill + hard drop. */
+.rr-outline, .panel h2, .rr-title {
+  color: var(--rr-white);
+  -webkit-text-stroke: var(--rr-stroke, 6px) var(--rr-ink); paint-order: stroke fill;
+  text-shadow: 0 var(--rr-drop-y, 3px) 0 var(--rr-ink);
+}
+.rr-title { font-size: var(--rr-fs-h1); }
+.rr-hero { font-family: var(--rr-font-display); font-size: var(--rr-fs-hero); --rr-stroke: 9px; --rr-drop-y: 5px; }
+.rr-num { font-family: var(--rr-font-display); font-variant-numeric: tabular-nums; }
+.rr-muted { color: var(--rr-muted); }
+
+/* ------------------------------------------------------------- buttons */
+.btn {
+  --b-hi: var(--rr-blue-hi); --b-base: var(--rr-blue); --b-lo: var(--rr-blue-lo); --b-lip: var(--rr-blue-lip); --b-fg: var(--rr-white);
+  position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center; gap: .45em;
+  min-height: 48px; padding: 9px 20px calc(9px + var(--rr-lip));
+  border: 0; border-radius: var(--rr-radius);
+  font-family: var(--rr-font-display); font-weight: 400; font-size: var(--rr-fs-btn); line-height: 1.05; letter-spacing: .01em;
+  color: var(--b-fg); text-align: center; text-decoration: none; white-space: nowrap;
+  -webkit-text-stroke: 4.5px var(--rr-ink); paint-order: stroke fill; text-shadow: 0 2px 0 var(--rr-ink);
+  background: linear-gradient(180deg, var(--b-hi) 0%, var(--b-base) 46%, var(--b-lo) 100%);
+  box-shadow:
+    inset 0 calc(-1 * var(--rr-lip)) 0 var(--b-lip),
+    inset 0 2px 0 rgba(255, 255, 255, .6),
+    0 0 0 var(--rr-line) var(--rr-ink),
+    0 5px 0 var(--rr-line) rgba(18, 8, 46, .36);
+  cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: transform .09s var(--rr-ease-out), box-shadow .09s var(--rr-ease-out), filter .15s;
+}
+.btn::before {
+  content: ""; position: absolute; z-index: -1; left: 5px; right: 5px; top: 4px; height: 42%;
+  border-radius: calc(var(--rr-radius) - 5px) calc(var(--rr-radius) - 5px) 50% 50% / calc(var(--rr-radius) - 5px) calc(var(--rr-radius) - 5px) 10px 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, .06));
+  pointer-events: none;
+}
+.btn > * { position: relative; }
+.btn:hover { filter: brightness(1.07) saturate(1.05); }
+.btn:active, .btn.is-down {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 -2px 0 var(--b-lip),
+    inset 0 2px 0 rgba(255, 255, 255, .45),
+    0 0 0 var(--rr-line) var(--rr-ink),
+    0 2px 0 var(--rr-line) rgba(18, 8, 46, .36);
+}
+.btn:disabled, .btn[aria-disabled="true"] {
+  --b-hi: var(--rr-grey-hi); --b-base: var(--rr-grey); --b-lo: var(--rr-grey-lo); --b-lip: var(--rr-grey-lip);
+  cursor: not-allowed; filter: none; transform: none;
+}
+.btn.big, .btn.rr-yellow {
+  --b-hi: var(--rr-yellow-hi); --b-base: var(--rr-yellow); --b-lo: var(--rr-yellow-lo); --b-lip: var(--rr-yellow-lip);
+}
+.btn.big { min-height: 58px; padding: 11px 28px calc(11px + var(--rr-lip)); font-size: var(--rr-fs-btn-big); border-radius: 18px; -webkit-text-stroke-width: 6px; text-shadow: 0 3px 0 var(--rr-ink); }
+.btn.rr-blue { --b-hi: var(--rr-blue-hi); --b-base: var(--rr-blue); --b-lo: var(--rr-blue-lo); --b-lip: var(--rr-blue-lip); }
+.btn.rr-green { --b-hi: var(--rr-green-hi); --b-base: var(--rr-green); --b-lo: var(--rr-green-lo); --b-lip: var(--rr-green-lip); }
+.btn.rr-red { --b-hi: var(--rr-red-hi); --b-base: var(--rr-red); --b-lo: var(--rr-red-lo); --b-lip: var(--rr-red-lip); }
+.btn.rr-carrot { --b-hi: var(--rr-carrot-hi); --b-base: var(--rr-carrot); --b-lo: var(--rr-carrot-lo); --b-lip: var(--rr-carrot-lip); }
+.btn.rr-purple { --b-hi: var(--rr-purple-hi); --b-base: var(--rr-purple); --b-lo: var(--rr-purple-lo); --b-lip: var(--rr-purple-lip); }
+.btn.rr-grey { --b-hi: var(--rr-grey-hi); --b-base: var(--rr-grey); --b-lo: var(--rr-grey-lo); --b-lip: var(--rr-grey-lip); }
+.btn.rr-light { --b-hi: #ffffff; --b-base: #fff6e3; --b-lo: #ffe2ad; --b-lip: #d9a35a; --b-fg: var(--rr-ink); -webkit-text-stroke: 0; text-shadow: none; }
+.btn.rr-small { min-height: 40px; padding: 6px 14px calc(6px + var(--rr-lip)); font-size: 15px; border-radius: 13px; -webkit-text-stroke-width: 3.4px; }
+/* Square icon button (settings, help, pause). */
+.btn.rr-icon { width: 52px; min-width: 52px; min-height: 52px; padding: 0 0 var(--rr-lip); border-radius: 15px; }
+.btn.rr-icon .rr-ic { width: 30px; height: 30px; }
+.btn .rr-ic { width: 1.45em; height: 1.45em; flex: none; }
+/* Back button: compact dark pill with a chevron. */
+.btn.text-btn {
+  --b-hi: #5b4fd8; --b-base: #4234b8; --b-lo: #33269a; --b-lip: #21176e;
+  min-height: 42px; padding: 5px 16px calc(5px + var(--rr-lip)) 12px; font-size: 16px; border-radius: 14px; -webkit-text-stroke-width: 4px;
+}
+/* Shine sweep for primary calls to action. */
+.btn.rr-shine { overflow: hidden; }
+.btn.rr-shine::after {
+  content: ""; position: absolute; z-index: -1; top: 0; bottom: var(--rr-lip); left: 0; width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+  border-radius: inherit; animation: rr-shine 3.2s ease-in-out infinite; pointer-events: none;
+}
+
+/* ------------------------------------------------------------- focus */
+:focus { outline: none; }
+:focus-visible { outline: 3px solid var(--rr-yellow); outline-offset: 4px; border-radius: 12px; }
+.btn:focus-visible { outline: 3px solid var(--rr-white); outline-offset: 5px; }
+
+/* ------------------------------------------------------------- panels */
+.panel {
+  position: relative; color: var(--rr-white);
+  padding: 22px 24px;
+  border-radius: var(--rr-radius-lg);
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .035) 0 12px, transparent 12px 24px),
+    linear-gradient(180deg, var(--rr-indigo-hi) 0%, var(--rr-indigo) 34%, var(--rr-indigo-lo) 100%);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, .24),
+    inset 0 -6px 0 rgba(10, 4, 40, .22),
+    0 0 0 var(--rr-line) var(--rr-ink),
+    0 10px 0 var(--rr-line) rgba(18, 8, 46, .34);
+}
+.panel h2 { font-size: var(--rr-fs-h1); --rr-stroke: 7px; --rr-drop-y: 4px; margin: 0 0 14px; }
+.panel h3 { font: 400 var(--rr-fs-h2)/1.15 var(--rr-font-display); color: var(--rr-white); -webkit-text-stroke: 5px var(--rr-ink); paint-order: stroke fill; text-shadow: 0 2px 0 var(--rr-ink); }
+.panel p { color: #ece9ff; }
+
+/* Light inset card on panels / over the 3D scene. */
+.rr-card {
+  position: relative; color: var(--rr-ink);
+  padding: 14px 16px; border-radius: var(--rr-radius);
+  background: linear-gradient(180deg, #ffffff 0%, var(--rr-cream) 55%, var(--rr-cream-2) 100%);
+  box-shadow: inset 0 -4px 0 rgba(196, 122, 30, .28), 0 0 0 var(--rr-line) var(--rr-ink), 0 5px 0 var(--rr-line) rgba(18, 8, 46, .3);
+}
+/* Dark inset well (lists, tables, stat boxes on a panel). */
+.rr-well {
+  position: relative; padding: 12px 14px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(14, 6, 52, .52), rgba(14, 6, 52, .34));
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, .25), 0 1px 0 rgba(255, 255, 255, .14);
+}
+
+/* Header ribbon (screen titles, result banner). */
+.rr-ribbon {
+  --rb-hi: var(--rr-yellow-hi); --rb: var(--rr-yellow); --rb-lo: var(--rr-yellow-lo); --rb-lip: var(--rr-yellow-lip);
+  position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: .4em;
+  padding: 7px 30px 11px; min-height: 46px;
+  font: 400 var(--rr-fs-h2)/1 var(--rr-font-display); color: var(--rr-white);
+  -webkit-text-stroke: 6px var(--rr-ink); paint-order: stroke fill; text-shadow: 0 3px 0 var(--rr-ink);
+  background: linear-gradient(180deg, var(--rb-hi), var(--rb) 48%, var(--rb-lo));
+  border-radius: 12px;
+  box-shadow: inset 0 -5px 0 var(--rb-lip), inset 0 2px 0 rgba(255, 255, 255, .6), 0 0 0 var(--rr-line) var(--rr-ink), 0 6px 0 var(--rr-line) rgba(18, 8, 46, .35);
+  transform: rotate(-1.5deg);
+}
+.rr-ribbon::before, .rr-ribbon::after {
+  content: ""; position: absolute; z-index: -1; top: 12px; width: 30px; height: 72%;
+  background: linear-gradient(180deg, var(--rb-lo), var(--rb-lip));
+  filter: drop-shadow(0 0 0 var(--rr-ink)) drop-shadow(2px 0 0 var(--rr-ink)) drop-shadow(-2px 0 0 var(--rr-ink)) drop-shadow(0 2px 0 var(--rr-ink)) drop-shadow(0 -2px 0 var(--rr-ink));
+}
+.rr-ribbon::before { left: -20px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 34% 50%); }
+.rr-ribbon::after { right: -20px; clip-path: polygon(0 0, 100% 0, 66% 50%, 100% 100%, 0 100%); }
+.rr-ribbon.rr-blue { --rb-hi: var(--rr-blue-hi); --rb: var(--rr-blue); --rb-lo: var(--rr-blue-lo); --rb-lip: var(--rr-blue-lip); }
+.rr-ribbon.rr-red { --rb-hi: var(--rr-red-hi); --rb: var(--rr-red); --rb-lo: var(--rr-red-lo); --rb-lip: var(--rr-red-lip); }
+.rr-ribbon.rr-purple { --rb-hi: var(--rr-purple-hi); --rb: var(--rr-purple); --rb-lo: var(--rr-purple-lo); --rb-lip: var(--rr-purple-lip); }
+.rr-ribbon.rr-green { --rb-hi: var(--rr-green-hi); --rb: var(--rr-green); --rb-lo: var(--rr-green-lo); --rb-lip: var(--rr-green-lip); }
+
+/* Badges & chips. */
+.rr-badge {
+  --bg: var(--rr-purple); display: inline-flex; align-items: center; gap: .3em;
+  padding: 2px 9px 3px; border-radius: 999px; min-height: 22px;
+  font: 400 13px/1.2 var(--rr-font-display); color: var(--rr-white);
+  -webkit-text-stroke: 2.6px var(--rr-ink); paint-order: stroke fill;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 62%, #fff), var(--bg));
+  box-shadow: 0 0 0 2px var(--rr-ink), inset 0 -2px 0 rgba(0, 0, 0, .2);
+  white-space: nowrap;
+}
+.rr-badge .rr-ic { width: 16px; height: 16px; }
+.rr-chip {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 6px;
+  border-radius: 999px; color: var(--rr-white);
+  font: 400 16px/1 var(--rr-font-display); -webkit-text-stroke: 4px var(--rr-ink); paint-order: stroke fill;
+  background: linear-gradient(180deg, rgba(40, 28, 120, .92), rgba(24, 14, 80, .92));
+  box-shadow: 0 0 0 2.5px var(--rr-ink), inset 0 2px 0 rgba(255, 255, 255, .18);
+}
+.rr-chip .rr-ic { width: 26px; height: 26px; }
+
+/* Meters: outlined trough + glossy fill. Drive the fill with transform: scaleX() in the HUD. */
+.rr-bar {
+  --fill: var(--rr-green); --fill-hi: var(--rr-green-hi);
+  position: relative; height: 14px; border-radius: 999px; overflow: hidden;
+  background: linear-gradient(180deg, #120838, #2a1a66);
+  box-shadow: 0 0 0 2px var(--rr-ink), inset 0 2px 0 rgba(0, 0, 0, .35);
+}
+.rr-bar > i, .rr-bar > .fill {
+  position: absolute; inset: 0; transform-origin: left center; border-radius: inherit;
+  background: linear-gradient(180deg, var(--fill-hi) 0 30%, var(--fill) 31% 100%);
+}
+.rr-bar.rr-seg5::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(20% - 2px), var(--rr-ink) calc(20% - 2px) 20%);
+}
+
+/* ---------------------------------------------------------- form controls */
+.panel input[type="text"], .panel input[type="password"], .panel input:not([type]), .rr-input {
+  width: 100%; min-height: 46px; padding: 10px 14px; border: 0; border-radius: 13px;
+  color: var(--rr-ink); background: #fff;
+  font: 700 16px/1.2 var(--rr-font-body);
+  box-shadow: 0 0 0 var(--rr-line) var(--rr-ink), inset 0 3px 0 rgba(27, 16, 54, .12);
+}
+.panel input::placeholder { color: #8f88b3; font-weight: 600; }
+.panel select, .rr-select {
+  appearance: none; -webkit-appearance: none; min-height: 44px; padding: 8px 40px 8px 14px; border: 0; border-radius: 13px;
+  color: var(--rr-ink); font: 700 15px/1.2 var(--rr-font-body); cursor: pointer;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 8l5 5 5-5' fill='none' stroke='%231b1036' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center / 18px;
+  box-shadow: 0 0 0 var(--rr-line) var(--rr-ink), inset 0 -3px 0 rgba(27, 16, 54, .12);
+}
+.panel input[type="range"], .rr-range { appearance: none; -webkit-appearance: none; width: 100%; height: 30px; background: transparent; cursor: pointer; }
+.panel input[type="range"]::-webkit-slider-runnable-track { height: 14px; border-radius: 999px; background: linear-gradient(180deg, #120838, #2c1c6c); box-shadow: 0 0 0 2.5px var(--rr-ink), inset 0 2px 0 rgba(0, 0, 0, .3); }
+.panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 28px; height: 28px; margin-top: -7px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 32%, #fffbd0 0 18%, var(--rr-yellow) 42%, var(--rr-yellow-lo) 100%);
+  box-shadow: 0 0 0 3px var(--rr-ink), 0 3px 0 3px rgba(18, 8, 46, .35);
+}
+.panel input[type="range"]::-moz-range-track { height: 14px; border-radius: 999px; background: #1a0d4a; box-shadow: 0 0 0 2.5px var(--rr-ink); }
+.panel input[type="range"]::-moz-range-progress { height: 14px; border-radius: 999px; background: var(--rr-yellow); }
+.panel input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; border: 3px solid var(--rr-ink); border-radius: 50%; background: var(--rr-yellow); }
+/* Checkbox -> chunky switch (knob drawn with a gradient, no pseudo-elements needed). */
+.panel input[type="checkbox"], .rr-switch {
+  appearance: none; -webkit-appearance: none; flex: none; width: 58px; height: 32px; margin: 0; border-radius: 999px; cursor: pointer;
+  background: radial-gradient(circle at 16px 50%, #fff 0 10px, var(--rr-ink) 10.5px 12px, transparent 12.5px), linear-gradient(180deg, #7d77a6, #9e98c6);
+  box-shadow: 0 0 0 var(--rr-line) var(--rr-ink), inset 0 3px 0 rgba(0, 0, 0, .25);
+}
+.panel input[type="checkbox"]:checked, .rr-switch:checked {
+  background: radial-gradient(circle at 42px 50%, #fff 0 10px, var(--rr-ink) 10.5px 12px, transparent 12.5px), linear-gradient(180deg, var(--rr-green-lo), var(--rr-green));
+}
+
+/* Disclosure rows. */
+.panel details > summary, .rr-summary {
+  list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 46px; padding: 8px 14px; border-radius: 14px; cursor: pointer;
+  font: 400 17px/1.15 var(--rr-font-display); color: var(--rr-white); -webkit-text-stroke: 4px var(--rr-ink); paint-order: stroke fill;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .06));
+  box-shadow: 0 0 0 2.5px rgba(27, 16, 54, .9), inset 0 2px 0 rgba(255, 255, 255, .14);
+}
+.panel details > summary::-webkit-details-marker { display: none; }
+.panel details > summary::after, .rr-summary::after {
+  content: ""; flex: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--rr-yellow) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 8l4 4 4-4' fill='none' stroke='%231b1036' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat;
+  box-shadow: 0 0 0 2px var(--rr-ink); transition: transform .18s var(--rr-ease-out);
+}
+.panel details[open] > summary::after { transform: rotate(180deg); }
+
+/* Tabs and segmented choices. */
+.tabs, .seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs > button, .seg > button {
+  min-height: 40px; padding: 6px 14px 9px; border: 0; border-radius: 12px; cursor: pointer;
+  font: 400 15px/1 var(--rr-font-display); color: var(--rr-white); -webkit-text-stroke: 3.4px var(--rr-ink); paint-order: stroke fill;
+  background: linear-gradient(180deg, #6a5ee6, #4a3cc4);
+  box-shadow: inset 0 -4px 0 #2d2190, inset 0 2px 0 rgba(255, 255, 255, .35), 0 0 0 2.5px var(--rr-ink);
+  transition: transform .08s;
+}
+.tabs > button:active, .seg > button:active { transform: translateY(2px); }
+.tabs > button[aria-selected="true"], .seg > button.on, .seg > button[aria-pressed="true"] {
+  background: linear-gradient(180deg, var(--rr-yellow-hi), var(--rr-yellow) 50%, var(--rr-yellow-lo));
+  box-shadow: inset 0 -4px 0 var(--rr-yellow-lip), inset 0 2px 0 rgba(255, 255, 255, .6), 0 0 0 2.5px var(--rr-ink);
+}
+
+/* Keyboard key caps. */
+kbd, .rr-key {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 7px 2px;
+  border-radius: 7px; font: 400 13px/1 var(--rr-font-display); color: var(--rr-ink);
+  background: linear-gradient(180deg, #fff, #e4e0f6); box-shadow: inset 0 -3px 0 #b9b2dc, 0 0 0 2px var(--rr-ink);
+}
+
+/* Scroll areas inside panels. */
+.rr-scroll { overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: var(--rr-yellow) rgba(10, 4, 40, .35); }
+.rr-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.rr-scroll::-webkit-scrollbar-thumb { background: var(--rr-yellow); border-radius: 999px; border: 2px solid var(--rr-ink); }
+.rr-scroll::-webkit-scrollbar-track { background: rgba(10, 4, 40, .35); border-radius: 999px; }
+
+/* Icons from js/ui-icons.js */
+.rr-ic { width: 24px; height: 24px; flex: none; display: inline-block; vertical-align: middle; }
+
+/* ------------------------------------------------------------ loading */
+#loading { position: fixed; inset: 0; z-index: 30; transition: opacity .35s ease, visibility .35s; }
+#loading.done { opacity: 0; visibility: hidden; pointer-events: none; }
+/* A faded-out loader keeps its box (visibility only), so stop its looping decoration from ticking during matches. */
+#loading.done::before, #loading.done *, #loading.done *::before, #loading.done *::after { animation-play-state: paused !important; }
+
+/* ---------------------------------------------------------- motion */
+@keyframes rr-pop { 0% { opacity: 0; transform: scale(.78); } 55% { opacity: 1; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes rr-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes rr-drop-in { from { opacity: 0; transform: translateY(-26px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes rr-slide-l { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+@keyframes rr-slide-r { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes rr-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rr-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes rr-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.055); } }
+@keyframes rr-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+@keyframes rr-shine { 0% { transform: translateX(-140%) skewX(-22deg); } 55%, 100% { transform: translateX(320%) skewX(-22deg); } }
+@keyframes rr-rays { to { transform: rotate(360deg); } }
+@keyframes rr-glow { 0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 210, 58, 0)); } 50% { filter: drop-shadow(0 0 12px rgba(255, 210, 58, .9)); } }
+.rr-enter-pop { animation: rr-pop .38s var(--rr-ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.rr-enter-rise { animation: rr-rise .34s var(--rr-ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.rr-enter-left { animation: rr-slide-l .34s var(--rr-ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.rr-enter-right { animation: rr-slide-r .34s var(--rr-ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.rr-bob { animation: rr-bob 2.6s ease-in-out infinite; }
+.rr-pulse { animation: rr-pulse 1.4s ease-in-out infinite; }
+
+/* Reduced motion: the in-game setting toggles html.reduce-motion (also follows the OS). */
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+  animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+

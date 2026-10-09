@@ -297,18 +297,15 @@ export function createEnvironmentArt(st, id, parent = st.g) {
   }
   function garden() {
     if (id === 'farm') {
-      // Retaining-wall planters have a real shared base. Remove the old
-      // off-island annex/ledges whose trees floated through the new perimeter.
-      for (const [x, z, s] of [[-19, -14, .85], [19, -14, .85], [-10, -21.5, .75], [10, -21.5, .75]]) {
-        tree(x, z, 5.7, s); shrub(x, z, 5.7, 1.2);
+      // Trees are rooted on the island, clear of the open cliff edge.
+      for (const [x, z, s] of [[-18, -12, .85], [18, -12, .85], [-9, -20, .75], [9, -20, .75]]) {
+        tree(x, z, 0, s); shrub(x, z, 0, 1.2);
       }
       for (const [x, z] of [[-16, -15], [-18, -11], [16, -15], [18, -11], [7, -20], [-14, 16], [16, 14]]) shrub(x, z, 0, .85, true);
       for (const [x, z] of [[-19, -7], [-20, -5], [-21, -2], [18, -15], [15, -18], [11, -19], [-6, -19], [-8, -18], [-17, 12], [-15, 15], [16, 13]]) { flowers(x, z, 0, 1.3); grass(x + .65, z + .25); }
       for (let k = 0; k < 10; k++) { flowers(-18 + k * .75, -2.1 - k * .22, 0, .9, k % 2 ? 0xe7c88e : p.bloom); grass(15 + k * .45, 3.7 - k * .1, 0, .75); }
     } else if (id === 'fort') {
-      // Trees sit on the rear battlement; no decorative walkable-looking
-      // annex remains beyond the physical court boundary.
-      for (const [x, z, s] of [[-15, -20, .9], [15, -20, .9], [-7, -24, .8], [7, -24, .8]]) tree(x, z, 5.3, s);
+      for (const [x, z, s] of [[-14, -18, .9], [14, -18, .9], [-7, -22, .8], [7, -22, .8]]) tree(x, z, 0, s);
       for (const [x, z] of [[-16, -18], [-18, -14], [16, -18], [18, -14], [-11, -20], [14, 15]]) shrub(x, z, 0, 1.2, true);
       for (const [x, z] of [[-16, -17], [-18, -15], [15, -16], [17, -14], [-20, 0], [-20, 3], [20, 10], [-10, 17]]) { flowers(x, z); grass(x + .55, z + .2); }
     } else {

@@ -100,7 +100,7 @@ export class RenderBudget {
   // Returns 'fps' when auto frame rate fell back to 30, 'scale' when resolution dropped, else false.
   // One-way within a session: no oscillation between rates or resolutions.
   // hiDpi: rendering above one pixel per CSS pixel, so resolution is the cheaper thing to give up first.
-  observe(interval, now, fps, adaptive, autoRate = false, hiDpi = false) {
+  observe(interval, now, fps, adaptive, autoRate = false, hiDpi = false, cpuCost = 0) {
     if ((!adaptive && !autoRate) || fps === 0) return false;
     if (this.windowStart === null) this.windowStart = now;
     if (interval > 0 && interval < 1000) this.samples.push(interval);
@@ -112,8 +112,16 @@ export class RenderBudget {
     if (!this.warm) { this.warm = true; return false; }
     if (p90 <= (1000 / fps) * 1.45) return false;
     const canScale = adaptive && this.scale > .65;
-    if (!(hiDpi && canScale) && fps > 30 && autoRate && !this.capped) { this.capped = true; return 'fps'; }
-    if (!adaptive) return false;
+    // A short compilation spike must not halve the game rate permanently.
+    // Always exhaust resolution headroom before lowering the display rate,
+    // including 1x phones. Require sustained pressure, not just a p90 outlier.
+    const missed = sorted.filter(v => v > (1000 / fps) * 1.45).length / sorted.length;
+    if (missed < .3) return false;
+    // Resizing GPU buffers cannot repair CPU-bound frames, and the allocation
+    // itself can stall. Keep resolution stable and use a sustainable cadence.
+    if (cpuCost > 1000 / fps * .65 && autoRate && fps > 30 && !this.capped) { this.capped = true; return 'fps'; }
+    if (!canScale && fps > 30 && autoRate && !this.capped) { this.capped = true; return 'fps'; }
+    if (!adaptive || !canScale) return false;
     const old = this.scale;
     this.scale = Math.max(.65, +(this.scale - .1).toFixed(2));
     return old !== this.scale ? 'scale' : false;

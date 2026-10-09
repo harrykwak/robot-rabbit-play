@@ -1,0 +1,169 @@
+/* Lobby, loading and mode navigation. The live duo is fitted to title-showcase. */
+#loading { position:fixed; inset:0; z-index:30; isolation:isolate; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; background:radial-gradient(ellipse at 50% 40%,#3d8bff 0%,#1a3fb8 55%,#17105a 100%); }
+#loading::before { content:""; position:absolute; z-index:-1; width:220vmax; height:220vmax; background:repeating-conic-gradient(from 0deg, #ffffff10 0deg 9deg,transparent 9deg 22deg); animation:rr-rays 90s linear infinite; }
+#loading.done { opacity:0; visibility:hidden; pointer-events:none; transition:opacity .3s,visibility .3s; }
+.loading-brand { display:block; width:min(480px,78vw); animation:rr-pop .65s var(--rr-ease-pop) both; }
+.loading-brand img { display:block; width:100%; height:auto; }
+.loading-progress { width:min(400px,76vw); height:30px; padding:5px; overflow:hidden; border:3px solid var(--rr-ink); border-radius:12px; background:#19104a; box-shadow:0 4px 0 #0b063b66,inset 0 2px 0 #090526; }
+.loading-progress i { display:block; height:100%; width:100%; border-radius:5px; background:repeating-linear-gradient(115deg,#ffd23a 0 15px,#fff27a 15px 26px); transform-origin:left; animation:lobby-loading 2s ease-in-out infinite alternate; }
+.loading-caption { font:400 23px var(--rr-font-display); }
+.loading-tip { max-width:400px; font-size:14px; color:#e3efff; min-height:40px; }
+@keyframes lobby-loading { from {transform:scaleX(.2)} to {transform:scaleX(.95)} }
+#loading.load-failed { gap:24px; }
+#loading.load-failed .rr-ribbon { max-width:90%; font-size:26px; }
+#loading.load-failed .rr-card { width:min(500px,90vw); line-height:1.8; }
+#loading.load-failed .btn { min-width:200px; }
+
+#title { display:block; isolation:isolate; background:linear-gradient(180deg,#0c194d44,transparent 35%,transparent 65%,#11123ebd); }
+#title::before { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none; background:radial-gradient(ellipse at 54% 44%,transparent 25%,#1b24694d 100%); }
+.title-profile { position:absolute; top:calc(24px + var(--safe-t)); left:calc(24px + var(--safe-l)); width:206px; height:78px; justify-content:flex-start; padding:0 12px 5px 0; gap:6px; }
+.title-profile #title-portrait { height:82px; width:78px; flex:none; align-self:flex-end; overflow:hidden; border-radius:14px; }
+.title-profile img { width:100%; height:100%; object-fit:contain; object-position:center bottom; }
+.title-profile strong { display:block; text-align:left; font-size:24px; margin-bottom:8px; }
+.title-profile .rr-badge { display:table; font-size:12px; }
+.title-logo { position:absolute; width:260px; top:10px; left:50%; translate:-50% 0; text-align:center; }
+.title-logo h1 { line-height:0; }
+.title-logo img { width:100%; height:auto; }
+.logo-ko { display:block; margin-top:-16px; font:400 17px var(--rr-font-display); letter-spacing:.12em; }
+.title-tools { position:absolute; top:calc(24px + var(--safe-t)); right:calc(24px + var(--safe-r)); display:flex; gap:14px; }
+.title-menu { position:absolute; left:calc(24px + var(--safe-l)); top:29%; display:grid; gap:19px; width:164px; }
+.title-menu .btn { min-height:101px; display:grid; grid-template-columns:52px 1fr; column-gap:7px; row-gap:2px; padding:12px 10px 15px; font-size:21px; text-align:left; }
+.title-menu .btn > .rr-ic { grid-row:1 / 3; width:52px; height:52px; }
+.title-menu .btn small { font-size:12px; font-weight:400; -webkit-text-stroke:0; text-shadow:0 1px 2px #1b1036; }
+.title-menu .btn .rr-badge { width:max-content; background:#26194f; color:#ffdf50; box-shadow:none; }
+#title-showcase { position:absolute; pointer-events:none; left:23%; right:16%; top:23%; bottom:24%; }
+.title-nameplate { position:absolute; left:54%; bottom:23%; display:flex; align-items:center; gap:10px; translate:-50% 0; white-space:nowrap; }
+.title-nameplate strong { font:400 24px var(--rr-font-display); }
+.title-nameplate .rr-badge { --bg:var(--rr-carrot); }
+.title-launch { position:absolute; bottom:calc(57px + var(--safe-b)); right:calc(26px + var(--safe-r)); display:flex; align-items:stretch; gap:18px; width:min(68%,800px); }
+.title-mode { flex:1; justify-content:flex-start; min-width:0; padding:12px 14px 17px; gap:12px; text-align:left; }
+.title-mode > .rr-ic:first-child { width:45px; height:45px; }
+.title-mode > .rr-ic:last-child { width:22px; margin-left:auto; }
+.title-mode strong { display:block; font-size:23px; }
+#title-rules { display:block; margin-top:9px; font:400 13px var(--rr-font-display); -webkit-text-stroke:0; text-shadow:0 1px 1px #1b1036; }
+.title-play.btn { width:310px; min-height:90px; font-size:43px; transform-origin:center; animation:lobby-play 3s ease-in-out 1s infinite; }
+.title-play.btn .rr-ic { width:40px; height:40px; }
+@keyframes lobby-play { 0%,72%,100% {transform:scale(1)} 85% {transform:scale(1.025)} }
+.title-hint { position:absolute; bottom:calc(13px + var(--safe-b)); left:15px; right:15px; text-align:center; font-size:13px; color:#fff5d9; text-shadow:0 2px 2px #1b1036; }
+
+#solo .solo-panel,#friends .solo-panel { width:min(900px,94vw); padding:25px 30px 30px; }
+.lobby-heading { display:flex; justify-content:center; align-items:center; position:relative; min-height:58px; margin-bottom:16px; }
+.lobby-heading > .btn { position:absolute; left:0; min-height:44px; }
+.lobby-heading h2 { margin:0; font-size:28px; }
+#solo .menu-intro,#friends .menu-intro { text-align:center; margin:12px 0 24px; font-size:14px; }
+.solo-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.solo-options .mode-row { min-height:160px; display:flex; gap:15px; padding:22px 18px 26px; text-align:left; white-space:normal; font-size:29px; }
+.mode-row > .rr-ic:first-child { width:72px; height:72px; }
+.mode-row > span { flex:1; }
+.mode-row small { display:block; font:400 13px/1.5 var(--rr-font-display); margin-top:12px; -webkit-text-stroke:0; text-shadow:0 1px 2px #1b1036; }
+.mode-row small b { font-weight:400; color:#ffe870; }
+.mode-row > .rr-ic:last-child { width:22px; height:22px; }
+#friends .mode-row { flex-direction:column; text-align:center; min-height:260px; }
+#friends .mode-row > .rr-ic:first-child { width:98px; height:98px; }
+#friends .mode-row > .rr-ic:last-child { display:none; }
+#title-online-status { width:max-content; max-width:100%; margin:25px auto 0; padding:10px 16px; font-size:13px; line-height:1.4; -webkit-text-stroke:0; }
+#title-online-status::before { content:""; width:10px; height:10px; flex:none; border-radius:50%; background:#ffd23a; box-shadow:0 0 0 2px var(--rr-ink); }
+#title-online-status.is-online::before { background:var(--rr-green); }
+
+@media (max-height:430px) and (min-width:601px) {
+  .title-profile { top:12px; left:14px; width:164px; height:54px; }
+  .title-profile #title-portrait { width:53px; height:58px; }
+  .title-profile strong { font-size:19px; margin-bottom:4px; }
+  .title-logo { width:166px; top:-9px; }
+  .logo-ko { margin-top:-12px; font-size:12px; }
+  .title-tools { top:12px; right:14px; gap:12px; }
+  .title-tools .rr-icon { width:46px; min-width:46px; min-height:46px; }
+  .title-menu { left:14px; top:89px; width:146px; gap:12px; }
+  .title-menu .btn { min-height:63px; grid-template-columns:39px 1fr; padding:6px 8px 9px; font-size:18px; }
+  .title-menu .btn > .rr-ic { width:39px; height:39px; }
+  #title-showcase { left:28%; right:18%; top:20%; bottom:24%; }
+  .title-nameplate { bottom:26%; gap:6px; }
+  .title-nameplate strong { font-size:19px; }
+  .title-launch { bottom:37px; right:16px; width:73%; gap:13px; }
+  .title-play.btn { min-height:65px; width:230px; font-size:34px; }
+  .title-mode { padding:9px 10px 12px; gap:8px; }
+  .title-mode strong { font-size:19px; }
+  .title-mode > .rr-ic:first-child { width:33px; height:33px; }
+  #title-rules { font-size:12px; margin-top:6px; }
+  .title-hint { bottom:8px; font-size:12px; }
+  #solo .solo-panel,#friends .solo-panel { padding:14px 22px 18px; width:min(790px,94vw); }
+  .lobby-heading { min-height:44px; margin-bottom:6px; }
+  .lobby-heading h2 { font-size:23px; }
+  #solo .menu-intro,#friends .menu-intro { margin:8px 0 12px; font-size:12px; }
+  .solo-options { gap:14px; }
+  .solo-options .mode-row { min-height:99px; padding:12px; font-size:23px; gap:10px; }
+  .mode-row > .rr-ic:first-child { width:52px; height:52px; }
+  .mode-row small { margin-top:6px; font-size:12px; }
+  #friends .mode-row { min-height:161px; gap:6px; }
+  #friends .mode-row > .rr-ic:first-child { width:64px; height:64px; }
+  #title-online-status { margin-top:14px; padding:8px 12px; font-size:12px; }
+  .loading-brand { width:250px; }
+  #loading { gap:10px; }
+  .loading-tip { min-height:0; }
+}
+
+@media (max-width:600px) {
+  .title-profile { top:16px; left:13px; height:60px; width:168px; }
+  .title-profile #title-portrait { height:64px; width:62px; }
+  .title-profile strong { font-size:21px; margin-bottom:5px; }
+  .title-tools { top:17px; right:13px; gap:10px; }
+  .title-tools .rr-icon { width:46px; min-width:46px; min-height:48px; }
+  .title-logo { width:171px; top:78px; left:8px; translate:none; }
+  .logo-ko { font-size:12px; margin-top:-13px; }
+  #title-showcase { left:9%; right:4%; top:26%; bottom:37%; }
+  .title-nameplate { left:50%; bottom:36%; flex-direction:column; gap:6px; }
+  .title-nameplate strong { font-size:22px; }
+  .title-menu { left:14px; right:14px; top:auto; bottom:23%; width:auto; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .title-menu .btn { min-height:87px; display:flex; flex-direction:column; gap:5px; font-size:17px; padding:7px 3px 10px; text-align:center; }
+  .title-menu .btn > .rr-ic { width:32px; height:32px; }
+  .title-menu .btn small { font-size:12px; }
+  .title-menu .btn:first-child small { display:none; }
+  .title-launch { left:14px; right:14px; width:auto; bottom:43px; gap:11px; flex-direction:column; }
+  .title-mode { min-height:54px; padding:7px 11px 11px; gap:9px; }
+  .title-mode strong { font-size:18px; }
+  .title-mode > .rr-ic:first-child { width:31px; height:31px; }
+  #title-rules { margin-top:5px; font-size:12px; }
+  .title-play.btn { width:100%; min-height:67px; font-size:34px; }
+  .title-play.btn .rr-ic { width:30px; height:30px; }
+  .title-hint { bottom:9px; font-size:12px; }
+  #solo .solo-panel,#friends .solo-panel { width:100%; max-height:calc(100dvh - 30px); padding:18px 15px 22px; }
+  .lobby-heading { justify-content:flex-end; margin-bottom:22px; min-height:46px; }
+  .lobby-heading h2 { font-size:24px; padding:9px 20px 12px; margin-right:14px; }
+  .lobby-heading .btn { font-size:14px; padding-left:8px; padding-right:9px; }
+  .lobby-heading .btn .rr-ic { width:18px; }
+  #solo .menu-intro,#friends .menu-intro { font-size:12px; margin:4px 0 18px; }
+  .solo-options { grid-template-columns:1fr; gap:16px; }
+  .solo-options .mode-row { min-height:114px; padding:14px 12px 18px; font-size:25px; gap:10px; }
+  .mode-row > .rr-ic:first-child { width:54px; height:54px; }
+  .mode-row small { font-size:12px; margin-top:8px; }
+  .mode-row > .rr-ic:last-child { width:18px; }
+  #friends .mode-row { min-height:175px; gap:9px; }
+  #friends .mode-row > .rr-ic:first-child { width:68px; height:68px; }
+  #title-online-status { font-size:12px; padding:10px; text-align:center; }
+}
+@media (max-width:600px) and (max-height:650px) {
+  .title-profile { top:11px; height:53px; width:159px; }
+  .title-profile #title-portrait { height:57px; width:54px; }
+  .title-tools { top:12px; gap:8px; }
+  .title-tools .rr-icon { min-width:44px; width:44px; min-height:46px; }
+  .title-logo { top:64px; width:131px; }
+  #title-showcase { top:23%; bottom:45%; left:14%; right:2%; }
+  .title-nameplate { bottom:46%; gap:5px; }
+  .title-nameplate strong { font-size:18px; }
+  .title-nameplate .rr-badge { display:none; }
+  .title-menu { bottom:30%; gap:10px; }
+  .title-menu .btn { min-height:76px; font-size:16px; gap:4px; }
+  .title-menu .btn > .rr-ic { width:27px; height:27px; }
+  .title-launch { bottom:36px; gap:10px; }
+  .title-play.btn { min-height:58px; font-size:30px; }
+  .title-mode { min-height:51px; }
+  .title-hint { font-size:12px; bottom:5px; line-height:1.2; }
+  #solo .solo-panel,#friends .solo-panel { padding:14px 12px 18px; }
+  .lobby-heading h2 { font-size:21px; padding-left:14px; padding-right:14px; }
+  .lobby-heading { margin-bottom:15px; }
+  .solo-options { gap:13px; }
+  .solo-options .mode-row { min-height:90px; font-size:22px; padding:11px 9px 15px; gap:7px; }
+  .mode-row > .rr-ic:first-child { width:42px; height:42px; }
+  .mode-row small { font-size:12px; margin-top:6px; }
+  #friends .mode-row { min-height:146px; }
+}

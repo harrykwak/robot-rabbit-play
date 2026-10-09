@@ -1,0 +1,20 @@
+/* ROBOT RABBIT UI v2 · compatibility fallbacks (loaded last).
+   The UI targets current Chrome/WebView and Safari, but stale Android WebViews and iOS 15 Safari
+   lack color-mix() and dynamic viewport units. Declarations that use those features together with
+   var() become invalid at computed-value time (background turns transparent, max-height disappears),
+   so a plain earlier fallback declaration would not help; these @supports blocks restore readable
+   equivalents instead. */
+@supports not (color: color-mix(in srgb, red 50%, white)) {
+  .rr-badge { background: var(--bg); }
+  #select .pilot, #select .robot-card { background: radial-gradient(ellipse at 50% 35%, rgba(255, 255, 255, .42), transparent 62%), var(--c); }
+  .me-avatar { background: linear-gradient(145deg, rgba(255, 255, 255, .4), transparent 70%), var(--fighter); }
+  .vs-fighter { background: linear-gradient(150deg, rgba(255, 255, 255, .45), transparent 62%), var(--fighter); }
+  .result-fighter { background: radial-gradient(ellipse at 50% 35%, var(--fighter-color), #4433a8 90%); }
+}
+@supports not (height: 1dvh) {
+  :is(#help, #settings, #pause, #result, #mobile-help) .panel { max-height: calc(100vh - 2 * var(--rr-edge) - var(--safe-t) - var(--safe-b)); }
+  #solo .solo-panel, #friends .solo-panel { max-height: calc(100vh - 30px); }
+}
+/* Korean names break between words, never inside a word (e.g. "캐럿 / 타이탄", not "캐럿 타이 / 탄"). */
+#select .choice-name, .result-fighter strong, .vs-fighter strong, .title-nameplate, .mission-card h3 { word-break: keep-all; overflow-wrap: anywhere; }
+

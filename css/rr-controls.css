@@ -1,0 +1,155 @@
+/* ROBOT RABBIT · tactile combat controls. Geometry belongs to touchLayout(). */
+#touch-controls {
+  position: fixed; inset: 0; z-index: 6; pointer-events: none;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  font-family: var(--rr-font-display); font-weight: 400;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+#touch-controls .touch-actions { position: absolute; inset: 0; pointer-events: none; }
+#touch-controls .touch-stick, #touch-controls .touch-btn, #touch-controls .touch-charge {
+  position: absolute; left: var(--touch-x); top: var(--touch-y);
+  width: var(--touch-size); height: var(--touch-size); margin: 0;
+}
+#touch-controls .touch-stick, #touch-controls .touch-btn, #touch-controls .touch-menu { pointer-events: auto; touch-action: none; }
+
+/* A translucent well and cardinal notches make the resting stick readable. */
+#touch-controls .touch-stick {
+  border: 3px solid var(--rr-ink); border-radius: 50%;
+  background: radial-gradient(circle, #19103842 0 54%, #1910388c 55%);
+  box-shadow: inset 0 0 0 2px #ffffff38, inset 0 5px 0 #130a322e, 0 5px 0 #10082845;
+}
+#touch-controls .touch-stick::before { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+#touch-controls .touch-stick::after {
+  content: ''; position: absolute; inset: 8px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from -3deg, #e0f4ff95 0deg 6deg, transparent 6deg 90deg, #e0f4ff95 90deg 96deg, transparent 96deg 180deg, #e0f4ff95 180deg 186deg, transparent 186deg 270deg, #e0f4ff95 270deg 276deg, transparent 276deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent 80%, #000 82%);
+  mask: radial-gradient(farthest-side, transparent 80%, #000 82%);
+}
+#touch-controls .touch-knob {
+  position: absolute; left: 50%; top: 50%; width: 46%; height: 46%; margin: -23% 0 0 -23%;
+  border: 3px solid var(--rr-ink); border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse at 34% 22%, #fff 0 12%, #dff6ff 14%, #b1ddfb 46%, #62a5e4 100%);
+  box-shadow: inset 0 -5px 0 #4e79b5, inset 0 2px 0 #fff, 0 5px 0 #160b3999;
+}
+#touch-controls .touch-stick.is-down { border-color: #b5ecff; background-color: #318bcc38; }
+#touch-controls .touch-stick.is-down .touch-knob { box-shadow: inset 0 -3px 0 #4272ae, inset 0 2px 0 #fff, 0 3px 0 #160b3999; }
+
+/* Action colors stay stable between pilot and robot so thumb memory wins. */
+#touch-controls .touch-btn {
+  --t-hi: var(--rr-blue-hi); --t-base: var(--rr-blue); --t-lo: var(--rr-blue-lo); --t-lip: var(--rr-blue-lip);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  padding: 0 0 4px; border: 3px solid var(--rr-ink); border-radius: 50%;
+  color: #fff; font: 400 12px/1 var(--rr-font-display); cursor: pointer; isolation: isolate;
+  background: linear-gradient(160deg, var(--t-hi), var(--t-base) 48%, var(--t-lo));
+  box-shadow: inset 0 -5px 0 var(--t-lip), inset 0 2px 0 #ffffffa6, 0 4px 0 #160b39bf;
+  transition: transform .08s var(--rr-ease-out), opacity .12s;
+}
+#touch-controls .touch-btn::before {
+  content: ''; position: absolute; inset: 3px 5px 50%; border-radius: 50% 50% 35% 35%;
+  background: linear-gradient(#ffffff60, #ffffff08); pointer-events: none; z-index: -1;
+}
+#touch-controls .touch-btn[data-touch-action="atk"] {
+  --t-hi: #ffb473; --t-base: #ff613e; --t-lo: #eb3447; --t-lip: #a81c3e;
+  border-width: 4px; gap: 2px; padding-bottom: 7px;
+  box-shadow: inset 0 -7px 0 var(--t-lip), inset 0 3px 0 #ffffffb0, 0 5px 0 #160b39bf;
+}
+#touch-controls .touch-btn[data-touch-action="grd"] { --t-hi: var(--rr-green-hi); --t-base: var(--rr-green); --t-lo: var(--rr-green-lo); --t-lip: var(--rr-green-lip); }
+#touch-controls .touch-btn[data-touch-action="dash"] { --t-hi: var(--rr-purple-hi); --t-base: var(--rr-purple); --t-lo: var(--rr-purple-lo); --t-lip: var(--rr-purple-lip); }
+#touch-controls .touch-btn[data-touch-action="jump"] { --t-hi: #c4f6ff; --t-base: #60d2f6; --t-lo: #2a98de; --t-lip: #226ba7; }
+#touch-controls .touch-btn[data-touch-action="act"] { --t-hi: var(--rr-yellow-hi); --t-base: var(--rr-yellow); --t-lo: var(--rr-yellow-lo); --t-lip: var(--rr-yellow-lip); z-index: 2; }
+#touch-controls .touch-btn.is-down { transform: translateY(3px) scale(.95); }
+#touch-controls .touch-btn.is-active { border-color: #fff6ad; }
+#touch-controls .touch-btn.is-far { opacity: .6; }
+#touch-controls .touch-icon { display: block; width: 66%; height: 66%; pointer-events: none; }
+#touch-controls .touch-icon svg, #touch-controls .touch-charge-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+#touch-controls .touch-glyph { order: -1; }
+#touch-controls [data-touch-action="atk"] .touch-glyph { width: 48%; height: 48%; }
+#touch-controls [data-touch-action="act"] .touch-glyph { width: 47%; height: 47%; }
+#touch-controls [data-touch-action="dash"] .touch-icon, #touch-controls [data-touch-action="jump"] .touch-icon { width: 47%; height: 47%; }
+#touch-controls .touch-label, #touch-controls .touch-sub {
+  position: relative; z-index: 3; max-width: 96%; white-space: nowrap;
+  font: 400 12px/1 var(--rr-font-display); -webkit-text-stroke: 3px var(--rr-ink); paint-order: stroke fill; text-shadow: 0 1px 0 var(--rr-ink);
+}
+#touch-controls [data-touch-action="atk"] .touch-label { font-size: clamp(17px, calc(20px * var(--touch-scale, 1)), 23px); -webkit-text-stroke-width: 4px; }
+#touch-controls .touch-sub:empty { display: none; }
+#touch-controls [data-touch-action="act"] .touch-sub { position: absolute; bottom: -9px; background: var(--rr-ink); padding: 2px 5px; border-radius: 6px; color: var(--rr-yellow-hi); }
+#touch-controls [data-kind="supply"] .touch-label { letter-spacing: -.5px; }
+
+/* Cooldown paints only the small button. Remaining seconds sit above the sweep. */
+#touch-controls [data-touch-action="hvy"]::after, #touch-controls [data-touch-action="grd"]::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 1; pointer-events: none;
+  background: conic-gradient(#130a36bc calc(var(--cd, 0) * 360deg), transparent 0);
+}
+#touch-controls [data-touch-action="hvy"] .touch-sub, #touch-controls [data-touch-action="grd"] .touch-sub {
+  position: absolute; bottom: -8px; padding: 2px 6px; border-radius: 7px; background: var(--rr-ink); color: #fff9ba;
+}
+#touch-controls .touch-btn.is-cooling:not(.is-locked):not(.is-burst) .touch-sub { bottom: 50%; transform: translateY(50%); font-size: 23px; background: none; }
+#touch-controls .touch-state-icon { display: none; }
+#touch-controls .is-locked .touch-state-icon { display: block; position: absolute; z-index: 2; width: 27px; height: 27px; }
+#touch-controls .touch-state-icon svg { width: 100%; height: 100%; }
+#touch-controls .is-locked > .touch-icon { opacity: .28; }
+#touch-controls .is-locked .touch-sub { color: #ffbaa5; }
+#touch-controls .touch-btn.is-burst::after { background: transparent; }
+#touch-controls .touch-btn.is-burst::before {
+  inset: -6px; border: 3px solid #fff386; border-radius: 50%; background: none;
+  animation: touch-burst .48s ease-in-out infinite alternate;
+}
+#touch-controls .is-burst .touch-sub { color: var(--rr-yellow-hi); }
+#touch-controls .touch-btn.is-ready { animation: touch-ready .32s var(--rr-ease-pop); }
+
+/* The gauge is independent from action availability, and always uses player.gauge. */
+#touch-controls .touch-charge {
+  z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  pointer-events: none; border: 3px solid var(--rr-ink); border-radius: 50%;
+  background: #332345ba; box-shadow: inset 0 2px 0 #ffffff24, 0 4px 0 #160b3966;
+}
+#touch-controls .touch-charge::before {
+  content: ''; position: absolute; inset: -8px; border-radius: 50%;
+  background: conic-gradient(var(--rr-yellow) calc(var(--charge, 0) * 360deg), #1b1036b3 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+#touch-controls .touch-charge-icon { width: 50%; height: 50%; opacity: .5; }
+#touch-controls .touch-charge-text { font: 400 12px/1 var(--rr-font-display); color: #fff1b9; padding-top: 1px; }
+#touch-controls .touch-charge.has-action { background: none; border-color: transparent; box-shadow: none; }
+#touch-controls .touch-charge.has-action > * { visibility: hidden; }
+#touch-controls .touch-charge.is-charged::after {
+  content: ''; position: absolute; inset: -9px; border-radius: 50%; box-shadow: 0 0 15px 4px #ffda4370;
+  animation: touch-glow 1s ease-in-out infinite alternate;
+}
+#touch-controls .touch-special[data-kind="board"]::after,
+#touch-controls .touch-special[data-kind="exit"]::after,
+#touch-controls .touch-special[data-kind="supply"]::after {
+  content: ''; position: absolute; inset: -4px; z-index: 1; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(#fff8d1 calc(var(--hold, 0) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+#touch-controls .touch-special.is-charged { border-color: #352010; }
+
+#touch-controls .touch-menu { position: absolute; top: calc(var(--safe-t) + 10px); right: calc(var(--safe-r) + 12px); width: 52px; height: 52px; padding: 0 0 4px; }
+#touch-controls .touch-menu svg { width: 28px; height: 28px; fill: var(--rr-cream); stroke: var(--rr-ink); stroke-width: 1.5px; paint-order: stroke fill; }
+#touch-controls .touch-status {
+  position: absolute; left: 50%; bottom: calc(var(--touch-zone) + 14px); transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 28px - var(--safe-l) - var(--safe-r)); padding: 6px 11px;
+  font: 400 13px/1.2 var(--rr-font-display); color: var(--rr-cream); text-align: center;
+  background: #241551ee; border: 2px solid var(--rr-ink); border-radius: 12px;
+  box-shadow: inset 0 1px 0 #ffffff35, 0 3px 0 #160b3959;
+}
+#touch-controls .touch-status:empty { display: none; }
+#touch-controls :focus-visible { outline: 3px solid var(--rr-yellow-hi); outline-offset: 5px; }
+@keyframes touch-ready { 0% { transform: scale(.88); } 55% { transform: scale(1.14); } 100% { transform: scale(1); } }
+@keyframes touch-burst { from { transform: scale(.96); opacity: .5; } to { transform: scale(1.1); opacity: 1; } }
+@keyframes touch-glow { from { opacity: .4; } to { opacity: 1; } }
+html.reduce-motion #touch-controls .is-ready,
+html.reduce-motion #touch-controls .is-burst::before,
+html.reduce-motion #touch-controls .touch-charge::after { animation: none; }
+@media (orientation: landscape) {
+  #touch-controls .touch-status { left: calc(var(--safe-l) + 12px); right: auto; bottom: calc(var(--touch-zone) + 14px); transform: none; max-width: min(310px, 38vw); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #touch-controls .touch-btn { transition: none; }
+  #touch-controls .is-ready, #touch-controls .is-burst::before, #touch-controls .touch-charge::after { animation: none; }
+}
+/* One message at a time: while a toast or the one-time tip bubble is up, the status chip (often the same advice) steps aside. */
+#hud:has(#context-hint.show, #toast.show) ~ #touch-controls .touch-status { visibility: hidden; }

@@ -9,6 +9,7 @@ import * as audio from './audio.js';
 import * as input from './input.js';
 import { CAMERA_PITCH, cameraViewport, cameraSubject, fitSubject, frameCombat, cameraAim } from './camera-framing.js';
 import { CockpitCamera, prepareMountedInput } from './cockpit.js';
+import { separateBodies } from './body-collision.js';
 import { JuiceStations, JUICE_SERVICE } from './juice-stations.js';
 import { contactAgainstTarget } from './robot-combat.js';
 
@@ -110,6 +111,15 @@ export class Game {
   }
 
   // ---------------- 매치 ----------------
+  prepareRenderResources() {
+    if (this.renderWarmup) return this.renderWarmup;
+    const group = new THREE.Group();
+    group.add(this.takeCarrot(1), new THREE.Mesh(this.shotGeo, this.shotMat),
+      new THREE.Mesh(this.shieldGeo, shieldMaterial(0xffffff)), new THREE.Mesh(this.trapGeo, this.trapMat));
+    this.renderWarmup = group;
+    return group;
+  }
+
   start(cfg) {
     this.clear();
     this.peerMatch = !!cfg.peer || !!cfg.roster;
@@ -201,7 +211,12 @@ export class Game {
       if (h.ctrl.consume) h.ctrl.consume();
     }
     this.separate();
-    if (this.juiceStations) for (const actor of [...this.humans, ...this.robots]) this.juiceStations.collide(actor);
+    // Collision finishes after animation. Publish its final transform in this
+    // same tick, otherwise the camera and body disagree until the next tick.
+    for (const actor of this._bodies) {
+      actor.rig.root.position.x = actor.pos.x;
+      actor.rig.root.position.z = actor.pos.z;
+    }
     this.updateShields(dt);
     this.updateCombos(realDt);
     this.updateProjectiles(dt);
@@ -1685,21 +1700,12 @@ export class Game {
   }
 
   separate() {
-    const list = [];
+    const list = this._bodies || (this._bodies = []);
+    list.length = 0;
     for (const h of this.humans) if (!h.dead && !h.out && !h.riding) list.push(h);
     for (const r of this.robots) if (r.state === 'idle' || r.state === 'active') list.push(r);
-    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
-      const a = list[i], b = list[j];
-      if (Math.abs(a.pos.y - b.pos.y) > Math.max(a.height, b.height) * 0.8) continue;
-      const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
-      const d = Math.hypot(dx, dz), m = (a.radius + b.radius) * 0.85;
-      if (d >= m || d < 0.0001) continue;
-      const push = (m - d);
-      const wa = a.kind === 'robot' ? (b.kind === 'robot' ? 0.5 : 0.1) : b.kind === 'robot' ? 0.9 : 0.5;
-      const nx = dx / d, nz = dz / d;
-      a.pos.x -= nx * push * wa; a.pos.z -= nz * push * wa;
-      b.pos.x += nx * push * (1 - wa); b.pos.z += nz * push * (1 - wa);
-    }
+    this._constrainBody ||= actor => { this.arena.pushOut?.(actor); this.juiceStations?.collide(actor); };
+    separateBodies(list, this._constrainBody);
   }
 
   dist2D(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }

@@ -14,8 +14,8 @@ const boneBox = new THREE.Box3();
 // Scope this scratch state to one UI update, after interpolation has placed all
 // actors. Never retain it across animation/camera/visibility changes. Multiple
 // enemy bars and rays can share current transforms without re-walking parents.
-export function createEnemyVisibilityFrame() {
-  return { roots: new Set(), nodes: new Set(), skeletons: new Set(), skins: new Map(), transforms: new Map() };
+export function createEnemyVisibilityFrame({ fastBodies = false } = {}) {
+  return { fastBodies, roots: new Set(), nodes: new Set(), skeletons: new Set(), skins: new Map(), transforms: new Map() };
 }
 function prepareRoot(root, frame) {
   if (frame.roots.has(root)) return;
@@ -86,6 +86,16 @@ function blocks(mesh, info) {
     for (let i = start; i < end; i++) box.expandByPoint(vertex(mesh, i, va, false));
     info.blocks.push({ start, end, box });
   }
+  const build = list => {
+    const box = new THREE.Box3(); for (const block of list) box.union(block.box);
+    if (list.length <= 6) return { box, leaves: list };
+    const size = box.getSize(new THREE.Vector3());
+    const axis = size.x > size.y && size.x > size.z ? 'x' : size.y > size.z ? 'y' : 'z';
+    list.sort((a,b)=>(a.box.min[axis]+a.box.max[axis])-(b.box.min[axis]+b.box.max[axis]));
+    const half = list.length >> 1;
+    return { box, left: build(list.slice(0,half)), right: build(list.slice(half)) };
+  };
+  info.tree = build(info.blocks.slice());
   return info.blocks;
 }
 function environment(arena) {
@@ -146,6 +156,21 @@ function posedBlock(mesh, info, block, state) {
   for (const [joint, box] of block.jointBounds) bounds.union(boneBox.copy(box).applyMatrix4(state.matrices[joint]));
   state.blocks.set(block, bounds); return bounds;
 }
+
+// Build the immutable triangle/bone acceleration data while the loading
+// screen is visible, never the first time a turning player sees an enemy.
+export function warmEnemyVisibility(root) {
+  root.updateMatrixWorld(true);
+  root.traverseVisible(mesh => {
+    if (!mesh.isMesh || mesh.userData.rrPlushCoat || mesh.userData.rrGroundMark || mesh.userData.rrCockpitOnly) return;
+    const info = geometryInfo(mesh.geometry); if (!info) return;
+    const partition = blocks(mesh, info);
+    if (mesh.isSkinnedMesh) {
+      mesh.skeleton.update(); const state = skinState(mesh, info);
+      for (const block of partition) posedBlock(mesh, info, block, state);
+    }
+  });
+}
 function bodyOccluders(game, target, camera, frame) {
   const entities = new Set(), meshes = [];
   for (const actor of [...(game.humans || []), ...(game.robots || []), game.player]) {
@@ -162,7 +187,7 @@ function bodyOccluders(game, target, camera, frame) {
   }
   return meshes;
 }
-function occluded(meshes, origin, destination, camera, stats, cutaway, frame) {
+function occluded(meshes, origin, destination, camera, stats, cutaway, frame, bodies = false) {
   ray.set(origin, edge.subVectors(destination, origin).normalize());
   const distance = origin.distanceTo(destination);
   for (const mesh of meshes) {
@@ -178,7 +203,21 @@ function occluded(meshes, origin, destination, camera, stats, cutaway, frame) {
     for (const { matrix, inverse: worldInverse } of transforms(mesh, frame)) {
       localRay.copy(ray).applyMatrix4(worldInverse);
       if (!localRay.intersectsBox(skin?.bounds || info.bounds)) continue;
-      for (const block of blocks(mesh, info)) {
+      // Health bars need conservative body occlusion, not thousands of CPU
+      // skinned triangle tests per enemy per frame. Posed bounds can hide a bar
+      // near a silhouette edge, but cannot expose one through an opaque body.
+      if (bodies && frame.fastBodies) {
+        if (localRay.intersectBox(skin?.bounds || info.bounds,hit) && hit.applyMatrix4(matrix).distanceTo(origin) < distance-.035) return true;
+        continue;
+      }
+      blocks(mesh, info);
+      const candidates = [];
+      if (skin) candidates.push(...info.blocks);
+      else {
+        const stack=[info.tree];
+        while(stack.length){const node=stack.pop();if(!localRay.intersectsBox(node.box))continue;if(node.leaves)candidates.push(...node.leaves);else stack.push(node.left,node.right)}
+      }
+      for (const block of candidates) {
         stats.blocks++;
         if (!localRay.intersectsBox(skin ? posedBlock(mesh, info, block, skin) : block.box)) continue;
         const start = Math.max(block.start, mesh.geometry.drawRange.start);
@@ -280,7 +319,7 @@ export function visibleEnemyAnchor(game, camera, actor, { viewport, nearCutaway,
     }
     const candidate = candidates.splice(next, 1)[0];
     chosen.push(candidate.ndc); stats.rays++;
-    if (!occluded(obstacles, origin, candidate.world, camera, stats, false, frame) && !occluded(bodies, origin, candidate.world, camera, stats, cutaway, frame)) {
+    if (!occluded(obstacles, origin, candidate.world, camera, stats, false, frame) && !occluded(bodies, origin, candidate.world, camera, stats, cutaway, frame, true)) {
       return { ...candidate, entity, ratio: Number.isFinite(health / maximum) ? THREE.MathUtils.clamp(health / maximum, 0, 1) : 0 };
     }
   }

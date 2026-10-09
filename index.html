@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f5f3eb" />
+  <meta name="theme-color" content="#17105a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="로봇 래빗" />
@@ -12,12 +12,17 @@
   <title>로봇 래빗 ROBOT RABBIT</title>
   <meta name="description" content="당근 리모컨으로 토끼 로봇을 호출해 탑승하는 3D 난투 액션" />
   <link rel="icon" href="icons/rabbit.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="css/style.css" />
-  <link rel="stylesheet" href="css/extra.css" />
-  <link rel="stylesheet" href="css/combat.css" />
-  <link rel="stylesheet" href="css/mobile.css" />
-  <link rel="stylesheet" href="css/menus.css" />
-  <link rel="stylesheet" href="css/game-menu.css" />
+  <link rel="preload" href="assets/ui/fonts/rr-display-jua.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/ui/fonts/rr-number.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/ui/brand/logo-512.webp" as="image" />
+  <link rel="stylesheet" href="css/rr-fonts.css" />
+  <link rel="stylesheet" href="css/rr-kit.css" />
+  <link rel="stylesheet" href="css/rr-lobby.css" />
+  <link rel="stylesheet" href="css/rr-select.css" />
+  <link rel="stylesheet" href="css/rr-hud.css" />
+  <link rel="stylesheet" href="css/rr-controls.css" />
+  <link rel="stylesheet" href="css/rr-modals.css" />
+  <link rel="stylesheet" href="css/rr-compat.css" />
   <script type="importmap">
   { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -30,55 +35,51 @@
 
   <!-- 타이틀 -->
   <section id="title" class="screen" aria-labelledby="title-name">
-    <div class="title-content">
-    <div class="logo">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><i></i></div>
-      <h1 id="title-name"><span class="l1">ROBOT</span><span class="l2">RABBIT<span class="logo-dot">.</span></span></h1>
-      <div class="logo-ko">로봇 래빗</div>
-    </div>
-    <p class="title-tagline">작은 파일럿과 커다란 토끼의 한 판.</p>
-    <nav class="title-menu" aria-label="플레이 모드">
-      <button class="btn big title-play" data-action="toSolo"><span>혼자 플레이</span><span aria-hidden="true">→</span></button>
-      <button class="btn title-mode" data-action="toFriends"><span>친구와 플레이</span><span aria-hidden="true">→</span></button>
+    <button class="btn title-profile rr-enter-pop" data-action="toSelect" aria-label="선택한 파일럿 · 캐릭터 변경"><span id="title-portrait"></span><span><strong id="title-pilot"></strong><span class="rr-badge" id="title-class"></span></span></button>
+    <div class="title-logo rr-enter-pop" style="--i:1"><h1 id="title-name"><picture><source media="(min-width: 900px)" srcset="assets/ui/brand/logo.webp"><img src="assets/ui/brand/logo-512.webp" alt="ROBOT RABBIT" width="512" height="341"></picture></h1><span class="logo-ko rr-outline">로봇 래빗</span></div>
+    <div class="title-tools rr-enter-pop" style="--i:2"><button class="btn rr-icon" data-action="toHelp" aria-label="조작법" title="조작법"><i data-icon="question"></i></button><button class="btn rr-icon" data-action="toSettings" aria-label="설정" title="설정"><i data-icon="gear"></i></button></div>
+    <nav class="title-menu" aria-label="로비 메뉴">
+      <button class="btn rr-carrot rr-enter-left" style="--i:2" data-action="toSelect"><i data-icon="robot"></i><span>캐릭터</span><small>파일럿 + 로봇</small></button>
+      <button class="btn rr-purple rr-enter-left" style="--i:3" data-action="toCampaign"><i data-icon="trophy"></i><span>솔로 도전</span><small class="rr-badge" data-lobby-stars>★ 0/18</small></button>
+      <button class="btn rr-green rr-enter-left" style="--i:4" data-action="toFriends"><i data-icon="friends"></i><span>친구 대전</span><small>최대 4명</small></button>
     </nav>
-    <div class="title-tools"><button class="btn" data-action="toHelp">조작법</button><span aria-hidden="true">·</span><button class="btn" data-action="toSettings">설정</button></div>
-    </div>
     <div class="title-showcase" id="title-showcase" aria-hidden="true"></div>
+    <div class="title-nameplate rr-enter-rise" style="--i:3"><span class="rr-badge" id="title-robot-type"></span><strong class="rr-outline" id="title-duo"></strong></div>
+    <div class="title-launch rr-enter-rise" style="--i:5"><button class="btn rr-purple title-mode" data-action="toSolo"><i data-icon="swords"></i><span><strong>난투 · CPU 3명</strong><span id="title-rules"></span></span><i data-icon="chevron-right"></i></button><button class="btn big rr-shine title-play" data-action="startMatch"><i data-icon="play"></i><span>플레이</span></button></div>
     <p class="title-hint" id="title-hint"></p>
   </section>
 
 <section id="solo" class="screen dim hidden" aria-labelledby="solo-h">
     <div class="panel solo-panel">
-      <button class="btn text-btn" data-action="toTitle">← 홈</button>
-      <h2 id="solo-h">혼자 플레이</h2>
-      <p class="menu-intro">파일럿 한 명, CPU 세 명. 가볍게 한 판.</p>
+      <header class="lobby-heading"><button class="btn text-btn" data-action="toTitle"><i data-icon="chevron-left"></i>뒤로</button><h2 id="solo-h" class="rr-ribbon rr-blue">모드 선택</h2></header>
+      <p class="menu-intro">오늘은 어떤 난투를 펼칠까요?</p>
       <div class="solo-options">
-        <button class="btn big mode-row" data-action="quickStart"><span>바로 시작<small>선택한 캐릭터로 · 쉬움 · 3분</small></span><span aria-hidden="true">→</span></button>
-        <button class="btn mode-row" data-action="toSelect"><span>자유 난투<small>캐릭터, 무대, 난이도 선택</small></span><span aria-hidden="true">→</span></button>
-        <button class="btn mode-row" data-action="toCampaign"><span>솔로 도전<small>여섯 개의 미션과 나만의 기록</small></span><span aria-hidden="true">→</span></button>
+        <button class="btn big mode-row rr-yellow rr-enter-pop" data-action="quickStart"><i data-icon="lightning"></i><span>바로 시작<small>쉬움 · 목숨 3 · 바로 출격</small></span><i data-icon="chevron-right"></i></button>
+        <button class="btn mode-row rr-blue rr-enter-pop" style="--i:1" data-action="toSelect"><i data-icon="swords"></i><span>난투<small>CPU 3명 · 캐릭터와 규칙 선택</small></span><i data-icon="chevron-right"></i></button>
+        <button class="btn mode-row rr-purple rr-enter-pop" style="--i:2" data-action="toCampaign"><i data-icon="trophy"></i><span>솔로 도전<small>미션 6개 · <b data-lobby-stars>★ 0/18</b></small></span><i data-icon="chevron-right"></i></button>
+        <button class="btn mode-row rr-green rr-enter-pop" style="--i:3" data-action="toFriends"><i data-icon="friends"></i><span>친구 대전<small>최대 4명 · 방 만들기/참가</small></span><i data-icon="chevron-right"></i></button>
       </div>
     </div>
   </section>
 
   <section id="friends" class="screen dim hidden" aria-labelledby="friends-h">
     <div class="panel solo-panel">
-      <button class="btn text-btn" data-action="toTitle">← 홈</button>
-      <h2 id="friends-h">친구와 플레이</h2>
+      <header class="lobby-heading"><button class="btn text-btn" data-action="toTitle"><i data-icon="chevron-left"></i>뒤로</button><h2 id="friends-h" class="rr-ribbon rr-green">친구 대전</h2></header>
       <p class="menu-intro">친구를 초대해 최대 4명이 함께 플레이하세요.</p>
       <div class="solo-options">
-        <button class="btn big mode-row" data-action="toCreateRoom"><span>방 만들기<small>방장으로 시작하고 친구 초대</small></span><span aria-hidden="true">→</span></button>
-        <button class="btn mode-row" data-action="toJoinRoom"><span>참가하기<small>초대 링크 또는 방 코드로 참가</small></span><span aria-hidden="true">→</span></button>
+        <button class="btn big mode-row rr-yellow rr-enter-pop" data-action="toCreateRoom"><i data-icon="crown"></i><span>방 만들기<small>방장이 되어 친구를 초대!</small></span><i data-icon="chevron-right"></i></button>
+        <button class="btn mode-row rr-green rr-enter-pop" style="--i:1" data-action="toJoinRoom"><i data-icon="door"></i><span>참가하기<small>초대 링크 또는 방 코드로 입장</small></span><i data-icon="chevron-right"></i></button>
       </div>
-      <p id="title-online-status" class="menu-intro" role="status">멀티플레이 연결 확인 중</p>
+      <p id="title-online-status" class="rr-chip" role="status">멀티플레이 연결 확인 중</p>
     </div>
   </section>
 
   <section id="rooms" class="screen game-menu hidden" aria-labelledby="room-title">
     <header class="room-heading"><button id="room-back" class="btn" type="button" aria-label="메인 메뉴로 돌아가기">← 뒤로</button><span>ROBOT RABBIT</span></header>
     <div id="room-showcase" aria-hidden="true"></div>
-    <div class="room-panel">
+    <div class="panel room-panel">
       <p id="room-step" class="room-eyebrow">친구와 함께 · 최대 4명</p>
-      <h2 id="room-title">참가하기</h2>
+      <h2 id="room-title" class="rr-ribbon rr-green">참가하기</h2>
       <p id="room-status" role="status" aria-live="polite"></p>
       <div id="room-unavailable" hidden><p id="room-service-message"></p><button id="room-service-retry" class="btn" type="button">다시 연결</button><button class="btn big" data-action="quickStart">혼자 플레이</button></div>
       <form id="room-entry" novalidate>
@@ -96,7 +97,7 @@
         <ul id="room-roster" aria-label="참가자"></ul>
         <div id="room-pending-block" hidden><h3>참가 요청</h3><ul id="room-pending"></ul></div>
         <p id="room-start-reason" class="room-note"></p>
-        <div class="room-actions"><button id="room-start" class="btn big" type="button">게임 시작</button><button id="room-reconnect" class="btn" type="button">다시 연결</button><button id="room-leave" class="btn" type="button">나가기</button><button id="room-close" class="btn" type="button">방 닫기</button></div>
+        <div class="room-actions"><button id="room-start" class="btn big" type="button">게임 시작</button><button id="room-reconnect" class="btn" type="button">다시 연결</button><button id="room-leave" class="btn rr-red" type="button">나가기</button><button id="room-close" class="btn rr-red" type="button">방 닫기</button></div>
       </div>
     </div>
   </section>
@@ -104,12 +105,12 @@
   <!-- 조작법: 내용은 main.js 가 현재 키 설정으로 만든다 -->
   <section id="help" class="screen dim hidden" aria-labelledby="help-h">
     <div class="panel help-panel">
-      <h2 id="help-h">조작법</h2>
+      <h2 id="help-h" class="rr-ribbon rr-blue">조작법</h2>
       <div class="tabs" role="tablist" aria-label="조작법 항목" id="help-tabs"></div>
       <div class="tab-body" id="help-body" role="tabpanel" tabindex="0"></div>
       <div class="panel-actions">
         <button class="btn" data-action="toKeySettings">키 설정</button>
-        <button class="btn" data-action="back">돌아가기</button>
+        <button class="btn rr-yellow" data-action="back">돌아가기</button>
       </div>
     </div>
   </section>
@@ -117,7 +118,8 @@
   <!-- 설정 -->
   <section id="settings" class="screen dim hidden" aria-labelledby="settings-h">
     <div class="panel settings-panel">
-      <h2 id="settings-h">설정</h2>
+      <h2 id="settings-h" class="rr-ribbon rr-blue">설정</h2>
+      <div class="settings-scroll">
       <h3 class="sec-h">소리 · 화면</h3>
       <div class="opts-grid">
         <label for="vol-master">전체 음량</label>
@@ -165,7 +167,7 @@
       </details>
       <details class="settings-group"><summary>앱 설치 · 업데이트</summary>
       <div class="pwa-panel" data-pwa="panel">
-        <strong>앱 설치 · 오프라인</strong> <span data-build-version>v1.9.1</span>
+        <strong>앱 설치 · 오프라인</strong> <span data-build-version>v1.10.0</span>
         <p data-pwa="status" role="status" aria-live="polite"></p>
         <p data-pwa="ios" hidden></p>
         <span data-pwa="offline" hidden>오프라인</span>
@@ -173,6 +175,7 @@
         <button class="btn" type="button" data-pwa="update" hidden>새 버전 적용</button>
       </div>
       </details>
+      </div>
       <div class="panel-actions">
         <button class="btn big" data-action="back">확인</button>
       </div>
@@ -180,15 +183,23 @@
   </section>
 
   <!-- 선택 -->
-  <section id="select" class="screen hidden">
+  <section id="select" class="screen hidden" aria-labelledby="select-title">
     <div class="select-wrap">
+      <div class="select-heading"><button class="btn text-btn" data-action="selectionBack">← 뒤로</button><h2 class="rr-ribbon rr-blue" id="select-title">캐릭터 선택</h2></div>
       <div class="panel select-panel">
-        <div class="select-heading"><button class="btn text-btn" data-action="selectionBack">← 뒤로</button><h2>출격 준비</h2></div>
-        <h3 class="choice-heading">파일럿</h3>
-        <div id="pilot-list" class="pilot-list"></div>
-        <h3 class="choice-heading">토끼 로봇</h3>
-        <div id="robot-list" class="robot-list"></div>
-        <details class="selection-rules" id="selection-rules"><summary>대전 설정 <span id="rules-summary"></span></summary>
+        <div class="selection-options">
+        <nav class="selection-jumps" aria-label="캐릭터 종류 바로가기">
+          <button type="button" class="rr-chip selection-jump is-current" aria-controls="pilot-list" aria-current="true" data-choice-jump="pilot">파일럿</button>
+          <button type="button" class="rr-chip selection-jump" aria-controls="robot-list" data-choice-jump="robot">로봇</button>
+        </nav>
+        <h3 class="choice-heading" id="pilot-heading"><span class="choice-step" aria-hidden="true">01</span> 파일럿 <small>기본 전투 스타일</small></h3>
+        <div id="pilot-list" class="pilot-list" role="group" aria-labelledby="pilot-heading"></div>
+        <h3 class="choice-heading" id="robot-heading"><span class="choice-step" aria-hidden="true">02</span> 토끼 로봇 <small>당근을 모아 호출</small></h3>
+        <div id="robot-list" class="robot-list" role="group" aria-labelledby="robot-heading"></div>
+        </div>
+      </div>
+      <div class="select-actions panel">
+        <details class="selection-rules" id="selection-rules"><summary><span id="rules-summary"></span></summary>
         <div class="opt-row">
           <div class="opt">
             <span>난이도</span>
@@ -209,24 +220,22 @@
         </div>
         <p class="stage-desc" id="stage-desc"></p>
         </details>
-        <div class="select-actions">
-          <button class="btn big" id="select-start" data-action="confirmSelection">플레이</button>
-        </div>
+        <button class="btn big rr-shine" id="select-start" data-action="confirmSelection">난투 시작</button>
       </div>
       <div class="detail-col">
         <div id="select-showcase" class="select-showcase" aria-hidden="true"></div>
-        <div class="pilot-detail" id="pilot-detail"></div>
-        <div class="robot-detail" id="robot-detail"></div>
+        <div class="loadout-details panel" role="region" aria-label="선택한 파일럿과 로봇의 능력" tabindex="0">
+          <div class="pilot-detail" id="pilot-detail"></div>
+          <div class="robot-detail" id="robot-detail"></div>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="campaign" class="screen dim hidden" aria-labelledby="campaign-h">
     <div class="panel campaign-panel">
-      <button class="btn text-btn" data-action="toSolo">← 혼자 플레이</button>
-      <div class="campaign-heading"><h2 id="campaign-h">솔로 도전</h2><p id="campaign-progress"></p></div>
-      <p class="campaign-intro">하나씩 도전하고, 더 좋은 기록을 남겨보세요.</p>
-      <div class="campaign-loadout"><span id="campaign-pilot"></span><button class="btn" data-action="chooseCampaignPilot">파일럿 · 로봇 선택</button></div>
+      <div class="campaign-heading"><button class="btn text-btn" data-action="toSolo">← 뒤로</button><h2 class="rr-ribbon rr-purple" id="campaign-h">솔로 도전</h2><p class="rr-chip" id="campaign-progress"></p></div>
+      <div class="campaign-loadout rr-well"><span id="campaign-pilot"></span><button class="btn" data-action="chooseCampaignPilot">변경</button></div>
       <div id="mission-list"></div>
       <p class="save-note">기록은 이 기기에 저장됩니다.</p>
     </div>
@@ -234,14 +243,14 @@
 
   <!-- HUD -->
   <section id="hud" class="hidden">
-    <button id="game-menu-btn" type="button" aria-label="일시정지 메뉴">메뉴</button>
+    <button id="game-menu-btn" class="btn rr-icon rr-blue" type="button" aria-label="일시정지 메뉴">메뉴</button>
     <div class="timer" id="timer">3:00</div>
     <div class="cards" id="cards"></div>
     <div class="skills" id="skills"></div>
     <div class="combo" id="combo"></div>
     <div class="banner" id="banner"></div>
     <div class="toast" id="toast"></div>
-    <div class="edge-arrow" id="robot-arrow">🤖</div>
+    <div class="edge-arrow" id="robot-arrow" role="img" aria-label="내 로봇 방향"><svg width="22" height="26" viewBox="0 0 24 28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 13 4 3Q4 1 6 1h1q2 0 2 2l1 10M14 13l1-10q0-2 2-2h1q2 0 2 2l-2 10"/><rect x="3" y="11" width="18" height="15" rx="5" fill="#fffdf6"/><path d="M7 17h2m6 0h2M9 22h6" stroke-linecap="round"/></svg></div>
     <aside class="keyhint" id="keyhint" aria-label="키 안내">
       <button class="kh-toggle" id="kh-toggle" aria-expanded="true" aria-controls="kh-body">키 안내 <kbd>F1</kbd></button>
       <div class="kh-body" id="kh-body">
@@ -253,14 +262,14 @@
 
   <section id="mobile-help" class="screen dim hidden" aria-labelledby="mobile-help-title">
     <div class="panel mobile-guide">
-      <h2 id="mobile-help-title">플레이 전에</h2>
-      <p>왼손으로 이동, 오른손으로 공격. 가로 화면에서 더 넓게 즐길 수 있습니다.</p>
-      <ol>
-        <li><strong>이동과 점프</strong> — 왼쪽 스틱으로 이동하고 옆 버튼으로 점프. 스틱을 같은 방향으로 두 번 튕기면 대시합니다.</li>
-        <li><strong>공격과 방어</strong> — 오른쪽 큰 버튼은 공격, 작은 두 버튼은 공격 스킬과 방어 스킬입니다.</li>
-        <li><strong>로봇 탑승</strong> — 당근이 차면 호출하세요. 로봇 옆에서 탑승을 길게 누르고, 내릴 때는 하차를 길게 누르세요.</li>
+      <h2 id="mobile-help-title" class="rr-ribbon">출격 준비!</h2>
+      <p class="guide-intro">왼손은 이동, 오른손은 액션!</p>
+      <ol class="guide-steps">
+        <li><div class="guide-art"><i data-icon="gamepad"></i><span>01</span></div><div><strong>움직이고 점프!</strong><p>왼쪽 스틱으로 이동, 옆 버튼으로 점프. 스틱을 두 번 튕기면 대시!</p></div></li>
+        <li><div class="guide-art"><i data-icon="fist"></i><i data-icon="shield"></i><span>02</span></div><div><strong>공격하고 방어!</strong><p>오른쪽 큰 버튼은 공격. 작은 두 버튼은 공격·방어 스킬!</p></div></li>
+        <li><div class="guide-art"><i data-icon="robot"></i><span>03</span></div><div><strong>토끼 로봇 호출!</strong><p>당근이 차면 호출! 로봇 옆에서 탑승을 길게, 내릴 때도 길게!</p></div></li>
       </ol>
-      <p>자세한 조작법과 버튼 설정은 일시정지 메뉴에서 볼 수 있습니다.</p>
+      <p class="guide-tip">가로로 돌리면 더 넓게! 조작법·설정은 일시정지에서.</p>
       <div class="panel-actions"><button class="btn" data-action="cancelTouchStart">뒤로</button><button class="btn big" data-action="beginTouchMatch">플레이</button></div>
     </div>
   </section>
@@ -269,15 +278,15 @@
   <!-- 일시정지 -->
   <section id="pause" class="screen dim hidden" aria-labelledby="pause-h">
     <div class="panel pause-panel">
-      <h2 id="pause-h">일시정지</h2>
+      <h2 id="pause-h" class="rr-ribbon">일시정지</h2>
       <p id="peer-pause-note" class="peer-note"></p>
       <div class="pause-body">
         <div class="col">
-          <button class="btn big" data-action="resume">계속하기</button>
-          <button class="btn" data-action="restart">다시 시작</button>
-          <button class="btn" data-action="toHelp">조작법</button>
-          <button class="btn" data-action="toSettings">설정</button>
-          <button class="btn" data-action="toTitle">홈으로</button>
+          <button class="btn big rr-shine" data-action="resume"><i data-icon="play"></i>계속하기</button>
+          <button class="btn" data-action="restart"><i data-icon="refresh"></i>다시 시작</button>
+          <button class="btn" data-action="toHelp"><i data-icon="question"></i>조작법</button>
+          <button class="btn" data-action="toSettings"><i data-icon="gear"></i>설정</button>
+          <button class="btn rr-red" data-action="toTitle"><i data-icon="home"></i>로비로</button>
         </div>
         <dl class="pause-keys" id="pause-keys" aria-label="현재 키"></dl>
       </div>
@@ -285,22 +294,35 @@
   </section>
 
   <!-- 결과 -->
-  <section id="result" class="screen dim hidden">
+  <section id="result" class="screen dim hidden" aria-labelledby="result-title">
     <div class="panel result-panel">
-      <h2 id="result-title">승리</h2>
+      <div class="result-hero">
+        <h2 id="result-title" class="rr-ribbon">승리!</h2><span id="result-rank" class="rr-chip">1위</span>
+      </div>
+      <div class="result-scroll">
+      <div id="result-stars" hidden aria-label="이번 도전 별"></div>
+      <ol id="result-podium" aria-label="최종 순위"></ol>
+      <dl class="result-metrics" aria-label="나의 경기 기록">
+        <div><dt>KO</dt><dd id="result-kos">0</dd></div>
+        <div><dt>누적 피해량</dt><dd id="result-damage">0</dd></div>
+        <div><dt>남은 목숨</dt><dd id="result-stock">0</dd></div>
+      </dl>
       <p id="result-message"></p>
-      <div id="result-table"></div>
-      <div class="select-actions">
-        <button class="btn" data-action="toSelect">캐릭터 변경</button>
+      </div>
+      <details class="result-records"><summary>전체 경기 기록</summary>
+      <div id="result-table" tabindex="0" role="region" aria-label="전체 순위 · 스크롤하여 모든 기록 보기"></div>
+      </details>
+      <div class="result-actions">
         <button class="btn big" data-action="restart">한 판 더</button>
         <button class="btn big hidden" id="next-mission" data-action="nextMission">다음 도전</button>
-        <button class="btn" data-action="toCampaign">도전 목록</button>
-        <button class="btn" data-action="toTitle">홈으로</button>
+        <button class="btn" data-action="toSelect">캐릭터 변경</button>
+        <button class="btn rr-purple" data-action="toCampaign">도전 목록</button>
+        <button class="btn rr-red" data-action="toTitle">로비로</button>
       </div>
     </div>
   </section>
 
-  <div id="loading" role="status" aria-live="polite"><span class="loading-brand">ROBOT RABBIT<span>.</span></span><span class="loading-caption"><i aria-hidden="true"></i>게임 준비 중</span></div>
+  <div id="loading" role="status" aria-live="polite"><picture class="loading-brand"><source media="(min-width: 900px)" srcset="assets/ui/brand/logo.webp"><img src="assets/ui/brand/logo-512.webp" alt="ROBOT RABBIT · 로봇 래빗" width="512" height="341"></picture><div class="loading-progress" aria-hidden="true"><i></i></div><strong class="loading-caption rr-outline">출격 준비 중…</strong><p class="loading-tip" id="loading-tip">당근 게이지가 가득 차면 로봇을 호출!</p></div>
   <output id="performance-hud" class="hidden" aria-label="실행 성능"></output>
   <div id="thermal-note" role="status"></div>
   <p id="mission-hud" class="hidden"></p>

@@ -1,0 +1,220 @@
+/* Character roster, live loadout stage, and solo mission route. */
+#select .selection-jumps { display: none; }
+@media (max-height: 500px), (max-width: 360px) and (orientation: portrait) {
+  #select .selection-jumps { position: sticky; top: -6px; z-index: 3; display: grid; grid-template-columns: .9fr 1.2fr; gap: 7px; padding: 5px 2px 9px; margin: -5px -2px 5px; background: #4133b0; border-radius: 9px; box-shadow: 0 5px 0 #261a845c; }
+  #select .selection-jump { min-width: 0; min-height: 44px; border: 0; padding: 4px 7px 4px 3px; gap: 3px; font-size: 14px; cursor: pointer; touch-action: manipulation; justify-content: center; }
+  #select .selection-jump.is-current { background: linear-gradient(var(--rr-yellow-hi),var(--rr-yellow),var(--rr-yellow-lo)); box-shadow: 0 0 0 2.5px var(--rr-ink),inset 0 -3px 0 var(--rr-yellow-lip); }
+  #select .selection-jump-portrait { width: 26px; height: 30px; object-fit: contain; flex: none; }
+  #select .selection-jump span { white-space: nowrap; }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+  #select .selection-jump { font-size: 12px; padding-right: 4px; }
+  #select .selection-jumps { gap: 6px; }
+}
+#select { background: linear-gradient(90deg,rgba(29,17,89,.87),rgba(37,45,115,.16) 70%,rgba(24,13,73,.44)); }
+.select-wrap { width: min(1220px,100%); height: 100%; display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); grid-template-rows: 52px minmax(0,1fr) 76px; gap: 16px 22px; }
+#select .select-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 36px; }
+#select-title { margin: 0; }
+#select .text-btn, #campaign .text-btn { min-height: 44px; }
+#select .select-panel { grid-column: 1; grid-row: 2; padding: 12px; min-height: 0; min-width: 0; }
+#select .selection-options { height: 100%; overflow: auto; padding: 6px 7px 12px; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: #b7a3ff #241665; }
+#select .choice-heading { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; font-size: 22px; }
+#select .choice-heading small { margin-left: auto; font: 400 12px var(--rr-font-display); color: #ddd8ff; -webkit-text-stroke: 0; text-shadow: none; }
+#select .choice-step { color: var(--rr-yellow); font-size: 20px; }
+#select .pilot-list, #select .robot-list { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 3px 0 12px; }
+#select .pilot, #select .robot-card { position: relative; min-width: 0; height: 139px; border: 3px solid var(--rr-ink); border-radius: 14px; padding: 0; cursor: pointer; overflow: visible; background: radial-gradient(ellipse at 50% 35%,color-mix(in srgb,var(--c) 45%,white),var(--c)); box-shadow: inset 0 2px 0 #ffffff7a,0 5px 0 var(--rr-ink); transition: transform .12s; touch-action: manipulation; }
+#select .pilot::before,#select .robot-card::before { content: ''; position: absolute; inset: 0; border-radius: 10px; background: repeating-conic-gradient(from 10deg at 50% 65%,#ffffff1c 0 16deg,transparent 16deg 38deg); }
+#select .pilot-face,#select .rc-face { position: absolute; width: 100%; height: 112px; object-fit: contain; left: 0; top: -4px; pointer-events: none; }
+#select .choice-copy { position: absolute; bottom: 0; left: 0; right: 0; min-height: 44px; padding: 4px 0 3px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 1px; border-radius: 0 0 10px 10px; background: linear-gradient(transparent,#160f38e8 26%); }
+#select .choice-name { font: 400 21px/1 var(--rr-font-display); -webkit-text-stroke: 4px var(--rr-ink); paint-order: stroke fill; text-shadow: 0 2px var(--rr-ink); text-align: center; }
+#select .choice-role { font-size: 12px; min-height: 18px; padding: 0 6px 2px; }
+#select .choice-check { position: absolute; right: -7px; top: -8px; width: 27px; height: 27px; display: none; background: var(--rr-yellow); border: 2px solid var(--rr-ink); border-radius: 50%; }
+#select .choice-check .rr-ic { width: 23px; height: 23px; }
+#select .on { border-color: var(--rr-yellow); box-shadow: 0 0 0 2px var(--rr-ink),0 5px 0 var(--rr-yellow-lo); transform: translateY(-2px); }
+#select .on .choice-check { display: block; }
+#select .pilot:hover,#select .robot-card:hover { transform: translateY(-3px); }
+#select .pilot:active,#select .robot-card:active { transform: translateY(2px); }
+#select .detail-col { min-height: 0; min-width: 0; grid-row: 2; grid-column: 2; display: grid; grid-template-rows: minmax(130px,1fr) minmax(160px,1fr); gap: 8px; }
+#select-showcase { width: 100%; min-height: 0; pointer-events: none; }
+#select .loadout-details { min-height: 0; overflow: auto; padding: 15px 17px; touch-action: pan-y; scrollbar-width: thin; }
+#select .pilot-detail + .robot-detail { margin-top: 18px; padding-top: 14px; border-top: 2px solid #ffffff25; }
+#select .loadout-details h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 26px; }
+#select .pd-role { --bg: var(--c); }
+#select .detail-identity { font-size: 12px; margin: 5px 0 11px; color: #e4e1ff; }
+#select .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 12px 0; }
+#select .stat { display: flex; gap: 8px; align-items: center; }
+#select .stat-l { font: 400 12px var(--rr-font-display); width: 36px; flex: none; }
+#select .sbar { flex: 1; height: 10px; --fill: var(--rr-yellow); --fill-hi: var(--rr-yellow-hi); }
+#select .skill-desc { list-style: none; display: grid; gap: 7px; margin: 10px 0; }
+#select .select-skill { display: flex; gap: 9px; align-items: center; }
+#select .select-skill-icon { width: 38px; height: 38px; flex: none; padding: 5px; border: 2px solid var(--rr-ink); border-radius: 12px; background: linear-gradient(#65bdff,#3869dd); }
+#select .select-skill:nth-child(2) .select-skill-icon { background: linear-gradient(#9feb78,#33a951); }
+#select .select-skill-icon svg { width: 100%; height: 100%; }
+#select .select-skill-copy { min-width: 0; flex: 1; }
+#select .select-skill-title { display: flex; gap: 7px; justify-content: space-between; align-items: center; font: 400 15px var(--rr-font-display); }
+#select .select-skill-title b { font-weight: 400; }
+#select .skill-cd { color: var(--rr-yellow); font-size: 12px; white-space: nowrap; }
+#select .select-skill-effect { display: block; font-size: 12px; color: #d9d4f5; line-height: 1.35; }
+#select .loadout-disclosure > summary { min-height: 44px; font-size: 14px; }
+#select .traits { padding-left: 17px; font-size: 12px; margin: 10px 0; }
+#select .move-list { list-style: none; display: grid; gap: 10px; font-size: 12px; padding: 10px 0; }
+#select .move-list li { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; }
+#select .mv-in { color: var(--rr-yellow); }
+#select .mv-name { font-family: var(--rr-font-display); }
+#select .mv-desc { grid-column: 1 / -1; color: #d9d4f5; }
+#select .select-actions { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 16px; z-index: 4; }
+#select-start { min-width: 260px; }
+#select .selection-rules { flex: 1; min-width: 0; }
+#select .selection-rules > summary { font-size: 15px; min-height: 44px; }
+#select .selection-rules[open] { position: absolute; bottom: 12px; left: 16px; width: min(520px,calc(100% - 32px)); padding: 10px; border: 3px solid var(--rr-ink); border-radius: 16px; background: #372990; box-shadow: 0 0 0 100vmax #10092e88; }
+#select .selection-rules[open] summary { margin-bottom: 10px; }
+#select .opt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#select .opt > span { display: block; margin-bottom: 6px; font-family: var(--rr-font-display); }
+#select .opt-stage { grid-column: 1 / -1; }
+#select .seg { display: flex; }
+#select .seg button { min-height: 44px; min-width: 44px; flex: 1; padding: 6px; font-size: 14px; }
+#select .stage-desc { margin-top: 12px; font-size: 12px; }
+
+#campaign .campaign-panel { width: min(1220px,100%); height: 100%; display: flex; flex-direction: column; gap: 16px; padding: 20px 22px 12px; }
+#campaign .campaign-heading { display: flex; align-items: center; gap: 34px; }
+#campaign-h { margin: 0; }
+#campaign-progress { margin-left: auto; color: var(--rr-yellow); font-size: 24px; padding: 9px 17px; }
+#campaign .campaign-loadout { display: flex; justify-content: space-between; align-items: center; padding: 5px 12px; }
+#campaign-pilot { display: flex; align-items: center; min-width: 0; }
+#campaign-pilot .rr-portrait { height: 62px; width: 62px; object-fit: contain; }
+#campaign-pilot .rr-portrait + .rr-portrait { margin-left: -15px; }
+#campaign .campaign-loadout-copy { display: grid; gap: 1px; margin-left: 12px; }
+#campaign .campaign-loadout-copy small { font-size: 12px; color: var(--rr-muted); }
+#campaign .campaign-loadout-copy strong { font: 400 21px var(--rr-font-display); }
+#mission-list { display: flex; flex: 1; min-height: 0; gap: 19px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; padding: 6px 5px 15px; touch-action: pan-x; scrollbar-color: var(--rr-purple-hi) #261763; scrollbar-width: thin; }
+#campaign .mission-card { --mission: #368bdd; position: relative; flex: 0 0 calc((100% - 38px) / 3); min-width: 260px; display: flex; flex-direction: column; padding: 17px; border: 3px solid var(--rr-ink); border-radius: 20px; background: radial-gradient(ellipse at 90% 0%,#ffffff30,transparent 60%),linear-gradient(155deg,var(--mission),#233a93 60%,#222064); box-shadow: inset 0 3px 0 #ffffff55,0 6px 0 #140c36; scroll-snap-align: start; }
+#campaign .mission-card[data-stage="fort"] { --mission: #a370cf; }
+#campaign .mission-card[data-stage="sky"] { --mission: #34b9c7; }
+#campaign .mission-card.locked { background: radial-gradient(ellipse at 90% 0%,#ffffff18,transparent 60%),linear-gradient(150deg,#4b5083,#292253); }
+#campaign .mission-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+#campaign .mission-number { width: 64px; height: 64px; display: grid; place-items: center; border: 3px solid var(--rr-ink); border-radius: 50%; background: linear-gradient(var(--rr-yellow-hi),var(--rr-yellow-lo)); box-shadow: inset 0 -5px #bc6f18,0 4px 0 #1c103f; font: 400 38px var(--rr-font-display); -webkit-text-stroke: 5px var(--rr-ink); paint-order: stroke fill; }
+#campaign .locked .mission-number { background: linear-gradient(#bebcdb,#827f9f); box-shadow: inset 0 -5px #646083,0 4px 0 #1c103f; }
+#campaign .mission-stars { display: flex; gap: 2px; }
+#campaign .mission-stars .rr-ic { width: 31px; height: 31px; }
+#campaign .mission-card h3 { font-size: 27px; margin-bottom: 14px; }
+#campaign .mission-goal { display: flex; align-items: center; gap: 8px; font: 400 18px/1.3 var(--rr-font-display); color: #fff8da; }
+#campaign .mission-goal .rr-ic { width: 28px; height: 28px; flex: none; }
+#campaign .mission-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 15px 0; }
+#campaign .mission-chip { display: flex; align-items: center; gap: 4px; border-radius: 9px; background: #17113d70; padding: 4px 6px; font: 400 13px var(--rr-font-display); }
+#campaign .mission-chip .rr-ic { height: 18px; width: 18px; }
+#campaign .mission-medals { list-style: none; display: grid; gap: 7px; font-size: 12px; color: #e0dcff; }
+#campaign .mission-medals li { display: flex; align-items: center; gap: 5px; }
+#campaign .mission-medals .rr-ic { width: 21px; height: 21px; }
+#campaign .mission-medals .earned { color: var(--rr-yellow); }
+#campaign .mission-card > .btn { width: 100%; margin-top: auto; min-height: 48px; }
+#campaign .save-note { text-align: center; font-size: 12px; color: var(--rr-muted); }
+
+@media (min-width: 701px) and (min-height: 501px) {
+  #select .pilot,#select .robot-card { height: 128px; }
+}
+@media (min-width: 701px) and (max-height: 500px) {
+  .select-wrap { grid-template-rows: 44px minmax(0,1fr) 58px; gap: 10px 14px; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); }
+  #select .select-panel { padding: 4px; }
+  #select .choice-heading { font-size: 17px; margin: 0 0 8px; }
+  #select .choice-heading small { display: none; }
+  #select .pilot-list,#select .robot-list { gap: 8px; padding-bottom: 10px; }
+  #select .pilot,#select .robot-card { height: 95px; }
+  #select .pilot-face,#select .rc-face { height: 79px; }
+  #select .choice-name { font-size: 18px; }
+  #select .choice-copy { height: 35px; }
+  #select .detail-col { grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); grid-template-rows: minmax(0,1fr); gap: 7px; }
+  #select .loadout-details { padding: 10px; }
+  #select .loadout-details h3 { font-size: 22px; flex-wrap: wrap; gap: 5px; }
+  #select .stats { grid-template-columns: 1fr; gap: 5px; }
+  #select .select-skill-effect { display: none; }
+  #select .select-skill-icon { width: 28px; height: 28px; padding: 3px; }
+  #select .select-skill-title { display: block; font-size: 13px; }
+  #select .skill-cd { margin-left: 5px; }
+  #select .select-actions { padding: 5px 10px; }
+  #select-start { min-height: 46px; min-width: 230px; font-size: 22px; }
+  #campaign .campaign-panel { padding: 10px 14px 7px; gap: 9px; }
+  #campaign .campaign-heading { gap: 30px; }
+  #campaign .campaign-loadout { position: absolute; top: 10px; right: 155px; padding: 0 8px; width: 272px; height: 45px; }
+  #campaign-pilot .rr-portrait { width: 40px; height: 40px; }
+  #campaign .campaign-loadout-copy { margin-left: 3px; }
+  #campaign .campaign-loadout-copy strong { font-size: 14px; }
+  #campaign .campaign-loadout-copy small { display: none; }
+  #campaign .campaign-loadout .btn { min-height: 44px; padding: 6px 12px; font-size: 15px; }
+  #campaign-progress { font-size: 20px; }
+  #campaign .mission-card { min-width: 255px; padding: 11px; }
+  #campaign .mission-card-top { margin-bottom: 7px; }
+  #campaign .mission-number { width: 42px; height: 42px; font-size: 27px; }
+  #campaign .mission-stars .rr-ic { width: 25px; height: 25px; }
+  #campaign .mission-card h3 { font-size: 21px; margin-bottom: 6px; }
+  #campaign .mission-goal { font-size: 15px; }
+  #campaign .mission-meta { margin: 7px 0; gap: 4px; }
+  #campaign .mission-chip { font-size: 12px; padding: 3px 4px; }
+  #campaign .mission-medals { gap: 2px; }
+  #campaign .mission-medals .rr-ic { width: 16px; height: 16px; }
+  #campaign .mission-card > .btn { min-height: 44px; font-size: 20px; padding: 6px 10px; }
+  #campaign .save-note { display: none; }
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  #select { background: linear-gradient(#1e155050 0 26%,#26185ab0 43%,#201250); }
+  .select-wrap { grid-template-columns: minmax(0,1fr); grid-template-rows: 44px minmax(110px,22vh) minmax(0,1fr) 100px 110px; gap: 10px; }
+  #select .select-heading { grid-row: 1; gap: 30px; }
+  #select-title { font-size: 22px; padding: 7px 14px 11px; }
+  #select .select-panel { grid-row: 3; grid-column: 1; padding: 5px; }
+  #select .detail-col { display: contents; }
+  #select-showcase { grid-column: 1; grid-row: 2; }
+  #select .loadout-details { grid-row: 4; grid-column: 1; padding: 10px 13px; }
+  #select .loadout-details h3 { font-size: 22px; }
+  #select .selection-options { padding: 5px; }
+  #select .choice-heading { font-size: 19px; margin: 2px 0 9px; }
+  #select .choice-heading small { font-size: 12px; }
+  #select .pilot-list,#select .robot-list { gap: 8px; padding-bottom: 12px; }
+  #select .pilot,#select .robot-card { height: 102px; border-radius: 11px; }
+  #select .pilot-face,#select .rc-face { height: 80px; }
+  #select .choice-name { font-size: 17px; }
+  #select .choice-copy { height: 36px; }
+  #select .choice-role { font-size: 12px; padding: 0 3px; }
+  #select .choice-check { width: 23px; height: 23px; right: -5px; top: -7px; }
+  #select .choice-check .rr-ic { width: 19px; height: 19px; }
+  #select .select-actions { grid-column: 1; grid-row: 5; padding: 5px 8px 9px; flex-direction: column; gap: 6px; }
+  #select .selection-rules { width: 100%; }
+  #select .selection-rules > summary { min-height: 44px; padding: 6px 9px; font-size: 13px; }
+  #select-start { width: 100%; min-width: 0; min-height: 46px; font-size: 22px; padding: 7px 12px 11px; }
+  #select .selection-rules[open] { left: 0; bottom: 60px; width: 100%; }
+  #select .seg button { font-size: 12px; }
+  #campaign .campaign-panel { padding: 12px 10px 9px; gap: 13px; }
+  #campaign .campaign-heading { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; }
+  #campaign-h { font-size: 21px; padding: 8px 7px 12px; white-space: nowrap; }
+  #campaign .rr-ribbon::before,#campaign .rr-ribbon::after { display: none; }
+  #campaign .text-btn { font-size: 14px; padding: 5px 10px 9px; }
+  #campaign-progress { font-size: 17px; padding: 8px; white-space: nowrap; }
+  #campaign .campaign-loadout { padding: 3px 6px; }
+  #campaign-pilot .rr-portrait { width: 47px; height: 47px; }
+  #campaign .campaign-loadout-copy { margin-left: 5px; }
+  #campaign .campaign-loadout-copy strong { font-size: 16px; }
+  #campaign .campaign-loadout .btn { padding: 8px 13px; min-height: 44px; font-size: 16px; }
+  #mission-list { flex-direction: column; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y proximity; touch-action: pan-y; gap: 17px; padding: 5px 4px 14px; }
+  #campaign .mission-card { flex: 0 0 auto; min-width: 0; min-height: 335px; padding: 15px; }
+  #campaign .mission-card-top { margin-bottom: 12px; }
+  #campaign .mission-number { height: 53px; width: 53px; font-size: 32px; }
+  #campaign .mission-card h3 { font-size: 25px; margin-bottom: 9px; }
+  #campaign .mission-goal { font-size: 17px; }
+  #campaign .mission-meta { margin: 10px 0; }
+  #campaign .mission-card > .btn { margin-top: 16px; }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+  .select-wrap { grid-template-rows: 44px 93px minmax(0,1fr) 69px 108px; gap: 8px; }
+  #select .choice-heading small { display: none; }
+  #select .pilot,#select .robot-card { height: 94px; }
+  #select .pilot-face,#select .rc-face { height: 71px; }
+  #select .choice-name { font-size: 15px; line-height: .95; letter-spacing: -.02em; -webkit-text-stroke-width: 3.4px; }
+  #select .pilot-list,#select .robot-list { gap: 7px; }
+  #select .loadout-details { padding: 8px 11px; }
+  #campaign .campaign-heading { gap: 8px; }
+  #campaign-h { font-size: 19px; }
+  #campaign-progress { font-size: 15px; }
+  #campaign .campaign-loadout-copy strong { font-size: 14px; }
+  #campaign-pilot .rr-portrait { width: 39px; height: 43px; }
+  #campaign .mission-card { min-height: 320px; padding: 12px; }
+  #campaign .mission-card h3 { font-size: 23px; }
+}

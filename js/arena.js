@@ -4,6 +4,7 @@
 // 게임 쪽 API: setStage, setQuality, groundAt, surfaceAt, pushOut, isVoid, safePoint, randomPoint, waypoint
 import * as THREE from 'three';
 import { createEnvironmentArt, islandRadius } from './environment-art.js';
+import { createLandscape } from './landscape.js';
 
 const STEP = 0.7; // 걸어서 오를 수 있는 높이
 const TAU = Math.PI * 2;
@@ -207,20 +208,6 @@ function groundTexture(theme = 'farm', cx = 0, cz = 0, radius = 24) {
 }
 
 let stripeTex = null;
-let courtWallTex = null;
-function courtWallTexture() {
-  if (courtWallTex) return courtWallTex;
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#d2c4a3'; ctx.fillRect(0, 0, 256, 256);
-  for (let row = 0; row < 6; row++) {
-    const y = row * 43;
-    ctx.fillStyle = row % 2 ? '#d6c9ad' : '#ccbea1'; ctx.fillRect(0, y + 2, 256, 39);
-    ctx.fillStyle = '#b2a58c'; ctx.fillRect(0, y, 256, 2);
-    for (let x = row % 2 ? -64 : 0; x < 256; x += 128) ctx.fillRect(x, y, 2, 43);
-  }
-  courtWallTex = new THREE.CanvasTexture(canvas); courtWallTex.colorSpace = THREE.SRGBColorSpace;
-  return courtWallTex;
-}
 function stripeTexture() {
   if (stripeTex) return stripeTex;
   const c = document.createElement('canvas');
@@ -331,6 +318,7 @@ export function createArena(scene) {
   sky.renderOrder = -1;
   scene.add(sky);
   scene.fog = new THREE.Fog(0xe1dbc9, 110, 340);
+  const landscape = createLandscape(scene);
 
   const hemi = new THREE.HemisphereLight(0xcbdcf3, 0x9b8b71, 1.15);
   scene.add(hemi);
@@ -688,28 +676,6 @@ export function createArena(scene) {
 
   function posts(R, count, spread) { art.fence(R, count, spread); }
 
-  // A single enclosed garden court. Its visible wall and collision use the
-  // same 32 panels, so the edge is readable from every direction, even seated.
-  // Broad masonry replaces scattered decoration; all panels batch by material.
-  function gardenBoundary(kind = 'farm') {
-    const count = 32, radius = A.radius, depth = kind === 'farm' ? 2.6 : 2.2, half = Math.tan(Math.PI / count) * radius + .04;
-    const wallMaterial = kind === 'farm' ? M(new THREE.MeshStandardMaterial({ map: courtWallTexture(), roughness: 1 })) : mats.stone;
-    for (let i = 0; i < count; i++) {
-      const a = i / count * TAU, x = Math.cos(a) * radius, z = Math.sin(a) * radius;
-      const rot = a + Math.PI / 2, height = kind === 'sky' ? 1.6 : kind === 'fort' ? (z < -10 ? 5 : 3.8) : (z < -10 ? 5.4 : 4.2);
-      const wall = mesh(G(new THREE.BoxGeometry(half * 2, height, depth)), wallMaterial, st.g, x, height / 2, z, false);
-      wall.rotation.y = -rot;
-      const cap = mesh(G(new THREE.BoxGeometry(half * 2, .3, depth + .25)), mats.stoneTop, st.g, x, height + .15, z, false);
-      cap.rotation.y = -rot;
-      const s = addShape({ type: 'box', x, z, hu: half, hv: depth / 2, rot, h: height + .3, thick: height + .3, solid: true, walk: false });
-      s.boundary = true;
-      if (kind === 'fort') {
-        const merlon = mesh(G(new THREE.BoxGeometry(half * .95, .65, depth)), mats.stone, st.g, x, height + .625, z, false);
-        merlon.rotation.y = -rot;
-      }
-    }
-  }
-
   function flag(x, z, base, color) {
     mesh(G(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6)), mats.woodDark, st.g, x, base + 1.3, z, false);
     const f = new THREE.Mesh(G(new THREE.PlaneGeometry(1.1, 0.7)), M(toon(color, { side: THREE.DoubleSide })));
@@ -737,7 +703,6 @@ export function createArena(scene) {
       stone(8, -6, 1.8, 1.3);
       windmill(0, -19.5);
       carrotPatches([[-16.5, -10], [6, 16], [18.5, 2], [-3, 16.5]]);
-      gardenBoundary();
       return {
         spawns: [[0, 12], [14, 2], [-2, -7], [-14.5, -2]],
         nodes: [[0, 0], [0, 12], [12, 12], [-12, 12], [17, 0], [-17, -3], [-12, -14], [10, -14], [4, -5.6], [4, -12.8], [-4, -11], [-6, -1], [6, 1], [15.5, 7.5], [19, -6], [-12, 8], [12, -8]],
@@ -746,7 +711,7 @@ export function createArena(scene) {
     },
     fort() {
       A.radius = 25;
-      // Ground extends under the wall even where the sculpted coast dips in.
+      // Sculpted open coast; walking beyond it falls into the valley.
       island(0, 0, 26, 0, { holes: [{ x: -13, z: 10, r: 3 }, { x: 13, z: -10, r: 3.2 }] });
       // Shallow sunken courts replace lethal black wells. Their 0.5 step is
       // below STEP, so a pilot or robot can leave from every point on the rim.
@@ -772,7 +737,6 @@ export function createArena(scene) {
       flag(3.9, -7.4, 4.6, 0x2fb8ff);
       windmill(0, -21);
       pad(-18, 1, 0, 19, [-2, -3]);
-      gardenBoundary('fort');
       return {
         spawns: [[0, 13], [16, -1], [0, -3], [-16, -2]],
         nodes: [[0, -3], [3.2, -3], [-3.2, -3], [12.7, -3], [-12.7, -3], [0, 8], [0, 14], [10, 12], [-6, 17], [-7, 5], [8, 4], [15, 1], [-15, 2], [-10, -13], [0, -13], [7, -15], [18, -4], [-18, -6], [18, 11], [-20, 8], [-18, 1], [0, 4.5]],
@@ -804,7 +768,6 @@ export function createArena(scene) {
       // colliders; foliage remains soft and does not obstruct the flank loop.
       for (const x of [-2.7, 2.7]) addShape({ type: 'disc', x, z: -10.7, r: .34, h: 6.4, thick: 4, solid: true, walk: false });
       for (const [x, z, base] of [[-19,-4,0],[19,-3.8,0],[-4.8,-9.6,2.4],[4.7,-9.5,2.4]]) addShape({ type: 'disc', x, z, r: .32, h: base + 3.4, thick: 3.4, solid: true, walk: false });
-      gardenBoundary('sky');
       return {
         spawns: [[0, 14], [17, 1], [0, -3], [-17, 1]],
         nodes: [[0, 13], [0, 9], [0, 3.2], [0, -3], [5, -5], [-5, -5], [7, -4], [-7, -4], [14.5, -4], [-14.5, -4], [16, 1], [-16, 1], [15, 4], [-15, 4], [-8, 9], [8, 9], [-15, 9], [15, 9], [-13, -14], [0, -16], [13, -14], [10.8, -4], [-10.8, -4], [0, 6.9]],
@@ -840,19 +803,6 @@ export function createArena(scene) {
     let bounced = false;
     const r = e.radius, y = e.pos.y;
     for (const s of A.solids) {
-      if (s.boundary) {
-        if (y + STEP >= s.h || y + e.height <= 0) continue;
-        // The court is the intersection of inward half-spaces. At a panel
-        // seam choose the court side, never the shorter sideways box exit.
-        const nx = s.s, nz = -s.c, limit = s.x * nx + s.z * nz - s.hv - r;
-        const penetration = e.pos.x * nx + e.pos.z * nz - limit;
-        if (penetration > 0) {
-          e.pos.x -= nx * penetration; e.pos.z -= nz * penetration;
-          const speed = e.vel.x * nx + e.vel.z * nz;
-          if (speed > 0) { const rebound = e.state === 'launched' && speed > 10 ? 1.6 : 1; e.vel.x -= nx * speed * rebound; e.vel.z -= nz * speed * rebound; bounced ||= rebound > 1; }
-        }
-        continue;
-      }
       const dx0 = e.pos.x - s.x, dz0 = e.pos.z - s.z;
       if (dx0 * dx0 + dz0 * dz0 > (s.br + r) * (s.br + r)) continue;
       if (s.holes && inHole(s, e.pos.x, e.pos.z)) continue;
@@ -898,10 +848,6 @@ export function createArena(scene) {
 
   // 평평하고 넓은 자리인지 (움직이는 발판, 버섯 제외)
   function flatAt(x, z, clear) {
-    for (const wall of A.solids) if (wall.boundary) {
-      const n = nearest(wall, x, z);
-      if (n.inside || Math.hypot(x - n.x, z - n.z) < clear) return null;
-    }
     const s = gAt(x, z, 1e6, false, SURF);
     if (!s || s.s.moving || s.pad) return null;
     const h = s.h;
@@ -1033,6 +979,7 @@ export function createArena(scene) {
     mats = makeMats(id);
     art = createEnvironmentArt(st, id);
     const palette = THEMES[id];
+    landscape.setStage(id);
     for (const [i, name] of ['top', 'mid', 'bot'].entries()) skyMat.uniforms[name].value.set(palette.sky[i]);
     scene.fog.color.set(palette.sky[1]);
     const def = BUILD[id]();
@@ -1061,6 +1008,12 @@ export function createArena(scene) {
     if (!st.batch) return;
     for (const o of st.batch.hidden) o.visible = false;
     for (const m of st.batch.merged) m.visible = true;
+    const freeze = node => {
+      if (node.userData.dyn) return;
+      node.updateMatrix(); node.matrixAutoUpdate = false;
+      for (const child of node.children) freeze(child);
+    };
+    freeze(st.g);
   }
   A.setQuality = (low) => {
     const q = low ? 'low' : 'high';
